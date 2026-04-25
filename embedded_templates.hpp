@@ -137,7 +137,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         <section class="player-section">
             <h2><span class="icon">▶️</span> 当前播放</h2>
             <audio id="player" controls autoplay>
-                <source src="http://localhost:2241" type="audio/mpeg">
+                <source src="/stream" type="audio/mpeg">
             </audio>
             <div class="controls">
                 <button onclick="playNext()">⏭️ 下一首</button>
@@ -157,7 +157,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         </div>
         
         <footer>
-            <p>© {{STATION_NAME}} | 端口: 2240 (Web), 2241 (Stream)</p>
+            <p>© {{STATION_NAME}} | 端口: 2240</p>
             <a class="admin-link" href="/admin">🔐 管理员入口</a>
         </footer>
     </div>
@@ -165,7 +165,7 @@ static const std::unordered_map<std::string, std::string> templates = {
     <script>
         // JS 逻辑保持完全不变
         document.addEventListener("DOMContentLoaded", () => {
-            document.getElementById("player").src = window.location.hostname === 'localhost' ? "http://localhost:2241" : `http://${window.location.hostname}:2241`;
+            document.getElementById("player").src = "/stream";
         });
         
         async function loadPlaylist() {

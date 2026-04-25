@@ -36,7 +36,6 @@ namespace fs = std::filesystem;
 // =============================================================================
 namespace Config {
     constexpr int WEB_PORT = 2240;
-    constexpr int STREAM_PORT = 2241;
     constexpr size_t BUFFER_CAPACITY = 512 * 1024;  // 512KB - for better streaming
     constexpr size_t AUDIO_CHUNK_SIZE = 16384;      // 16KB - improved chunk size
     constexpr int EPOLL_TIMEOUT_MS = 100;
@@ -243,87 +242,44 @@ private:
 };
 
 // =============================================================================
-// 流媒体服务器
+// 流媒体广播器（通过 Crow 的 /stream 路由接受客户端）
 // =============================================================================
 class StreamServer {
 public:
     StreamServer(BroadcastBuffer* buffer)
-        : buffer_(buffer), running_(false), epoll_fd_(-1), server_fd_(-1),
+        : buffer_(buffer), running_(false), epoll_fd_(-1),
           broadcast_watch_pos_(0) {}
 
     ~StreamServer() {
         stop();
     }
-    
+
     bool start() {
         if (running_) return false;
-        
-        // 创建服务器socket
-        server_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (server_fd_ < 0) {
-            perror("socket");
-            return false;
-        }
-        
-        // 设置socket选项
-        int reuse = 1;
-        setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-        
-        // 绑定地址
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(Config::STREAM_PORT);
-        addr.sin_addr.s_addr = INADDR_ANY;
-        
-        if (bind(server_fd_, (sockaddr*)&addr, sizeof(addr)) < 0) {
-            perror("bind");
-            close(server_fd_);
-            return false;
-        }
-        
-        if (listen(server_fd_, Config::MAX_CONNECTIONS) < 0) {
-            perror("listen");
-            close(server_fd_);
-            return false;
-        }
-        
-        // 设置非阻塞
-        int flags = fcntl(server_fd_, F_GETFL, 0);
-        fcntl(server_fd_, F_SETFL, flags | O_NONBLOCK);
-        
-        // 创建epoll实例
+
         epoll_fd_ = epoll_create1(0);
         if (epoll_fd_ < 0) {
             perror("epoll_create1");
-            close(server_fd_);
             return false;
         }
-        
-        // 注册服务器socket
-        epoll_event ev{};
-        ev.events = EPOLLIN | EPOLLET;
-        ev.data.fd = server_fd_;
-        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_fd_, &ev);
-        
+
         running_ = true;
         broadcast_watch_pos_ = buffer_->current_write_pos();
         thread_ = std::thread(&StreamServer::worker_loop, this);
         broadcast_thread_ = std::thread(&StreamServer::broadcast_loop, this);
 
-        std::cout << "[Stream] Server started on port " << Config::STREAM_PORT << std::endl;
+        std::cout << "[Stream] Broadcaster started (serving at /stream)" << std::endl;
         return true;
     }
 
     void stop() {
         if (!running_.exchange(false)) return;
 
-        // 唤醒可能阻塞在条件变量上的广播线程
         buffer_->wakeup_all();
 
         if (thread_.joinable()) thread_.join();
         if (broadcast_thread_.joinable()) broadcast_thread_.join();
 
-        // 关闭所有客户端连接
         {
             std::lock_guard<std::mutex> lock(clients_mutex_);
             for (auto& client : clients_) {
@@ -332,26 +288,54 @@ public:
             clients_.clear();
         }
 
-        // 关闭文件描述符
         if (epoll_fd_ >= 0) {
             close(epoll_fd_);
             epoll_fd_ = -1;
         }
-        if (server_fd_ >= 0) {
-            close(server_fd_);
-            server_fd_ = -1;
+
+        std::cout << "[Stream] Broadcaster stopped" << std::endl;
+    }
+
+    // 由 Crow 的 /stream 路由调用；fd 必须是 dup 后的独立文件描述符。
+    void add_client(int fd) {
+        if (!running_) { close(fd); return; }
+
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            if (clients_.size() >= Config::MAX_CONNECTIONS) {
+                close(fd);
+                std::cout << "[Stream] Connection refused: limit reached" << std::endl;
+                return;
+            }
         }
 
-        std::cout << "[Stream] Server stopped" << std::endl;
+        auto client = std::make_shared<ClientConnection>(fd, buffer_);
+
+        epoll_event ev{};
+        ev.events = EPOLLRDHUP | EPOLLERR | EPOLLHUP;
+        ev.data.fd = fd;
+        if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, fd, &ev) < 0) {
+            perror("epoll_ctl add_client");
+            close(fd);
+            return;
+        }
+
+        size_t total;
+        {
+            std::lock_guard<std::mutex> lock(clients_mutex_);
+            clients_[fd] = client;
+            total = clients_.size();
+        }
+
+        std::cout << "[Stream] New client fd=" << fd << " (total: " << total << ")" << std::endl;
     }
-    
+
     size_t client_count() const {
         std::lock_guard<std::mutex> lock(clients_mutex_);
         return clients_.size();
     }
 
 private:
-    // epoll 线程：只处理 accept 和客户端断开检测，不再因 EPOLLOUT 持续触发而空转
     void worker_loop() {
         epoll_event events[Config::MAX_EVENTS];
 
@@ -366,15 +350,11 @@ private:
             for (int i = 0; i < n; ++i) {
                 int fd = events[i].data.fd;
                 uint32_t events_mask = events[i].events;
-
-                if (fd == server_fd_) {
-                    handle_new_connections();
-                } else if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
+                if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
                     remove_client(fd);
                 }
             }
 
-            // 定期清理异常连接（大约每 10 秒）
             static int cleanup_counter = 0;
             if (++cleanup_counter >= 100) {
                 cleanup_counter = 0;
@@ -383,74 +363,19 @@ private:
         }
     }
 
-    // 广播线程：通过条件变量等待新音频数据，避免忙轮询造成 100% CPU
     void broadcast_loop() {
         while (running_) {
-            // 阻塞等待新数据（最长 200ms 超时，用于兼顾关停响应）
             buffer_->wait_for_data(broadcast_watch_pos_, 200);
             if (!running_) break;
 
             size_t wp = buffer_->current_write_pos();
-            if (wp == broadcast_watch_pos_) {
-                continue;  // 超时且没有新数据
-            }
+            if (wp == broadcast_watch_pos_) continue;
             broadcast_watch_pos_ = wp;
 
             broadcast_audio();
         }
     }
 
-    void handle_new_connections() {
-        // 服务端 socket 使用 EPOLLET，必须循环 accept 到 EAGAIN 为止
-        while (true) {
-            sockaddr_in client_addr{};
-            socklen_t addr_len = sizeof(client_addr);
-            int client_fd = accept(server_fd_, (sockaddr*)&client_addr, &addr_len);
-
-            if (client_fd < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) return;
-                if (errno == EINTR) continue;
-                perror("accept");
-                return;
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(clients_mutex_);
-                if (clients_.size() >= Config::MAX_CONNECTIONS) {
-                    close(client_fd);
-                    std::cout << "[Stream] Connection refused: limit reached" << std::endl;
-                    continue;
-                }
-            }
-
-            auto client = std::make_shared<ClientConnection>(client_fd, buffer_);
-
-            // 只监听断开事件；写入由广播线程根据新数据到达主动驱动，避免 EPOLLOUT 持续触发
-            epoll_event ev{};
-            ev.events = EPOLLRDHUP;
-            ev.data.fd = client_fd;
-
-            if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, client_fd, &ev) < 0) {
-                perror("epoll_ctl");
-                close(client_fd);
-                continue;
-            }
-
-            size_t total;
-            {
-                std::lock_guard<std::mutex> lock(clients_mutex_);
-                clients_[client_fd] = client;
-                total = clients_.size();
-            }
-
-            char ip_str[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &client_addr.sin_addr, ip_str, sizeof(ip_str));
-            std::cout << "[Stream] New client: " << ip_str << ":"
-                      << ntohs(client_addr.sin_port)
-                      << " (total: " << total << ")" << std::endl;
-        }
-    }
-    
     void remove_client(int fd) {
         std::lock_guard<std::mutex> lock(clients_mutex_);
         auto it = clients_.find(fd);
@@ -458,11 +383,11 @@ private:
             it->second->close_socket();
             clients_.erase(it);
             epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
-            std::cout << "[Stream] Client disconnected: " << fd 
-          << " (remaining: " << clients_.size() << ")" << std::endl;
+            std::cout << "[Stream] Client disconnected fd=" << fd
+                      << " (remaining: " << clients_.size() << ")" << std::endl;
         }
     }
-    
+
     void broadcast_audio() {
         std::vector<std::pair<int, std::shared_ptr<ClientConnection>>> snapshot;
         {
@@ -481,35 +406,26 @@ private:
             }
         }
 
-        for (int fd : dead) {
-            remove_client(fd);
-        }
+        for (int fd : dead) remove_client(fd);
     }
 
     void cleanup_dead_clients() {
         std::vector<int> dead_clients;
-        
         {
             std::lock_guard<std::mutex> lock(clients_mutex_);
             for (const auto& [fd, client] : clients_) {
-                if (client->is_shutdown()) {
-                    dead_clients.push_back(fd);
-                }
+                if (client->is_shutdown()) dead_clients.push_back(fd);
             }
         }
-        
-        for (int fd : dead_clients) {
-            remove_client(fd);
-        }
+        for (int fd : dead_clients) remove_client(fd);
     }
-    
+
     BroadcastBuffer* buffer_;
     std::atomic<bool> running_{false};
     std::thread thread_;
     std::thread broadcast_thread_;
 
     int epoll_fd_;
-    int server_fd_;
     size_t broadcast_watch_pos_;
 
     mutable std::mutex clients_mutex_;
@@ -882,6 +798,24 @@ private:
     }
     
     void setup_routes() {
+        // 音频流端点：接管底层 socket 并注册到广播器
+        CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
+            if (!res.get_socket_fd_helper_) {
+                res.code = 500;
+                res.end("stream unavailable");
+                return;
+            }
+            int crow_fd = res.get_socket_fd_helper_();
+            int fd = ::dup(crow_fd);
+            if (fd < 0) {
+                res.code = 500;
+                res.end("dup failed");
+                return;
+            }
+            res.take_over();
+            stream_server_->add_client(fd);
+        });
+
         // 主页 - 根据是否登录显示不同界面
         CROW_ROUTE(app_, "/")([this](const crow::request& req) {
             std::string session_id = get_session_id_from_cookies(req.get_header_value("Cookie"));
@@ -1627,7 +1561,7 @@ public:
                 "║        服务器启动成功！                 ║\n"
                 "║                                          ║\n"
                 "║  Web界面: http://localhost:" << Config::WEB_PORT << "     ║\n"
-                "║  流媒体: http://localhost:" << Config::STREAM_PORT << "    ║\n"
+                "║  流媒体:  http://localhost:" << Config::WEB_PORT << "/stream ║\n"
                 "║                                          ║\n"
                 "║  按 Ctrl+C 停止服务器                  ║\n"
                 "╚══════════════════════════════════════════╝\n" << std::endl;

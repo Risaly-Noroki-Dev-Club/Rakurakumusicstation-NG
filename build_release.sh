@@ -94,7 +94,10 @@ fi
 # 编译项目
 print_status "编译服务器程序..."
 RELEASE_DIR="dist"
-rm -rf $RELEASE_DIR
+# Remove build artifacts but preserve media/ and settings.json
+if [ -d "$RELEASE_DIR" ]; then
+    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'settings.json' -exec rm -rf {} +
+fi
 mkdir -p $RELEASE_DIR/media
 mkdir -p $RELEASE_DIR/templates
 
@@ -188,7 +191,7 @@ else
     <div class="player">
         <p>当前正在播放的音乐电台</p>
         <audio id="audioPlayer" controls style="width: 100%;">
-            <source src="http://localhost:2241" type="audio/mpeg">
+            <source src="/stream" type="audio/mpeg">
         </audio>
         <div>
             <button onclick="document.getElementById('audioPlayer').play()">播放</button>
@@ -203,10 +206,8 @@ EOF
 fi
 
 # 配置文件和脚本
-if [ -f "settings.json" ]; then
-    cp settings.json $RELEASE_DIR/
-else
-    cp > $RELEASE_DIR/settings.json << 'EOF'
+if [ ! -f "$RELEASE_DIR/settings.json" ]; then
+    cat > $RELEASE_DIR/settings.json << 'EOF'
 {
     "station_name": "Rakuraku Music Station",
     "subtitle": "轻量级流媒体服务器",
@@ -235,7 +236,7 @@ mkdir -p media
 echo "🎵 Rakuraku Music Station 启动中..."
 echo "========================================"
 echo "Web 界面: http://localhost:2240"
-echo "流媒体: http://localhost:2241"
+echo "流媒体: http://localhost:2240/stream"
 echo "========================================"
 echo "音乐文件请放置在 media/ 目录"
 echo ""
