@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🎵 Rakuraku Music Station
 
 A lightweight, high-performance C++ streaming broadcast server for low-latency audio distribution, with a built-in web admin panel.
@@ -335,3 +336,7 @@ MIT — 详见 [LICENSE](LICENSE)。
 ---
 
 <div align="center"><em>如果本项目对你有帮助，欢迎点亮 ⭐ Star / Star the repo if you find it useful.</em></div>
+=======
+# Rakurakumusicstation-NG
+A Nijika generation music station 
+>>>>>>> 847fe2b5cf33abb38609fea1e19e11c3260682a7

@@ -109,6 +109,63 @@ def load_ncm_credentials(settings_path: str) -> tuple[str, str, str]:
         return "", "", ""
 
 
+def parse_browser_cookies(cookie_str: str) -> dict:
+    """解析浏览器Cookie字符串为pyncm兼容的session dict格式"""
+    import time
+
+    # 解析cookie字符串到列表
+    cookies = []
+    csrf_token = ""
+    for cookie in cookie_str.split(';'):
+        cookie = cookie.strip()
+        if not cookie or '=' not in cookie:
+            continue
+
+        key, value = cookie.split('=', 1)
+        cookie_dict = {
+            "name": key,
+            "value": value,
+            "domain": "music.163.com",
+            "path": "/"
+            # 注意: pyncm dump 不包含 expires 字段
+        }
+        cookies.append(cookie_dict)
+
+        if key == "__csrf":
+            csrf_token = value
+
+    # 构建session结构，模拟 pyncm dump 格式
+    session_dict = {
+        "eapi_config": {
+            "os": "Android",
+            "appver": "8.9.70",
+            "osver": "11",
+            "channel": "netease",
+            "deviceId": ""
+        },
+        "login_info": {
+            "success": True,
+            "tick": time.time(),
+            "content": None
+        },
+        "csrf_token": csrf_token,
+        "cookies": cookies
+    }
+
+    # 如果 pyncm 可用，用真实 dump 的结构更新
+    try:
+        import pyncm
+        session = pyncm.GetCurrentSession()
+        real_dump = session.dump()
+        # 保留真实 dump 的 eapi_config 结构，只更新 cookies 和登录状态
+        session_dict["eapi_config"] = real_dump.get("eapi_config", session_dict["eapi_config"])
+    except ImportError:
+        # pyncm 不可用，使用默认结构
+        pass
+
+    return session_dict
+
+
 def ncm_authenticate(phone: str, password: str, cookie: str) -> bool:
     """尝试登录网易云，成功返回 True。Cookie 优先，次选手机号+密码。"""
     if not HAS_PYNCM:
@@ -117,15 +174,49 @@ def ncm_authenticate(phone: str, password: str, cookie: str) -> bool:
         import pyncm
         from pyncm.apis import login as ncm_login
 
-        if cookie:
-            pyncm.GetCurrentSession().load_from_string(cookie)
+        if cookie and cookie.strip():
+            cookie = cookie.strip()
+            session = pyncm.GetCurrentSession()
+
+            # Try multiple cookie formats
+            parsed_successfully = False
+
+            # Format 1: Try as browser cookie string (semicolon-separated)
+            if '=' in cookie and (';' in cookie or '__csrf=' in cookie or 'MUSIC_U=' in cookie):
+                # Looks like a browser cookie string
+                try:
+                    cookie_dict = parse_browser_cookies(cookie)
+                    session.load(cookie_dict)
+                    parsed_successfully = True
+                except Exception as e:
+                    print(f"[网易云] 浏览器Cookie解析失败：{e}")
+
+            # Format 2: Try as JSON string (legacy format)
+            if not parsed_successfully:
+                try:
+                    import json
+                    cookie_dict = json.loads(cookie) if isinstance(cookie, str) else cookie
+                    session.load(cookie_dict)
+                    parsed_successfully = True
+                except json.JSONDecodeError:
+                    # Not JSON, will fail below
+                    pass
+                except Exception as e:
+                    print(f"[网易云] JSON Cookie解析失败：{e}")
+
+            if not parsed_successfully:
+                print("[网易云] Cookie 格式错误：既不是浏览器Cookie格式也不是JSON格式")
+                return False
+
+            # Check login status
             status = ncm_login.GetCurrentLoginStatus()
             if status.get("account"):
                 nickname = status.get("profile", {}).get("nickname", "未知")
                 print(f"[网易云] Cookie 登录成功：{nickname}")
                 return True
-            print("[网易云] Cookie 无效或已过期")
-            return False
+            else:
+                print("[网易云] Cookie 无效或已过期")
+                return False
 
         if phone and password:
             result = ncm_login.LoginViaCellphone(phone=phone, password=password)
