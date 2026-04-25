@@ -380,9 +380,13 @@ private:
         std::lock_guard<std::mutex> lock(clients_mutex_);
         auto it = clients_.find(fd);
         if (it != clients_.end()) {
+            // 必须先 EPOLL_CTL_DEL 再 close()。Crow 的 adaptor 仍持有同一 socket 的
+            // 原始 fd，我们 dup 出来的 fd 关闭后，底层 struct file 仍存活，epoll
+            // 的兴趣条目不会被自动清理；此时再 EPOLL_CTL_DEL 会 EBADF 失败，
+            // 残留条目以电平触发模式持续回报 EPOLLHUP，导致 worker_loop 100% CPU。
+            epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
             it->second->close_socket();
             clients_.erase(it);
-            epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
             std::cout << "[Stream] Client disconnected fd=" << fd
                       << " (remaining: " << clients_.size() << ")" << std::endl;
         }
