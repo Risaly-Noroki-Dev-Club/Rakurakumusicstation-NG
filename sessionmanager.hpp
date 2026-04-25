@@ -4,10 +4,12 @@
 #include <string>
 #include <unordered_map>
 #include <chrono>
-#include <random>
 #include <mutex>
 #include <memory>
 #include <iostream>
+#include <stdexcept>
+#include <openssl/crypto.h>
+#include <openssl/rand.h>
 
 class SessionManager {
 public:
@@ -35,18 +37,17 @@ public:
         }
         
         static std::string generate_session_id() {
-            static std::random_device rd;
-            static std::mt19937 gen(rd());
-            static std::uniform_int_distribution<> dis(0, 15);
-            
-            const char* hex_chars = "0123456789abcdef";
+            unsigned char buf[16];  // 128 bits
+            if (RAND_bytes(buf, sizeof(buf)) != 1) {
+                throw std::runtime_error("RAND_bytes failed");
+            }
+            static const char* hex_chars = "0123456789abcdef";
             std::string session_id;
             session_id.reserve(32);
-            
-            for (int i = 0; i < 32; ++i) {
-                session_id += hex_chars[dis(gen)];
+            for (unsigned char b : buf) {
+                session_id += hex_chars[b >> 4];
+                session_id += hex_chars[b & 0xf];
             }
-            
             return session_id;
         }
     };
@@ -97,9 +98,15 @@ public:
         }
     }
     
+    // 常数时间字符串比较（防止时序攻击）
+    static bool constant_time_str_eq(const std::string& a, const std::string& b) {
+        if (a.size() != b.size()) return false;
+        return CRYPTO_memcmp(a.data(), b.data(), a.size()) == 0;
+    }
+
     // 密码验证
     bool verify_password(const std::string& password, const std::string& admin_password) {
-        return password == admin_password;
+        return constant_time_str_eq(password, admin_password);
     }
     
 private:

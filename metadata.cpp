@@ -4,6 +4,9 @@
 #include <cstring>
 #include <filesystem>
 #include <regex>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/wait.h>
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -107,23 +110,55 @@ std::string MetadataManager::safe_filename(const std::string& filename) {
 }
 
 int MetadataManager::get_duration_via_ffmpeg(const std::string& file_path) {
-    // 构建FFmpeg命令来获取时长
-    string command = "ffmpeg -i '" + file_path + "' 2>&1 | grep Duration";
-
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        cerr << "[Metadata] 无法执行FFmpeg命令" << endl;
+    // 不通过 shell 调用 ffmpeg，避免文件名中的特殊字符触发命令注入。
+    // ffmpeg 把 Duration 信息写到 stderr，因此把子进程的 stderr 接到管道。
+    int fds[2];
+    if (pipe2(fds, O_CLOEXEC) != 0) {
+        cerr << "[Metadata] pipe2 失败: " << strerror(errno) << endl;
         return 0;
     }
 
-    char buffer[256];
-    string result;
-
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
+    pid_t pid = fork();
+    if (pid < 0) {
+        cerr << "[Metadata] fork 失败: " << strerror(errno) << endl;
+        close(fds[0]);
+        close(fds[1]);
+        return 0;
     }
 
-    pclose(pipe);
+    if (pid == 0) {
+        // 子进程：把 stderr 接到管道写端，然后 exec ffmpeg。
+        if (dup2(fds[1], STDERR_FILENO) < 0) _exit(127);
+        // stdout 重定向到 /dev/null，避免污染日志/管道
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDOUT_FILENO);
+            close(devnull);
+        }
+        // O_CLOEXEC 让 fds[0]/fds[1] 在 exec 后自动关闭
+        const char* argv[] = {
+            "ffmpeg", "-nostdin", "-i", file_path.c_str(), nullptr
+        };
+        execvp("ffmpeg", const_cast<char* const*>(argv));
+        _exit(127);
+    }
+
+    // 父进程：只读管道。
+    close(fds[1]);
+
+    string result;
+    char buffer[256];
+    ssize_t n;
+    while ((n = read(fds[0], buffer, sizeof(buffer))) > 0) {
+        result.append(buffer, buffer + n);
+        if (result.size() > 64 * 1024) break;  // 防止极端输入撑爆内存
+    }
+    close(fds[0]);
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) break;
+    }
 
     // 解析FFmpeg输出的时长信息
     regex duration_regex("Duration: ([0-9]+):([0-9]+):([0-9]+)\\.([0-9]+)");

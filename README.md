@@ -108,7 +108,7 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
 ```
 
 - `admin_password` — falls back to `admin123` if unset. **Change it in production.**
-- `allow_guest_skip` — if `true`, unauthenticated clients can POST `/api/next` and `/api/prev`.
+- `allow_guest_skip` — if `true`, unauthenticated clients can POST `/api/next`, `/api/prev`, and `/api/play/<idx>`.
 - `ncm_*` — NetEase Cloud Music credentials for batch downloads (cookie takes precedence).
 
 ### HTTP API
@@ -133,7 +133,7 @@ Admin (session cookie required):
 | POST   | `/upload`            | Multipart upload (≤ 50 MB)          |
 | POST   | `/api/next`          | Skip forward (guest-allowed opt)    |
 | POST   | `/api/prev`          | Skip backward (guest-allowed opt)   |
-| POST   | `/api/play/<idx>`    | Jump to track `idx`                 |
+| POST   | `/api/play/<idx>`    | Jump to track `idx` (guest-allowed opt) |
 | POST   | `/api/delete/<idx>`  | Remove track `idx`                  |
 | POST   | `/admin/download`    | Batch download from playlist file   |
 | GET    | `/admin/download/status` | Poll download progress             |
@@ -169,7 +169,6 @@ Example output in scenario panel:
 | `BroadcastBuffer`  | Power-of-two ring buffer; one producer, many consumers                |
 | `WebServer`        | Crow app on port 2240 serving UI and REST APIs                        |
 | `SessionManager`   | In-memory session table with 24-hour expiry                           |
-| `AuthMiddleware`   | Crow middleware that resolves `session_id` cookies to admin state     |
 
 ### Ports
 
@@ -181,7 +180,6 @@ Example output in scenario panel:
 ```
 ├── radioserver.cpp        # Main server
 ├── metadata.{hpp,cpp}     # Audio metadata extraction
-├── authmiddleware.hpp     # Crow auth middleware
 ├── sessionmanager.hpp     # Session store
 ├── build_release.sh       # One-shot build script
 ├── music_dl.py           # NetEase/YouTube download script
@@ -323,7 +321,7 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
 ```
 
 - `admin_password` — 未设置时回退到 `admin123`，**生产环境务必修改**。
-- `allow_guest_skip` — 为 `true` 时，未登录用户也可以 POST `/api/next` 和 `/api/prev`。
+- `allow_guest_skip` — 为 `true` 时，未登录用户也可以 POST `/api/next`、`/api/prev` 和 `/api/play/<idx>`。
 - `ncm_*` — 网易云音乐凭据，用于批量下载（cookie 优先于手机号+密码）。
 
 ### HTTP API
@@ -348,7 +346,7 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
 | POST | `/upload`            | 分块上传（≤ 50 MB）               |
 | POST | `/api/next`          | 下一首（可放宽给游客）            |
 | POST | `/api/prev`          | 上一首（可放宽给游客）            |
-| POST | `/api/play/<idx>`    | 跳转到曲目 `idx`                  |
+| POST | `/api/play/<idx>`    | 跳转到曲目 `idx`（可放宽给游客）  |
 | POST | `/api/delete/<idx>`  | 删除曲目 `idx`                    |
 | POST | `/admin/download`    | 从播放列表文件批量下载            |
 | GET  | `/admin/download/status` | 轮询下载进度                    |
@@ -384,7 +382,6 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
 | `BroadcastBuffer`  | 2 的幂次容量的环形缓冲区，单生产者、多消费者                |
 | `WebServer`        | 运行在 2240 端口上的 Crow 应用，提供 UI 与 REST API         |
 | `SessionManager`   | 内存态会话表，24 小时过期                                   |
-| `AuthMiddleware`   | Crow 中间件，将 `session_id` Cookie 解析为管理员状态        |
 
 ### 端口
 
@@ -396,7 +393,6 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
 ```
 ├── radioserver.cpp        # 主服务器
 ├── metadata.{hpp,cpp}     # 音频元数据提取
-├── authmiddleware.hpp     # Crow 认证中间件
 ├── sessionmanager.hpp     # 会话存储
 ├── build_release.sh       # 一键构建脚本
 ├── music_dl.py           # 网易云/YouTube 下载脚本
