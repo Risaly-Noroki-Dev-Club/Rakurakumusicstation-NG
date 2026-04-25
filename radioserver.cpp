@@ -1750,9 +1750,6 @@ void signal_handler(int /*sig*/) {
 // 主函数
 // =============================================================================
 int main() {
-    // 设置本地化
-    std::locale::global(std::locale("zh_CN.UTF-8"));
-    
     // 设置信号处理
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
