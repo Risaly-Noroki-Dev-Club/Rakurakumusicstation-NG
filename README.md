@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🎵 Rakuraku Music Station
 
 A lightweight, high-performance C++ streaming broadcast server for low-latency audio distribution, with a built-in web admin panel.
