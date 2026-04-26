@@ -7,6 +7,7 @@
 #include <vector>
 #include <deque>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -27,7 +28,6 @@
 #include <fstream>
 #include <sstream>
 #include "sessionmanager.hpp"
-#include "authmiddleware.hpp"
 #include "metadata.hpp"
 #include "embedded_templates.hpp"
 namespace fs = std::filesystem;
@@ -380,9 +380,13 @@ private:
         std::lock_guard<std::mutex> lock(clients_mutex_);
         auto it = clients_.find(fd);
         if (it != clients_.end()) {
+            // 必须先 EPOLL_CTL_DEL 再 close()。Crow 的 adaptor 仍持有同一 socket 的
+            // 原始 fd，我们 dup 出来的 fd 关闭后，底层 struct file 仍存活，epoll
+            // 的兴趣条目不会被自动清理；此时再 EPOLL_CTL_DEL 会 EBADF 失败，
+            // 残留条目以电平触发模式持续回报 EPOLLHUP，导致 worker_loop 100% CPU。
+            epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
             it->second->close_socket();
             clients_.erase(it);
-            epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
             std::cout << "[Stream] Client disconnected fd=" << fd
                       << " (remaining: " << clients_.size() << ")" << std::endl;
         }
@@ -520,9 +524,9 @@ private:
     }
     
     void play_next_track() {
-    FILE* pipe = nullptr;
-    bool pipe_opened = false;
-    
+    pid_t child_pid = -1;
+    int pipe_fd = -1;
+
     try {
         size_t playlist_size;
         std::string filename;
@@ -536,10 +540,6 @@ private:
             size_t track_idx = playlist_size > 0 ?
                                current_track_->load() % playlist_size : 0;
             filename = "./media/" + playlist_->at(track_idx);
-
-            // 确保使用UTF-8编码处理中文文件名
-            filename = filename;
-
 
             std::cout << "[Audio] Playing: " << playlist_->at(track_idx)
                       << " (" << track_idx + 1 << "/" << playlist_->size() << ")" << std::endl;
@@ -556,35 +556,56 @@ private:
         }
 
         std::cout << "[Audio] Processing file: " << filename << std::endl;
-        
-        // 构建FFmpeg命令 - 使用更高的兼容性设置
-        std::string cmd = "ffmpeg -nostdin -re -loglevel error -i \"" + filename + "\" "
-                  "-vn -c:a libmp3lame -b:a 128k -ar 44100 -ac 2 -f mp3 pipe:1";
 
-        std::cout << "[Audio] Executing: " << cmd << std::endl;
-        
-        pipe = popen(cmd.c_str(), "r");
-        if (!pipe) {
-            std::cerr << "[Audio] Failed to start FFmpeg" << std::endl;
-            (*current_track_)++;  // 播放失败时也换下一首
-            // FFmpeg 启动失败时增加延迟（可被 stop 唤醒）
+        // 不通过 shell 调用 ffmpeg，避免文件名中的特殊字符触发命令注入。
+        int fds[2];
+        if (pipe2(fds, O_CLOEXEC) != 0) {
+            std::cerr << "[Audio] pipe2 failed: " << strerror(errno) << std::endl;
+            (*current_track_)++;
             interruptible_wait(std::chrono::seconds(1));
             return;
         }
-        pipe_opened = true;
-        
+
+        child_pid = fork();
+        if (child_pid < 0) {
+            std::cerr << "[Audio] fork failed: " << strerror(errno) << std::endl;
+            close(fds[0]);
+            close(fds[1]);
+            (*current_track_)++;
+            interruptible_wait(std::chrono::seconds(1));
+            return;
+        }
+
+        if (child_pid == 0) {
+            // 子进程：把管道写端接到 stdout，stderr 留给父进程的日志。
+            if (dup2(fds[1], STDOUT_FILENO) < 0) _exit(127);
+            // O_CLOEXEC 会在 exec 后自动关闭 fds[0]/fds[1]
+            const char* argv[] = {
+                "ffmpeg", "-nostdin", "-re", "-loglevel", "error",
+                "-i", filename.c_str(),
+                "-vn", "-c:a", "libmp3lame", "-b:a", "128k",
+                "-ar", "44100", "-ac", "2", "-f", "mp3", "pipe:1",
+                nullptr
+            };
+            execvp("ffmpeg", const_cast<char* const*>(argv));
+            _exit(127);
+        }
+
+        // 父进程：只读管道
+        close(fds[1]);
+        pipe_fd = fds[0];
+
         // 使用poll监控管道
-        int pipe_fd = fileno(pipe);
         struct pollfd pfd = {pipe_fd, POLLIN, 0};
-        
+
         char buffer[Config::AUDIO_CHUNK_SIZE];
         skip_track_ = false;
-        
+
         bool error_occurred = false;
-        
+
         while (!skip_track_ && running_ && !error_occurred) {
             int ret = poll(&pfd, 1, Config::POLL_TIMEOUT_MS);
-            
+
             if (ret > 0) {
                 if (pfd.revents & POLLIN) {
                     ssize_t bytes;
@@ -615,16 +636,22 @@ private:
             }
             // 超时继续检查条件
         }
-        
-        // 关闭管道
-        if (pipe && pipe_opened) {
-            int status = pclose(pipe);
-            pipe = nullptr;
-            pipe_opened = false;
-            // Track index info already printed earlier
-        }
         } catch (const std::exception& e) {
             std::cerr << "[Audio] Error playing track: " << e.what() << std::endl;
+        }
+
+        // 关闭管道并回收子进程；先 SIGTERM 让 ffmpeg 尽快退出。
+        if (pipe_fd >= 0) {
+            close(pipe_fd);
+            pipe_fd = -1;
+        }
+        if (child_pid > 0) {
+            kill(child_pid, SIGTERM);
+            int status = 0;
+            while (waitpid(child_pid, &status, 0) < 0) {
+                if (errno != EINTR) break;
+            }
+            child_pid = -1;
         }
 
         // 检查是否需要切换到下一首（播放完成且用户没有手动切换）
@@ -724,6 +751,7 @@ public:
         thread_ = std::thread([this]() {
             try {
                 std::cout << "[Web] 服务器启动在端口 " << WebServer::Config::WEB_PORT << std::endl;
+                app_.signal_clear();
                 app_.port(WebServer::Config::WEB_PORT).multithreaded().run();
             } catch (const std::exception& e) {
                 std::cerr << "[Web] 错误: " << e.what() << std::endl;
@@ -900,7 +928,7 @@ private:
                 }
                 
                 std::string password = j["password"].s();
-                if (config_.admin_password == password) {
+                if (SessionManager::constant_time_str_eq(config_.admin_password, password)) {
                     auto session = session_manager_->create_admin_session();
                     crow::response res(200);
                     res.set_header("Set-Cookie", 
@@ -972,12 +1000,6 @@ private:
             bool is_admin = check_admin_auth(session_id);
             if (!is_admin) {
                 return crow::response(403, "需要管理员权限才能上传文件");
-            }
-
-            // 检查上传大小
-            size_t content_length = 0; // req.content_length not available, use 0 for now
-            if (content_length > Config::MAX_UPLOAD_SIZE) {
-                return crow::response(413, "文件太大，最大50MB");
             }
 
             return handle_upload(req);
