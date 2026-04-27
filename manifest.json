@@ -1,0 +1,69 @@
+{
+  "name": "{{STATION_NAME}}",
+  "short_name": "RakurakuRadio",
+  "description": "轻松音乐电台 - 低延迟音频流媒体",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#f4f4f9",
+  "theme_color": "#764ba2",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["music", "audio", "streaming"],
+  "shortcuts": [
+    {
+      "name": "开始收听",
+      "short_name": "收听",
+      "description": "开始收听电台音乐",
+      "url": "/",
+      "icons": [{ "src": "/shortcut-icon.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "管理面板",
+      "short_name": "管理",
+      "description": "电台管理面板",
+      "url": "/admin",
+      "icons": [{ "src": "/admin-icon.png", "sizes": "96x96" }]
+    }
+  ],
+  "launch_handler": {
+    "client_mode": ["auto", "focus-existing"]
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+rakuraku",
+      "url": "/?p=%s"
+    }
+  ],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "iarc_rating_id": "",
+  "edge_side_panel": {
+    "preferred_width": 360
+  }
+}

@@ -31,6 +31,9 @@ Rakuraku Music Station broadcasts the same audio stream to every connected liste
 - **Metadata / cover / lyrics APIs** — per-track endpoints for title, artist, duration, embedded cover art, and lyrics.
 - **Session auth** — cookie-based admin sessions; optional guest skip permission.
 - **Templated UI** — `{{VAR}}` substitution from `settings.json` (station name, colors, subtitle).
+- **Mobile-friendly** — Responsive design for smartphones and tablets.
+- **PWA support** — Install as a progressive web app (offline mode, home screen icon).
+- **Web-based settings** — Modify configuration directly from the admin panel.
 - **One-shot build** — `build_release.sh` installs deps, fetches Crow, and emits a self-contained `dist/`.
 - **Batch music download** — Integrated NetEase Cloud Music and YouTube downloader via `pyncm` and `yt-dlp`.
 
@@ -137,6 +140,16 @@ Admin (session cookie required):
 | POST   | `/api/delete/<idx>`  | Remove track `idx`                  |
 | POST   | `/admin/download`    | Batch download from playlist file   |
 | GET    | `/admin/download/status` | Poll download progress             |
+| POST   | `/admin/settings/ncm`      | Save NetEase credentials           |
+| POST   | `/admin/settings/ncm/test` | Test NetEase login                 |
+| GET    | `/admin/settings/ncm`      | Read NetEase config status         |
+
+### Web Settings API
+
+| Method | Path                 | Description                         |
+| ------ | -------------------- | ----------------------------------- |
+| GET    | `/admin/settings/get` | Read all settings (sensitive fields filtered) |
+| POST   | `/admin/settings/save` | Save settings (including station name, colors, etc.) |
 
 ### Memory Release Demonstration
 
@@ -185,6 +198,8 @@ Example output in scenario panel:
 ├── music_dl.py           # NetEase/YouTube download script
 ├── requirements.txt      # Python dependencies
 ├── settings.json          # Runtime config
+├── manifest.json          # PWA manifest file
+├── sw.js                  # Service Worker for PWA
 ├── templates/             # HTML templates (optional)
 ├── *.html                # Template files
 └── dist/                  # Build output (preserved across rebuilds)
@@ -244,6 +259,9 @@ Rakuraku Music Station 以电台的方式，将同一路音频流推送给所有
 - **元数据 / 封面 / 歌词 API** — 按曲目提供标题、艺术家、时长、内嵌封面和歌词接口。
 - **会话认证** — 基于 Cookie 的管理员会话，可选开放游客切歌权限。
 - **模板化 UI** — 从 `settings.json` 注入 `{{VAR}}` 变量（台名、颜色、副标题）。
+- **移动端适配** — 响应式设计，完美适应手机和平板。
+- **PWA 支持** — 可作为渐进式网页应用安装（离线模式、主屏幕图标）。
+- **网页端设置** — 直接在管理面板修改配置。
 - **一键构建** — `build_release.sh` 自动安装依赖、拉取 Crow，并生成独立的 `dist/`。
 - **批量音乐下载** — 集成网易云音乐和 YouTube 下载器，通过 `pyncm` 和 `yt-dlp` 实现。
 
@@ -350,6 +368,16 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
 | POST | `/api/delete/<idx>`  | 删除曲目 `idx`                    |
 | POST | `/admin/download`    | 从播放列表文件批量下载            |
 | GET  | `/admin/download/status` | 轮询下载进度                    |
+| POST | `/admin/settings/ncm`      | 保存网易云凭据                  |
+| POST | `/admin/settings/ncm/test` | 测试网易云登录                  |
+| GET  | `/admin/settings/ncm`      | 读取网易云配置状态              |
+
+### 网页设置 API
+
+| 方法 | 路径                 | 说明                              |
+| ---- | -------------------- | --------------------------------- |
+| GET  | `/admin/settings/get` | 读取所有设置（敏感字段已过滤）   |
+| POST | `/admin/settings/save` | 保存设置（包括台名、主题色等）   |
 
 ### 内存释放演示
 
@@ -398,6 +426,8 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
 ├── music_dl.py           # 网易云/YouTube 下载脚本
 ├── requirements.txt      # Python 依赖
 ├── settings.json          # 运行时配置
+├── manifest.json          # PWA 清单文件
+├── sw.js                  # PWA 的 Service Worker
 ├── templates/             # HTML 模板（可选）
 ├── *.html                # 模板文件
 └── dist/                  # 构建产物（重编译时保留）

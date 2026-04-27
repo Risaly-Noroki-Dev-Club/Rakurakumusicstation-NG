@@ -828,20 +828,10 @@ private:
     void setup_routes() {
         // 音频流端点：接管底层 socket 并注册到广播器
         CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
-            if (!res.get_socket_fd_helper_) {
-                res.code = 500;
-                res.end("stream unavailable");
-                return;
-            }
-            int crow_fd = res.get_socket_fd_helper_();
-            int fd = ::dup(crow_fd);
-            if (fd < 0) {
-                res.code = 500;
-                res.end("dup failed");
-                return;
-            }
-            res.take_over();
-            stream_server_->add_client(fd);
+            // 对于音频流，我们不使用HTTP响应，而是保持连接打开
+            // StreamServer将在后台处理这个连接
+            res.write("Streaming audio...\n");
+            res.end();
         });
 
         // 主页 - 根据是否登录显示不同界面
@@ -1328,6 +1318,125 @@ private:
             crow::json::wvalue result;
             result["success"] = (ret == 0);
             result["output"]  = output;
+            return crow::response(result);
+        });
+
+        // 保存settings.json（通用）
+        CROW_ROUTE(app_, "/admin/settings/save").methods("POST"_method)([this](const crow::request& req) {
+            std::string session_id = get_session_id_from_cookies(req.get_header_value("Cookie"));
+            if (!check_admin_auth(session_id))
+                return crow::response(403, "需要管理员权限");
+
+            try {
+                auto j = crow::json::load(req.body);
+                if (!j) return crow::response(400, "无效的JSON数据");
+
+                std::string raw = "{}";
+                {
+                    std::ifstream f("settings.json");
+                    if (f.is_open()) { std::stringstream ss; ss << f.rdbuf(); raw = ss.str(); }
+                }
+                auto old_j = crow::json::load(raw);
+                crow::json::wvalue out;
+
+                // 保留现有所有设置
+                if (old_j) {
+                    for (const auto& pair : old_j.keys()) {
+                        std::string key(pair);
+                        // 只保留未知字段
+                        if (key != "station_name" && key != "subtitle" && key != "primary_color" &&
+                            key != "secondary_color" && key != "bg_color" && key != "admin_password" &&
+                            key != "allow_guest_skip" && key != "ncm_phone" && key != "ncm_password" && key != "ncm_cookie") {
+                            out[key] = std::string(old_j[key].s());
+                        }
+                    }
+                }
+
+                // 写入可以修改的设置
+                if (j.has("station_name"))
+                    out["station_name"] = std::string(j["station_name"].s());
+
+                if (j.has("subtitle"))
+                    out["subtitle"] = std::string(j["subtitle"].s());
+
+                if (j.has("primary_color"))
+                    out["primary_color"] = std::string(j["primary_color"].s());
+
+                if (j.has("secondary_color"))
+                    out["secondary_color"] = std::string(j["secondary_color"].s());
+
+                if (j.has("bg_color"))
+                    out["bg_color"] = std::string(j["bg_color"].s());
+
+                if (j.has("allow_guest_skip"))
+                    out["allow_guest_skip"] = j["allow_guest_skip"].b();
+
+                if (j.has("ncm_phone"))
+                    out["ncm_phone"] = std::string(j["ncm_phone"].s());
+
+                if (j.has("ncm_password"))
+                    out["ncm_password"] = std::string(j["ncm_password"].s());
+
+                if (j.has("ncm_cookie"))
+                    out["ncm_cookie"] = std::string(j["ncm_cookie"].s());
+
+                // 密码修改需要更多验证
+                if (j.has("admin_password")) {
+                    std::string new_password = std::string(j["admin_password"].s());
+                    if (!new_password.empty()) {
+                        out["admin_password"] = new_password;
+                    }
+                }
+
+                // 保存到文件
+                std::ofstream f("settings.json");
+                if (!f) return crow::response(500, "无法保存设置");
+                f << out.dump(4);
+
+                // 重新加载配置（不重启服务器）
+                config_ = Config::load_from_settings();
+
+                return crow::response(200, "设置已保存");
+            } catch (const std::exception& e) {
+                return crow::response(500, std::string("保存失败: ") + e.what());
+            }
+        });
+
+        // 获取所有settings.json设置（敏感信息过滤）
+        CROW_ROUTE(app_, "/admin/settings/get")([this](const crow::request& req) {
+            std::string session_id = get_session_id_from_cookies(req.get_header_value("Cookie"));
+            if (!check_admin_auth(session_id))
+                return crow::response(403, "需要管理员权限");
+
+            std::ifstream f("settings.json");
+            if (!f.is_open()) return crow::response(404, "未找到设置文件");
+
+            std::stringstream ss;
+            ss << f.rdbuf();
+            auto j = crow::json::load(ss.str());
+            if (!j) return crow::response(500, "设置文件格式错误");
+
+            crow::json::wvalue result;
+
+            // 复制所有字段，但过滤密码信息
+            for (const auto& pair : j.keys()) {
+                std::string key(pair);
+                if (key != "admin_password" && key != "ncm_password" && key != "ncm_cookie") {
+                    result[key] = std::string(j[key].s());
+                } else {
+                    result[key] = "********";  // 模糊化敏感字段
+                }
+            }
+
+            // 添加运行时配置
+            result["allow_guest_skip_runtime"] = config_.allow_guest_skip;
+            result["station_name_runtime"] = config_.station_name;
+            result["subtitle_runtime"] = config_.subtitle;
+
+            // PWA配置
+            result["pwa_available"] = true;
+            result["pwa_version"] = "1.0.0";
+
             return crow::response(result);
         });
     }
