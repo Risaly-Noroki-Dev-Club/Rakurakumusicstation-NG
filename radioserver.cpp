@@ -828,10 +828,20 @@ private:
     void setup_routes() {
         // 音频流端点：接管底层 socket 并注册到广播器
         CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
-            // 对于音频流，我们不使用HTTP响应，而是保持连接打开
-            // StreamServer将在后台处理这个连接
-            res.write("Streaming audio...\n");
-            res.end();
+            if (!res.get_socket_fd_helper_) {
+                res.code = 500;
+                res.end("stream unavailable");
+                return;
+            }
+            int crow_fd = res.get_socket_fd_helper_();
+            int fd = ::dup(crow_fd);
+            if (fd < 0) {
+                res.code = 500;
+                res.end("dup failed");
+                return;
+            }
+            res.take_over();
+            stream_server_->add_client(fd);
         });
 
         // 主页 - 根据是否登录显示不同界面

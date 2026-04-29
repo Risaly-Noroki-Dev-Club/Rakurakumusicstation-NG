@@ -8,7 +8,17 @@ static const std::unordered_map<std::string, std::string> templates = {
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{STATION_NAME}}</title>
+
+    <!-- PWA相关配置 -->
+    <meta name="theme-color" content="{{PRIMARY_COLOR}}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="{{STATION_NAME}}">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/pwa-icon-192.png">
     <style>
         /* 接收后端传来的自定义颜色变量 */
         :root {
@@ -125,6 +135,80 @@ static const std::unordered_map<std::string, std::string> templates = {
             border: 1px solid var(--primary-color); transition: all 0.2s ease;
         }
         .admin-link:hover { background: var(--primary-color); color: white; }
+    /* 移动端响应式适配 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px 15px;
+                border-radius: 15px;
+            }
+
+            h1 {
+                font-size: 2.2em;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .player-section, .playlist-section {
+                padding: 20px 15px;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+
+            button {
+                width: 100%;
+                justify-content: center;
+                padding: 14px 20px;
+            }
+
+            #playlist {
+                grid-template-columns: 1fr;
+                max-height: 500px;
+            }
+
+            .stats {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .stat-box {
+                min-width: 100%;
+            }
+
+            #currentTrack {
+                text-align: center;
+                padding: 12px 15px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 15px 10px;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .subtitle {
+                font-size: 1em;
+            }
+
+            .player-section h2, .playlist-section h2 {
+                font-size: 1.2em;
+            }
+
+            audio {
+                height: 40px;
+            }
+
+            .track {
+                padding: 12px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -228,6 +312,59 @@ static const std::unordered_map<std::string, std::string> templates = {
 
         loadPlaylist(); loadStats();
         setInterval(loadPlaylist, 3000); setInterval(loadStats, 2000);
+
+        // PWA Service Worker 注册
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                try {
+                    const registration = await navigator.serviceWorker.register('/sw.js');
+                    console.log('Service Worker 注册成功:', registration);
+
+                    // 检查更新
+                    registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        console.log('发现 Service Worker 更新:', newWorker);
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                console.log('新 Service Worker 已安装，需要重新加载页面以激活');
+                                // 在此处可以显示更新提示
+                            }
+                        });
+                    });
+                } catch (error) {
+                    console.error('Service Worker 注册失败:', error);
+                }
+            });
+        }
+
+        // PWA 安装提示
+        let deferredPrompt;
+        const installButton = document.createElement('button');
+        installButton.textContent = '📱 安装应用';
+        installButton.style.cssText = 'position: fixed; bottom: 20px; right: 20px; z-index: 100; background: var(--primary-color); color: white; border: none; padding: 10px 15px; border-radius: 20px; cursor: pointer; display: none';
+
+        installButton.addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log(`安装结果: ${outcome}`);
+            deferredPrompt = null;
+            installButton.style.display = 'none';
+        });
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installButton.style.display = 'block';
+            document.body.appendChild(installButton);
+        });
+
+        window.addEventListener('appinstalled', () => {
+            console.log('PWA 已安装');
+            if (installButton.parentNode) {
+                installButton.parentNode.removeChild(installButton);
+            }
+        });
     </script>
 </body>
 </html>
@@ -238,7 +375,17 @@ static const std::unordered_map<std::string, std::string> templates = {
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{STATION_NAME}} - 管理面板</title>
+
+    <!-- PWA相关配置 -->
+    <meta name="theme-color" content="{{PRIMARY_COLOR}}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="{{STATION_NAME}}">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/pwa-icon-192.png">
     <style>
         /* 接收后端传来的自定义颜色变量 */
         :root {
@@ -635,6 +782,218 @@ static const std::unordered_map<std::string, std::string> templates = {
             word-break: break-all;
             display: none;
         }
+
+        /* 移动端响应式适配 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+            }
+
+            .admin-info {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .dashboard {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+
+            .controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .playlist-section {
+                overflow-x: auto;
+            }
+
+            .playlist-table {
+                min-width: 600px;
+            }
+
+            .playlist-table th,
+            .playlist-table td {
+                padding: 10px 8px;
+                font-size: 0.9em;
+            }
+
+            .playlist-actions button,
+            .upload-controls button,
+            .batch-actions button {
+                width: 100%;
+                margin-bottom: 8px;
+            }
+
+            .ncm-settings {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .card {
+                padding: 20px 15px;
+            }
+
+            .stat-value {
+                font-size: 2em;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header-left h1 {
+                font-size: 1.8em;
+            }
+
+            .card h2 {
+                font-size: 1.2em;
+            }
+
+            .logout-button,
+            .admin-badge {
+                font-size: 0.9em;
+                padding: 6px 12px;
+            }
+
+            .upload-section input[type="file"] {
+                padding: 10px;
+            }
+
+            #downloadLog {
+                font-size: 0.8em;
+                max-height: 200px;
+            }
+
+            .settings-section {
+                margin: 30px 0;
+            }
+
+            .settings-form {
+                background: white;
+                padding: 25px;
+                border-radius: 12px;
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            }
+
+            .settings-form .form-group {
+                margin-bottom: 20px;
+            }
+
+            .settings-form label {
+                display: block;
+                margin-bottom: 8px;
+                font-weight: 600;
+                color: #495057;
+            }
+
+            .settings-form input[type="text"],
+            .settings-form input[type="password"] {
+                width: 100%;
+                padding: 12px 15px;
+                border: 2px solid #e9ecef;
+                border-radius: 8px;
+                font-size: 1em;
+                transition: border-color 0.3s;
+                box-sizing: border-box;
+            }
+
+            .settings-form input[type="text"]:focus,
+            .settings-form input[type="password"]:focus {
+                border-color: var(--primary-color);
+                outline: none;
+            }
+
+            .color-group {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 15px;
+                align-items: center;
+            }
+
+            .color-group input[type="color"] {
+                width: 40px;
+                height: 40px;
+                border: 2px solid #e9ecef;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+
+            .color-group span {
+                font-size: 0.85em;
+                color: #6c757d;
+            }
+
+            .settings-form input[type="checkbox"] {
+                margin-right: 10px;
+            }
+
+            .form-actions {
+                display: flex;
+                gap: 15px;
+                margin-top: 25px;
+            }
+
+            .form-actions button {
+                padding: 12px 25px;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }
+
+            .form-actions .save-btn {
+                background: var(--primary-color);
+                color: white;
+            }
+
+            .form-actions .save-btn:hover {
+                background: var(--secondary-color);
+                transform: translateY(-2px);
+            }
+
+            .form-actions button:first-child {
+                background: #6c757d;
+                color: white;
+            }
+
+            .form-actions button:first-child:hover {
+                background: #5a6268;
+            }
+
+            .result-message {
+                margin-top: 20px;
+                padding: 12px;
+                border-radius: 6px;
+                display: none;
+            }
+
+            .result-message.success {
+                background: #d4edda;
+                color: #155724;
+                border: 1px solid #c3e6cb;
+                display: block;
+            }
+
+            .result-message.error {
+                background: #f8d7da;
+                color: #721c24;
+                border: 1px solid #f5c6cb;
+                display: block;
+            }
+
+            .result-message.info {
+                background: #d1ecf1;
+                color: #0c5460;
+                border: 1px solid #bee5eb;
+                display: block;
+            }
+        }
     </style>
 </head>
 <body>
@@ -737,6 +1096,44 @@ static const std::unordered_map<std::string, std::string> templates = {
             </div>
             <div id="downloadStatus"></div>
             <pre id="downloadLog"></pre>
+        </div>
+
+        <div class="settings-section">
+            <h2>⚙️ 系统设置</h2>
+            <div class="settings-form">
+                <div class="form-group">
+                    <label>站点名称:</label>
+                    <input type="text" id="stationName" placeholder="Rakuraku Music Station">
+                </div>
+                <div class="form-group">
+                    <label>副标题:</label>
+                    <input type="text" id="subtitle" placeholder="极简流媒体服务器">
+                </div>
+                <div class="form-group color-group">
+                    <label>主题颜色:</label>
+                    <input type="color" id="primaryColor" value="#764ba2">
+                    <span>主色</span>
+                    <input type="color" id="secondaryColor" value="#667eea">
+                    <span>次色</span>
+                    <input type="color" id="bgColor" value="#f4f4f9">
+                    <span>背景色</span>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="allowGuestSkip">
+                        允许游客切歌
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>管理员密码:</label>
+                    <input type="password" id="adminPassword" placeholder="留空则不修改密码">
+                </div>
+                <div class="form-actions">
+                    <button onclick="loadSettings()">加载设置</button>
+                    <button onclick="saveSettings()" class="save-btn">保存设置</button>
+                </div>
+                <div id="settingsResult" class="result-message"></div>
+            </div>
         </div>
 
         <div class="bottom-controls">
@@ -1028,11 +1425,98 @@ static const std::unordered_map<std::string, std::string> templates = {
             } catch (e) {}
         })();
 
+        // 加载设置
+        async function loadSettings() {
+            try {
+                const res = await fetch('/admin/settings/get');
+                if (!res.ok) {
+                    showSettingsMessage('加载设置失败', 'error');
+                    return;
+                }
+
+                const data = await res.json();
+                document.getElementById('stationName').value = data.station_name || 'Rakuraku Music Station';
+                document.getElementById('subtitle').value = data.subtitle || '极简流媒体服务器';
+                document.getElementById('primaryColor').value = data.primary_color || '#764ba2';
+                document.getElementById('secondaryColor').value = data.secondary_color || '#667eea';
+                document.getElementById('bgColor').value = data.bg_color || '#f4f4f9';
+                document.getElementById('allowGuestSkip').checked = data.allow_guest_skip || false;
+                document.getElementById('adminPassword').value = '';
+
+                showSettingsMessage('设置已加载', 'success');
+            } catch (error) {
+                console.error('加载设置失败:', error);
+                showSettingsMessage('加载设置失败: ' + error.message, 'error');
+            }
+        }
+
+        // 保存设置
+        async function saveSettings() {
+            try {
+                const settings = {
+                    station_name: document.getElementById('stationName').value.trim(),
+                    subtitle: document.getElementById('subtitle').value.trim(),
+                    primary_color: document.getElementById('primaryColor').value,
+                    secondary_color: document.getElementById('secondaryColor').value,
+                    bg_color: document.getElementById('bgColor').value,
+                    allow_guest_skip: document.getElementById('allowGuestSkip').checked
+                };
+
+                const password = document.getElementById('adminPassword').value.trim();
+                if (password) {
+                    settings.admin_password = password;
+                }
+
+                const res = await fetch('/admin/settings/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+
+                if (res.ok) {
+                    showSettingsMessage('设置保存成功！页面可能需要刷新才能完全生效', 'success');
+                } else {
+                    const text = await res.text();
+                    showSettingsMessage('保存失败: ' + text, 'error');
+                }
+            } catch (error) {
+                console.error('保存设置失败:', error);
+                showSettingsMessage('保存失败: ' + error.message, 'error');
+            }
+        }
+
+        // 显示设置消息
+        function showSettingsMessage(message, type) {
+            const el = document.getElementById('settingsResult');
+            el.textContent = message;
+            el.className = 'result-message ' + type;
+            el.style.display = 'block';
+
+            if (type === 'success') {
+                setTimeout(() => el.style.display = 'none', 5000);
+            }
+        }
+
+        // 页面加载完成后自动加载设置
+        loadSettings();
+
         loadPlaylist();
         loadStats();
         loadNcmStatus();
         setInterval(loadPlaylist, 3000);
         setInterval(loadStats, 2000);
+
+        // PWA Service Worker 注册
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                try {
+                    const registration = await navigator.serviceWorker.register('/sw.js');
+                    console.log('Service Worker 注册成功');
+                } catch (error) {
+                    console.error('Service Worker 注册失败:', error);
+                }
+            });
+        }
     </script>
 </body>
 </html>
@@ -1043,7 +1527,17 @@ static const std::unordered_map<std::string, std::string> templates = {
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>{{STATION_NAME}} - 管理员登录</title>
+
+    <!-- PWA相关配置 -->
+    <meta name="theme-color" content="{{PRIMARY_COLOR}}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="{{STATION_NAME}}">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="apple-touch-icon" href="/pwa-icon-192.png">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -1133,6 +1627,57 @@ static const std::unordered_map<std::string, std::string> templates = {
         .back-link a:hover {
             text-decoration: underline;
             color: {{SECONDARY_COLOR}};
+        }
+
+        /* 移动端响应式适配 */
+        @media (max-width: 768px) {
+            body {
+                padding: 15px;
+            }
+
+            .login-container {
+                padding: 30px 20px;
+                margin: 0 10px;
+            }
+
+            .logo h1 {
+                font-size: 1.8em;
+            }
+
+            .logo p {
+                font-size: 0.9em;
+            }
+
+            input[type="password"] {
+                padding: 14px 12px;
+                font-size: 1.1em;
+            }
+
+            .login-button {
+                padding: 16px;
+                font-size: 1.1em;
+            }
+        }
+
+        @media (max-width: 480px) {
+            body {
+                padding: 10px;
+            }
+
+            .login-container {
+                padding: 25px 15px;
+                margin: 0;
+                border-radius: 15px;
+            }
+
+            .logo h1 {
+                font-size: 1.6em;
+            }
+
+            input[type="password"],
+            .login-button {
+                font-size: 1em;
+            }
         }
     </style>
 </head>
