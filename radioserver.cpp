@@ -36,7 +36,6 @@ namespace fs = std::filesystem;
 // =============================================================================
 namespace Config {
     constexpr int WEB_PORT = 2240;
-    constexpr int STREAM_PORT = 2241;
     constexpr size_t BUFFER_CAPACITY = 512 * 1024;  // 512KB - for better streaming
     constexpr size_t AUDIO_CHUNK_SIZE = 16384;      // 16KB - improved chunk size
     constexpr int EPOLL_TIMEOUT_MS = 100;
@@ -248,7 +247,7 @@ private:
 class StreamServer {
 public:
     StreamServer(BroadcastBuffer* buffer)
-        : buffer_(buffer), running_(false), server_fd_(-1), epoll_fd_(-1),
+        : buffer_(buffer), running_(false), epoll_fd_(-1),
           broadcast_watch_pos_(0) {}
 
     ~StreamServer() {
@@ -258,53 +257,18 @@ public:
     bool start() {
         if (running_) return false;
 
-        // 创建服务器socket
-        server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-        if (server_fd_ < 0) {
-            perror("socket");
-            return false;
-        }
-
-        // 设置socket选项
-        int opt = 1;
-        if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-            perror("setsockopt");
-            close(server_fd_);
-            return false;
-        }
-
-        // 绑定到STREAM_PORT
-        struct sockaddr_in address;
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = INADDR_ANY;
-        address.sin_port = htons(Config::STREAM_PORT);
-
-        if (bind(server_fd_, (struct sockaddr*)&address, sizeof(address)) < 0) {
-            perror("bind");
-            close(server_fd_);
-            return false;
-        }
-
-        // 开始监听
-        if (listen(server_fd_, 16) < 0) {
-            perror("listen");
-            close(server_fd_);
-            return false;
-        }
-
         epoll_fd_ = epoll_create1(0);
         if (epoll_fd_ < 0) {
             perror("epoll_create1");
-            close(server_fd_);
             return false;
         }
 
         running_ = true;
         broadcast_watch_pos_ = buffer_->current_write_pos();
-        thread_ = std::thread(&StreamServer::accept_loop, this);
+        thread_ = std::thread(&StreamServer::worker_loop, this);
         broadcast_thread_ = std::thread(&StreamServer::broadcast_loop, this);
 
-        std::cout << "[Stream] Broadcaster started (serving at port " << Config::STREAM_PORT << ")" << std::endl;
+        std::cout << "[Stream] Broadcaster started (serving at /stream)" << std::endl;
         return true;
     }
 
@@ -312,12 +276,6 @@ public:
         if (!running_.exchange(false)) return;
 
         buffer_->wakeup_all();
-
-        // 关闭服务器socket以停止接受新连接
-        if (server_fd_ >= 0) {
-            close(server_fd_);
-            server_fd_ = -1;
-        }
 
         if (thread_.joinable()) thread_.join();
         if (broadcast_thread_.joinable()) broadcast_thread_.join();
@@ -378,13 +336,7 @@ public:
     }
 
 private:
-    void accept_loop() {
-        // 将服务器socket添加到epoll监视
-        struct epoll_event ev{};
-        ev.events = EPOLLIN;
-        ev.data.fd = server_fd_;
-        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_fd_, &ev);
-
+    void worker_loop() {
         epoll_event events[Config::MAX_EVENTS];
 
         while (running_) {
@@ -398,21 +350,7 @@ private:
             for (int i = 0; i < n; ++i) {
                 int fd = events[i].data.fd;
                 uint32_t events_mask = events[i].events;
-
-                // 服务器socket有新连接
-                if (fd == server_fd_ && (events_mask & EPOLLIN)) {
-                    struct sockaddr_in client_addr;
-                    socklen_t client_len = sizeof(client_addr);
-                    int client_fd = accept(server_fd_, (struct sockaddr*)&client_addr, &client_len);
-
-                    if (client_fd >= 0) {
-                        add_client(client_fd);
-                    } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                        perror("accept");
-                    }
-                }
-                // 客户端socket有事件
-                else if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
+                if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
                     remove_client(fd);
                 }
             }
@@ -491,7 +429,6 @@ private:
     std::thread thread_;
     std::thread broadcast_thread_;
 
-    int server_fd_;
     int epoll_fd_;
     size_t broadcast_watch_pos_;
 
@@ -889,21 +826,11 @@ private:
     }
     
     void setup_routes() {
-        // 音频流端点 - 重构说明
+        // 音频流端点：接管底层 socket 并注册到广播器
         CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
-            // 音频流现在通过专门的STREAM端口提供服务
-            // 这个端点返回JSON格式的指导信息
-
-            crow::json::wvalue result;
-            result["message"] = "Audio stream is available on a separate port.";
-            result["stream_protocol"] = "HTTP";
-            result["stream_port"] = ::Config::STREAM_PORT;
-            result["stream_url"] = "http://localhost:" + std::to_string(::Config::STREAM_PORT);
-            result["client_count"] = (int)stream_server_->client_count();
-            result["note"] = "Use this URL in media players like VLC, mpv, etc.";
-
-            res.set_header("Content-Type", "application/json");
-            res.write(result.dump());
+            // 对于音频流，我们不使用HTTP响应，而是保持连接打开
+            // StreamServer将在后台处理这个连接
+            res.write("Streaming audio...\n");
             res.end();
         });
 
