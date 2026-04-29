@@ -106,7 +106,7 @@ print_status "生成内嵌 HTML 模板..."
 python3 - <<'PYEOF'
 import os, sys
 
-files = ['index.html', 'panel.html', 'login.html']
+files = ['index.html', 'panel.html', 'login.html', 'manifest.json', 'sw.js']
 lines = [
     '#pragma once',
     '#include <string>',

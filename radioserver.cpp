@@ -825,7 +825,45 @@ private:
         return html_content;
     }
     
+    // 读取静态文件：磁盘优先（支持运行时替换），否则回落到内嵌模板
+    static std::string read_static_asset(const std::string& filename) {
+        for (const auto& path : {filename, "templates/" + filename}) {
+            std::ifstream f(path, std::ios::binary);
+            if (f.is_open()) {
+                std::stringstream ss;
+                ss << f.rdbuf();
+                return ss.str();
+            }
+        }
+        auto it = EmbeddedTemplates::templates.find(filename);
+        if (it != EmbeddedTemplates::templates.end()) return it->second;
+        return {};
+    }
+
     void setup_routes() {
+        // PWA manifest：需要替换 {{STATION_NAME}} 等占位符
+        CROW_ROUTE(app_, "/manifest.json")([this]() {
+            try {
+                crow::response res(render_template("manifest.json", {}, false));
+                res.set_header("Content-Type", "application/manifest+json; charset=utf-8");
+                res.set_header("Cache-Control", "public, max-age=3600");
+                return res;
+            } catch (const std::exception& e) {
+                return crow::response(404, std::string("manifest 不可用: ") + e.what());
+            }
+        });
+
+        // Service Worker：原样返回 JS，并允许其作用于根路径
+        CROW_ROUTE(app_, "/sw.js")([]() {
+            std::string body = read_static_asset("sw.js");
+            if (body.empty()) return crow::response(404, "sw.js 不可用");
+            crow::response res(body);
+            res.set_header("Content-Type", "application/javascript; charset=utf-8");
+            res.set_header("Service-Worker-Allowed", "/");
+            res.set_header("Cache-Control", "no-cache");
+            return res;
+        });
+
         // 音频流端点：接管底层 socket 并注册到广播器
         CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
             if (!res.get_socket_fd_helper_) {
@@ -1349,20 +1387,25 @@ private:
                 auto old_j = crow::json::load(raw);
                 crow::json::wvalue out;
 
-                // 保留现有所有设置
+                // 起点：完整复制现有 settings.json，仅更新请求中显式提供的字段
                 if (old_j) {
                     for (const auto& pair : old_j.keys()) {
                         std::string key(pair);
-                        // 只保留未知字段
-                        if (key != "station_name" && key != "subtitle" && key != "primary_color" &&
-                            key != "secondary_color" && key != "bg_color" && key != "admin_password" &&
-                            key != "allow_guest_skip" && key != "ncm_phone" && key != "ncm_password" && key != "ncm_cookie") {
-                            out[key] = std::string(old_j[key].s());
+                        switch (old_j[key].t()) {
+                            case crow::json::type::String:
+                                out[key] = std::string(old_j[key].s()); break;
+                            case crow::json::type::True:
+                            case crow::json::type::False:
+                                out[key] = old_j[key].b(); break;
+                            case crow::json::type::Number:
+                                out[key] = old_j[key].d(); break;
+                            default:
+                                break;
                         }
                     }
                 }
 
-                // 写入可以修改的设置
+                // 仅覆盖请求中显式提供的字段
                 if (j.has("station_name"))
                     out["station_name"] = std::string(j["station_name"].s());
 
@@ -1390,7 +1433,7 @@ private:
                 if (j.has("ncm_cookie"))
                     out["ncm_cookie"] = std::string(j["ncm_cookie"].s());
 
-                // 密码修改需要更多验证
+                // 密码字段非空才更新（避免空字符串误清空已有密码）
                 if (j.has("admin_password")) {
                     std::string new_password = std::string(j["admin_password"].s());
                     if (!new_password.empty()) {
@@ -1428,13 +1471,23 @@ private:
 
             crow::json::wvalue result;
 
-            // 复制所有字段，但过滤密码信息
+            // 复制所有字段，但过滤密码信息；按实际类型处理（避免对 bool 调 .s() 抛异常）
             for (const auto& pair : j.keys()) {
                 std::string key(pair);
-                if (key != "admin_password" && key != "ncm_password" && key != "ncm_cookie") {
-                    result[key] = std::string(j[key].s());
-                } else {
-                    result[key] = "********";  // 模糊化敏感字段
+                if (key == "admin_password" || key == "ncm_password" || key == "ncm_cookie") {
+                    result[key] = "********";
+                    continue;
+                }
+                switch (j[key].t()) {
+                    case crow::json::type::String:
+                        result[key] = std::string(j[key].s()); break;
+                    case crow::json::type::True:
+                    case crow::json::type::False:
+                        result[key] = j[key].b(); break;
+                    case crow::json::type::Number:
+                        result[key] = j[key].d(); break;
+                    default:
+                        break;
                 }
             }
 
