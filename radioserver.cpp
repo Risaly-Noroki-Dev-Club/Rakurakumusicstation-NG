@@ -526,9 +526,9 @@ private:
     void play_next_track() {
     pid_t child_pid = -1;
     int pipe_fd = -1;
+    size_t playlist_size = 0;
 
     try {
-        size_t playlist_size;
         std::string filename;
 
         {
@@ -659,7 +659,8 @@ private:
         // 这种情况下不应该自动递增current_track_，因为用户已经设置了新的索引
         if (!skip_track_ && running_) {
             // 只有当正常播放完成且没有用户干预时，才自动切换到下一首
-            (*current_track_)++;
+            // 用录制时的 playlist_size 取模，避免索引无限累积越界
+            current_track_->store((current_track_->load() + 1) % (playlist_size > 0 ? playlist_size : 1));
         }
         // 重置跳过标志，为下一轮播放做准备
         skip_track_ = false;
@@ -864,22 +865,12 @@ private:
             return res;
         });
 
-        // 音频流端点：接管底层 socket 并注册到广播器
-        CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
-            if (!res.get_socket_fd_helper_) {
-                res.code = 500;
-                res.end("stream unavailable");
-                return;
-            }
-            int crow_fd = res.get_socket_fd_helper_();
-            int fd = ::dup(crow_fd);
-            if (fd < 0) {
-                res.code = 500;
-                res.end("dup failed");
-                return;
-            }
-            res.take_over();
-            stream_server_->add_client(fd);
+        // 单端口模式下的流信息端点（实际音频流需要开启双端口模式）
+        CROW_ROUTE(app_, "/stream")([]() {
+            crow::json::wvalue result;
+            result["message"] = "单端口模式下音频流不可用，请在 settings.json 中启用 separate_stream_port";
+            result["stream_port"] = 2241;
+            return crow::response(result);
         });
 
         // 主页 - 根据是否登录显示不同界面
@@ -1005,7 +996,7 @@ private:
 
             // 返回文件名播放列表（向后兼容）
             result["playlist"] = *playlist_;
-            result["current"] = (int)current_track_->load();
+            result["current"] = playlist_->empty() ? 0 : (int)(current_track_->load() % playlist_->size());
 
             // 返回元数据播放列表
             std::vector<crow::json::wvalue> metadata_list;
@@ -1124,7 +1115,10 @@ private:
             if (index >= playlist_->size()) return crow::response{400, "索引超出范围"};
             
             playlist_->erase(playlist_->begin() + index);
-            
+            if (index < playlist_metadata_->size()) {
+                playlist_metadata_->erase(playlist_metadata_->begin() + index);
+            }
+
             // 调整当前播放索引
             size_t current = current_track_->load();
             if (current >= playlist_->size()) {
@@ -1133,7 +1127,8 @@ private:
                     audio_player_->skip_current_track();
                 }
             }
-            
+
+            save_playlist_order();
             return crow::response{200, "删除成功"};
         });
 
@@ -1280,6 +1275,7 @@ private:
                         playlist_metadata_->push_back(MetadataManager::extract_metadata(entry.path().string()));
                     }
                 }
+                save_playlist_order();
             }).detach();
 
             crow::json::wvalue result;
@@ -1672,6 +1668,7 @@ private:
                         audio_player_->skip_current_track();
                     }
 
+                    save_playlist_order();
                     return crow::response(200, "上传成功: " + filename);
                 }
             }
@@ -1728,6 +1725,26 @@ private:
         if (session_id.empty()) return false;
         auto session = session_manager_->get_session(session_id);
         return session && session->is_admin;
+    }
+
+    // 持有 playlist_mutex_ 时调用，将当前播放列表顺序写入 playlist_order.json
+    void save_playlist_order() {
+        std::ofstream f("playlist_order.json");
+        if (!f.is_open()) return;
+        f << "[";
+        bool first = true;
+        for (const auto& name : *playlist_) {
+            if (!first) f << ",";
+            f << "\"";
+            for (char c : name) {
+                if (c == '"')  f << "\\\"";
+                else if (c == '\\') f << "\\\\";
+                else f << c;
+            }
+            f << "\"";
+            first = false;
+        }
+        f << "]";
     }
 };
 
@@ -1822,49 +1839,67 @@ private:
     void init_playlist() {
         std::lock_guard<std::mutex> lock(playlist_mutex_);
 
-        // 创建media目录
         fs::create_directories("./media");
 
-        // 扫描音频文件
-        try {
-            for (const auto& entry : fs::directory_iterator("./media")) {
-                if (entry.is_regular_file()) {
-                    std::string filename = entry.path().filename().string();
-                    std::string ext = fs::path(filename).extension();
-                    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-                    for (const auto& supported_ext : Config::SUPPORTED_FORMATS) {
-                        if (ext == supported_ext) {
-                            // 添加到文件名播放列表（向后兼容）
-                            playlist_.push_back(filename);
-
-                            // 提取元数据并添加到元数据播放列表
-                            std::string file_path = "./media/" + filename;
-                            TrackMetadata metadata = MetadataManager::extract_metadata(file_path);
-                            playlist_metadata_.push_back(metadata);
-
-                            break;
-                        }
-                    }
+        // 读取上次保存的播放顺序
+        std::vector<std::string> saved_order;
+        {
+            std::ifstream f("playlist_order.json");
+            if (f.is_open()) {
+                std::stringstream ss;
+                ss << f.rdbuf();
+                auto j = crow::json::load(ss.str());
+                if (j && j.t() == crow::json::type::List) {
+                    for (size_t i = 0; i < j.size(); ++i)
+                        saved_order.push_back(std::string(j[i].s()));
                 }
             }
+        }
 
-            std::sort(playlist_.begin(), playlist_.end());
-
-            if (!playlist_.empty()) {
-                // 随机选择起始曲目
-                std::random_device rd;
-                std::mt19937 gen(rd());
-                std::uniform_int_distribution<> dis(0, playlist_.size() - 1);
-                current_track_ = dis(gen);
+        // 扫描 media 目录，得到当前可用文件集合
+        std::set<std::string> available;
+        try {
+            for (const auto& entry : fs::directory_iterator("./media")) {
+                if (!entry.is_regular_file()) continue;
+                std::string filename = entry.path().filename().string();
+                std::string ext = fs::path(filename).extension();
+                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+                for (const auto& supported_ext : Config::SUPPORTED_FORMATS) {
+                    if (ext == supported_ext) { available.insert(filename); break; }
+                }
             }
-
-            std::cout << "[Init] 在 ./media/ 目录中找到 " << playlist_.size() << " 个音频文件" << std::endl;
-            std::cout << "[Init] 已提取 " << playlist_metadata_.size() << " 个文件的元数据" << std::endl;
-
         } catch (const fs::filesystem_error& e) {
             std::cerr << "[Init] 扫描目录时出错: " << e.what() << std::endl;
         }
+
+        // 按已保存顺序排列，已删除的文件跳过；未在列表中的新文件按字母顺序追加末尾
+        std::vector<std::string> ordered;
+        std::set<std::string> seen;
+        for (const auto& fname : saved_order) {
+            if (available.count(fname)) { ordered.push_back(fname); seen.insert(fname); }
+        }
+        std::vector<std::string> new_files;
+        for (const auto& fname : available) {
+            if (!seen.count(fname)) new_files.push_back(fname);
+        }
+        std::sort(new_files.begin(), new_files.end());
+        for (const auto& fname : new_files) ordered.push_back(fname);
+
+        // 同步构建两个并行向量，保证索引一一对应
+        for (const auto& fname : ordered) {
+            playlist_.push_back(fname);
+            playlist_metadata_.push_back(MetadataManager::extract_metadata("./media/" + fname));
+        }
+
+        if (!playlist_.empty()) {
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::uniform_int_distribution<> dis(0, playlist_.size() - 1);
+            current_track_ = dis(gen);
+        }
+
+        std::cout << "[Init] 在 ./media/ 目录中找到 " << playlist_.size() << " 个音频文件" << std::endl;
+        std::cout << "[Init] 已提取 " << playlist_metadata_.size() << " 个文件的元数据" << std::endl;
     }
     
     BroadcastBuffer buffer_{Config::BUFFER_CAPACITY};
