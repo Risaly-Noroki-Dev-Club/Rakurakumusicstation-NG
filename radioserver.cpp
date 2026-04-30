@@ -36,7 +36,6 @@ namespace fs = std::filesystem;
 // =============================================================================
 namespace Config {
     constexpr int WEB_PORT = 2240;
-    constexpr int STREAM_PORT = 2241;
     constexpr size_t BUFFER_CAPACITY = 512 * 1024;  // 512KB - for better streaming
     constexpr size_t AUDIO_CHUNK_SIZE = 16384;      // 16KB - improved chunk size
     constexpr int EPOLL_TIMEOUT_MS = 100;
@@ -248,12 +247,8 @@ private:
 class StreamServer {
 public:
     StreamServer(BroadcastBuffer* buffer)
-        : buffer_(buffer), running_(false), server_fd_(-1), epoll_fd_(-1),
-          broadcast_watch_pos_(0), separate_port_(false) {}
-
-    StreamServer(BroadcastBuffer* buffer, bool separate_port)
-        : buffer_(buffer), running_(false), server_fd_(-1), epoll_fd_(-1),
-          broadcast_watch_pos_(0), separate_port_(separate_port) {}
+        : buffer_(buffer), running_(false), epoll_fd_(-1),
+          broadcast_watch_pos_(0) {}
 
     ~StreamServer() {
         stop();
@@ -270,64 +265,10 @@ public:
 
         running_ = true;
         broadcast_watch_pos_ = buffer_->current_write_pos();
-
-        // 根据配置决定是否启动独立的 accept_loop
-        if (separate_port_) {
-            // 双端口模式：创建独立的服务器socket
-            server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-            if (server_fd_ < 0) {
-                perror("socket");
-                close(epoll_fd_);
-                epoll_fd_ = -1;
-                running_ = false;
-                return false;
-            }
-
-            int opt = 1;
-            if (setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-                perror("setsockopt");
-                close(server_fd_);
-                server_fd_ = -1;
-                close(epoll_fd_);
-                epoll_fd_ = -1;
-                running_ = false;
-                return false;
-            }
-
-            struct sockaddr_in address;
-            address.sin_family = AF_INET;
-            address.sin_addr.s_addr = INADDR_ANY;
-            address.sin_port = htons(Config::STREAM_PORT);
-
-            if (bind(server_fd_, (struct sockaddr*)&address, sizeof(address)) < 0) {
-                perror("bind");
-                close(server_fd_);
-                server_fd_ = -1;
-                close(epoll_fd_);
-                epoll_fd_ = -1;
-                running_ = false;
-                return false;
-            }
-
-            if (listen(server_fd_, 16) < 0) {
-                perror("listen");
-                close(server_fd_);
-                server_fd_ = -1;
-                close(epoll_fd_);
-                epoll_fd_ = -1;
-                running_ = false;
-                return false;
-            }
-
-            thread_ = std::thread(&StreamServer::accept_loop, this);
-            std::cout << "[Stream] Broadcaster started (separate port " << Config::STREAM_PORT << ")" << std::endl;
-        } else {
-            // 单端口模式：不进行 accept/bind，只管理客户端连接和广播
-            server_fd_ = -1;
-            std::cout << "[Stream] Broadcaster started (will use single port mode)" << std::endl;
-        }
-
+        thread_ = std::thread(&StreamServer::worker_loop, this);
         broadcast_thread_ = std::thread(&StreamServer::broadcast_loop, this);
+
+        std::cout << "[Stream] Broadcaster started (serving at /stream)" << std::endl;
         return true;
     }
 
@@ -335,12 +276,6 @@ public:
         if (!running_.exchange(false)) return;
 
         buffer_->wakeup_all();
-
-        // 关闭服务器socket以停止接受新连接（双端口模式）
-        if (server_fd_ >= 0) {
-            close(server_fd_);
-            server_fd_ = -1;
-        }
 
         if (thread_.joinable()) thread_.join();
         if (broadcast_thread_.joinable()) broadcast_thread_.join();
@@ -401,13 +336,7 @@ public:
     }
 
 private:
-    void accept_loop() {
-        // 将服务器socket添加到epoll监视
-        struct epoll_event ev{};
-        ev.events = EPOLLIN;
-        ev.data.fd = server_fd_;
-        epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_fd_, &ev);
-
+    void worker_loop() {
         epoll_event events[Config::MAX_EVENTS];
 
         while (running_) {
@@ -421,21 +350,7 @@ private:
             for (int i = 0; i < n; ++i) {
                 int fd = events[i].data.fd;
                 uint32_t events_mask = events[i].events;
-
-                // 服务器socket有新连接
-                if (fd == server_fd_ && (events_mask & EPOLLIN)) {
-                    struct sockaddr_in client_addr;
-                    socklen_t client_len = sizeof(client_addr);
-                    int client_fd = accept(server_fd_, (struct sockaddr*)&client_addr, &client_len);
-
-                    if (client_fd >= 0) {
-                        add_client(client_fd);
-                    } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                        perror("accept");
-                    }
-                }
-                // 客户端socket有事件
-                else if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
+                if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
                     remove_client(fd);
                 }
             }
@@ -514,10 +429,8 @@ private:
     std::thread thread_;
     std::thread broadcast_thread_;
 
-    int server_fd_;
     int epoll_fd_;
     size_t broadcast_watch_pos_;
-    bool separate_port_;  // 是否使用独立端口
 
     mutable std::mutex clients_mutex_;
     std::unordered_map<int, std::shared_ptr<ClientConnection>> clients_;
@@ -756,14 +669,6 @@ private:
 // =============================================================================
 // Web服务器管理器
 // =============================================================================
-// 单端口模式流式传输上下文
-struct StreamContext {
-    BroadcastBuffer* buffer = nullptr;
-    std::atomic<bool> running{false};
-    size_t consume_pos = 0;
-    std::thread sender_thread;
-};
-
 // =============================================================================
 // Web服务器管理器（更新版，整合认证系统）
 // =============================================================================
@@ -771,7 +676,6 @@ class WebServer {
 public:
     struct Config {
         bool allow_guest_skip = false;  // 是否允许游客切歌
-        bool separate_stream_port = false;  // 是否使用独立端口 (false: 单端口模式, true: 双端口模式)
         std::string admin_password = "";
         std::string station_name = "我的音乐电台";
         std::string subtitle = "极简流媒体服务器";
@@ -781,7 +685,7 @@ public:
         static constexpr int WEB_PORT = 2240;
         static const std::vector<std::string> SUPPORTED_FORMATS;
         static constexpr size_t MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
-
+        
         static Config load_from_settings() {
             Config config;
             std::ifstream conf_file("settings.json");
@@ -790,21 +694,19 @@ public:
                 ss << conf_file.rdbuf();
                 auto j = crow::json::load(ss.str());
                 if (j) {
-                    if (j.has("allow_guest_skip"))
+                    if (j.has("allow_guest_skip")) 
                         config.allow_guest_skip = j["allow_guest_skip"].b();
-                    if (j.has("separate_stream_port"))
-                        config.separate_stream_port = j["separate_stream_port"].b();
-                    if (j.has("admin_password"))
+                    if (j.has("admin_password")) 
                         config.admin_password = j["admin_password"].s();
-                    if (j.has("station_name"))
+                    if (j.has("station_name")) 
                         config.station_name = j["station_name"].s();
-                    if (j.has("subtitle"))
+                    if (j.has("subtitle")) 
                         config.subtitle = j["subtitle"].s();
-                    if (j.has("primary_color"))
+                    if (j.has("primary_color")) 
                         config.primary_color = j["primary_color"].s();
-                    if (j.has("secondary_color"))
+                    if (j.has("secondary_color")) 
                         config.secondary_color = j["secondary_color"].s();
-                    if (j.has("bg_color"))
+                    if (j.has("bg_color")) 
                         config.bg_color = j["bg_color"].s();
                 }
             }
@@ -923,38 +825,62 @@ private:
         return html_content;
     }
     
-    void setup_routes() {
-        // 音频流端点 - 根据配置决定行为
-        if (config_.separate_stream_port) {
-            // 双端口模式：返回JSON信息，指导用户使用独立端口
-            CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
-                crow::json::wvalue result;
-                result["message"] = "Audio stream is available on a separate port.";
-                result["stream_protocol"] = "HTTP";
-                result["stream_port"] = ::Config::STREAM_PORT;
-                result["stream_url"] = "http://localhost:" + std::to_string(::Config::STREAM_PORT);
-                result["client_count"] = (int)stream_server_->client_count();
-                result["note"] = "Use this URL in media players like VLC, mpv, etc.";
-
-                res.set_header("Content-Type", "application/json");
-                res.write(result.dump());
-                res.end();
-            });
-        } else {
-            // 单端口模式：返回配置信息
-            // 完整的流式传输需要支持分块传输编码和连接管理
-            CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
-                crow::json::wvalue result;
-                result["message"] = "Single port mode";
-                result["note"] = "Set separate_stream_port=true in settings.json for dual-port mode";
-                result["client_count"] = (int)stream_server_->client_count();
-                result["mode"] = "single_port";
-
-                res.set_header("Content-Type", "application/json");
-                res.write(result.dump());
-                res.end();
-            });
+    // 读取静态文件：磁盘优先（支持运行时替换），否则回落到内嵌模板
+    static std::string read_static_asset(const std::string& filename) {
+        for (const auto& path : {filename, "templates/" + filename}) {
+            std::ifstream f(path, std::ios::binary);
+            if (f.is_open()) {
+                std::stringstream ss;
+                ss << f.rdbuf();
+                return ss.str();
+            }
         }
+        auto it = EmbeddedTemplates::templates.find(filename);
+        if (it != EmbeddedTemplates::templates.end()) return it->second;
+        return {};
+    }
+
+    void setup_routes() {
+        // PWA manifest：需要替换 {{STATION_NAME}} 等占位符
+        CROW_ROUTE(app_, "/manifest.json")([this]() {
+            try {
+                crow::response res(render_template("manifest.json", {}, false));
+                res.set_header("Content-Type", "application/manifest+json; charset=utf-8");
+                res.set_header("Cache-Control", "public, max-age=3600");
+                return res;
+            } catch (const std::exception& e) {
+                return crow::response(404, std::string("manifest 不可用: ") + e.what());
+            }
+        });
+
+        // Service Worker：原样返回 JS，并允许其作用于根路径
+        CROW_ROUTE(app_, "/sw.js")([]() {
+            std::string body = read_static_asset("sw.js");
+            if (body.empty()) return crow::response(404, "sw.js 不可用");
+            crow::response res(body);
+            res.set_header("Content-Type", "application/javascript; charset=utf-8");
+            res.set_header("Service-Worker-Allowed", "/");
+            res.set_header("Cache-Control", "no-cache");
+            return res;
+        });
+
+        // 音频流端点：接管底层 socket 并注册到广播器
+        CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
+            if (!res.get_socket_fd_helper_) {
+                res.code = 500;
+                res.end("stream unavailable");
+                return;
+            }
+            int crow_fd = res.get_socket_fd_helper_();
+            int fd = ::dup(crow_fd);
+            if (fd < 0) {
+                res.code = 500;
+                res.end("dup failed");
+                return;
+            }
+            res.take_over();
+            stream_server_->add_client(fd);
+        });
 
         // 主页 - 根据是否登录显示不同界面
         CROW_ROUTE(app_, "/")([this](const crow::request& req) {
@@ -1461,21 +1387,25 @@ private:
                 auto old_j = crow::json::load(raw);
                 crow::json::wvalue out;
 
-                // 保留现有所有设置
+                // 起点：完整复制现有 settings.json，仅更新请求中显式提供的字段
                 if (old_j) {
                     for (const auto& pair : old_j.keys()) {
                         std::string key(pair);
-                        // 只保留未知字段
-                        if (key != "station_name" && key != "subtitle" && key != "primary_color" &&
-                            key != "secondary_color" && key != "bg_color" && key != "admin_password" &&
-                            key != "allow_guest_skip" && key != "separate_stream_port" &&
-                            key != "ncm_phone" && key != "ncm_password" && key != "ncm_cookie") {
-                            out[key] = std::string(old_j[key].s());
+                        switch (old_j[key].t()) {
+                            case crow::json::type::String:
+                                out[key] = std::string(old_j[key].s()); break;
+                            case crow::json::type::True:
+                            case crow::json::type::False:
+                                out[key] = old_j[key].b(); break;
+                            case crow::json::type::Number:
+                                out[key] = old_j[key].d(); break;
+                            default:
+                                break;
                         }
                     }
                 }
 
-                // 写入可以修改的设置
+                // 仅覆盖请求中显式提供的字段
                 if (j.has("station_name"))
                     out["station_name"] = std::string(j["station_name"].s());
 
@@ -1494,9 +1424,6 @@ private:
                 if (j.has("allow_guest_skip"))
                     out["allow_guest_skip"] = j["allow_guest_skip"].b();
 
-                if (j.has("separate_stream_port"))
-                    out["separate_stream_port"] = j["separate_stream_port"].b();
-
                 if (j.has("ncm_phone"))
                     out["ncm_phone"] = std::string(j["ncm_phone"].s());
 
@@ -1506,7 +1433,7 @@ private:
                 if (j.has("ncm_cookie"))
                     out["ncm_cookie"] = std::string(j["ncm_cookie"].s());
 
-                // 密码修改需要更多验证
+                // 密码字段非空才更新（避免空字符串误清空已有密码）
                 if (j.has("admin_password")) {
                     std::string new_password = std::string(j["admin_password"].s());
                     if (!new_password.empty()) {
@@ -1544,19 +1471,28 @@ private:
 
             crow::json::wvalue result;
 
-            // 复制所有字段，但过滤密码信息
+            // 复制所有字段，但过滤密码信息；按实际类型处理（避免对 bool 调 .s() 抛异常）
             for (const auto& pair : j.keys()) {
                 std::string key(pair);
-                if (key != "admin_password" && key != "ncm_password" && key != "ncm_cookie") {
-                    result[key] = std::string(j[key].s());
-                } else {
-                    result[key] = "********";  // 模糊化敏感字段
+                if (key == "admin_password" || key == "ncm_password" || key == "ncm_cookie") {
+                    result[key] = "********";
+                    continue;
+                }
+                switch (j[key].t()) {
+                    case crow::json::type::String:
+                        result[key] = std::string(j[key].s()); break;
+                    case crow::json::type::True:
+                    case crow::json::type::False:
+                        result[key] = j[key].b(); break;
+                    case crow::json::type::Number:
+                        result[key] = j[key].d(); break;
+                    default:
+                        break;
                 }
             }
 
             // 添加运行时配置
             result["allow_guest_skip_runtime"] = config_.allow_guest_skip;
-            result["separate_stream_port_runtime"] = config_.separate_stream_port;
             result["station_name_runtime"] = config_.station_name;
             result["subtitle_runtime"] = config_.subtitle;
 
@@ -1732,7 +1668,7 @@ private:
     crow::App<> app_;
     std::thread thread_;
     std::atomic<bool> running_;
-
+    
     // 其他成员变量保持不变
     std::vector<std::string>* playlist_;
     std::vector<TrackMetadata>* playlist_metadata_;
@@ -1740,10 +1676,6 @@ private:
     StreamServer* stream_server_;
     AudioPlayer* audio_player_;
     std::mutex* playlist_mutex_;
-
-    // 单端口模式流管理
-    std::mutex stream_mutex_;
-    std::unordered_map<crow::response*, std::shared_ptr<StreamContext>> active_streams_;
 
     std::atomic<bool> dl_running_{false};
     std::mutex dl_mutex_;
@@ -1790,8 +1722,6 @@ public:
     RadioServer() {
         // 初始化播放列表
         init_playlist();
-        // 提前读取配置
-        web_config_ = WebServer::Config::load_from_settings();
     }
     
     ~RadioServer() {
@@ -1808,8 +1738,8 @@ public:
         
         // 启动各个组件
         bool success = true;
-
-        stream_server_ = std::make_unique<StreamServer>(&buffer_, web_config_.separate_stream_port);
+        
+        stream_server_ = std::make_unique<StreamServer>(&buffer_);
         audio_player_ = std::make_unique<AudioPlayer>(&buffer_, &playlist_, &current_track_, &playlist_mutex_);
         web_server_   = std::make_unique<WebServer>(&playlist_, &playlist_metadata_, &current_track_,
                                                     stream_server_.get(), audio_player_.get(), &playlist_mutex_);
@@ -1823,19 +1753,10 @@ public:
             std::cout << "\n"
                 "╔══════════════════════════════════════════╗\n"
                 "║        服务器启动成功！                 ║\n"
-                "║                                          ║\n";
-            if (web_config_.separate_stream_port) {
-                std::cout << "║  模式: 双端口 (STREAM_PORT=" << Config::STREAM_PORT << ") ║\n"
-                    "║                                          ║\n"
-                    "║  Web界面: http://localhost:" << Config::WEB_PORT << "     ║\n"
-                    "║  流媒体:  http://localhost:" << Config::STREAM_PORT << "   ║\n";
-            } else {
-                std::cout << "║  模式: 单端口 (PORT=" << Config::WEB_PORT << ")     ║\n"
-                    "║                                          ║\n"
-                    "║  Web界面: http://localhost:" << Config::WEB_PORT << "     ║\n"
-                    "║  流媒体:  http://localhost:" << Config::WEB_PORT << "/stream ║\n";
-            }
-            std::cout << "║                                          ║\n"
+                "║                                          ║\n"
+                "║  Web界面: http://localhost:" << Config::WEB_PORT << "     ║\n"
+                "║  流媒体:  http://localhost:" << Config::WEB_PORT << "/stream ║\n"
+                "║                                          ║\n"
                 "║  按 Ctrl+C 停止服务器                  ║\n"
                 "╚══════════════════════════════════════════╝\n" << std::endl;
         }
@@ -1935,8 +1856,7 @@ private:
     std::unique_ptr<StreamServer> stream_server_;
     std::unique_ptr<AudioPlayer> audio_player_;
     std::unique_ptr<WebServer> web_server_;
-    WebServer::Config web_config_;  // 存储配置信息
-
+    
     std::atomic<bool> running_{false};
     std::atomic<bool> stopped_{false};
 };

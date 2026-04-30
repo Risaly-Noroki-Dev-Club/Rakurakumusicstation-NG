@@ -1,11 +1,14 @@
-Rakuraku Music Station 以电台的方式，将同一路音频流推送给所有连接的听众。由 `ffmpeg` 驱动的单一解码器向线程安全的环形缓冲区写入数据，Linux `epoll` 循环把字节分发到 HTTP 客户端；基于 Crow 的 Web 面板负责播放列表管理、上传与播控。
+# 🎵 Rakuraku Music Station NG
 
-**端口配置：**
-- **单端口模式**（默认）：所有服务监听第 2240 端口
-- **双端口模式**：Web/API 在 2240 端口，音频流在 2241 端口
+A lightweight, high-performance C++ streaming broadcast server for low-latency audio distribution, with a built-in web admin panel.
 
-可通过 `settings.json` 中的 `separate_stream_port` 设置切换模式——无需重新编译。
+一个轻量级、高性能的 C++ 流媒体广播服务器，支持低延迟音频分发，内置 Web 管理面板。
 
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg)
+![C++](https://img.shields.io/badge/C++-17-orange.svg)
+
+**Languages / 语言**: [English](#english) · [中文](#中文)
 
 ## ✨ About "NG"
 
@@ -17,13 +20,7 @@ Rakuraku Music Station 以电台的方式，将同一路音频流推送给所有
 
 ### Overview
 
-Rakuraku Music Station broadcasts the same audio stream to every connected listener, radio-style. A single `ffmpeg`-backed decoder feeds a thread-safe ring buffer, and a Linux `epoll` loop fans the bytes out to HTTP clients. The Crow-based web panel handles playlist management, uploads, and playback control.
-
-**Port Configuration:**
-- **Single-port mode** (default): All services listen on port 2240
-- **Dual-port mode**: Web/API on 2240, audio stream on 2241
-
-Switch modes via the `separate_stream_port` setting in `settings.json` — no recompilation needed.
+Rakuraku Music Station broadcasts the same audio stream to every connected listener, radio-style. A single `ffmpeg`-backed decoder feeds a thread-safe ring buffer, and a Linux `epoll` loop fans the bytes out to HTTP clients on port **2241**. The Crow-based web panel on port **2240** handles playlist management, uploads, and playback control.
 
 ### Features
 
@@ -59,16 +56,12 @@ cp /path/to/music/*.mp3 dist/media/
 # Run
 cd dist
 ./start.sh
+```
 
 Then open:
 
-- Web admin: http://localhost:2240
-
-**Audio stream**: either
-- Single-port mode (default): http://localhost:2240/stream
-- Dual-port mode: http://localhost:2241
-
-To switch modes, edit `settings.json` and set `separate_stream_port` to `true` (dual-port) or `false` (single-port), then restart.
+- Web admin: <http://localhost:2240>
+- Audio stream: <http://localhost:2241> (VLC, browsers, any HTTP-capable player)
 
 Stop with `./stop.sh`.
 
@@ -116,7 +109,6 @@ g++ radioserver.cpp metadata.cpp -o radioserver \
     "ncm_cookie": ""
 }
 ```
-    "separate_stream_port": false,
 
 - `admin_password` — falls back to `admin123` if unset. **Change it in production.**
 - `allow_guest_skip` — if `true`, unauthenticated clients can POST `/api/next`, `/api/prev`, and `/api/play/<idx>`.
@@ -252,6 +244,17 @@ MIT — see [LICENSE](LICENSE).
 
 ### 概述
 
+Rakuraku Music Station 以电台的方式，将同一路音频流推送给所有连接的听众。由 `ffmpeg` 驱动的单一解码器向线程安全的环形缓冲区写入数据，Linux `epoll` 循环把字节分发到 **2241** 端口上的 HTTP 客户端；**2240** 端口上基于 Crow 的 Web 面板负责播放列表管理、上传与播控。
+
+### ✨ 关于 "NG"
+
+**"NG" 代表 "Nijika Generation" (虹夏世代)** - 向《孤独摇滚！》中的伊地知虹夏致敬，体现了项目分享音乐快乐的理念。
+
+### 特性
+
+- **高性能** — 基于 `epoll` 的非阻塞 I/O，一个线程即可承载大量并发听众。
+- **电台式广播** — 单一解码器写入共享环形缓冲区，所有客户端同步听到同一路流。
+- **多格式支持** — 通过 FFmpeg 支持 MP3、WAV、FLAC、OGG、M4A、AAC。
 - **热重载播放列表** — 上传文件后立即出现在播放列表中，无需重启。
 - **元数据 / 封面 / 歌词 API** — 按曲目提供标题、艺术家、时长、内嵌封面和歌词接口。
 - **会话认证** — 基于 Cookie 的管理员会话，可选开放游客切歌权限。
@@ -285,14 +288,10 @@ cd dist
 
 访问：
 
-- Web 管理：http://localhost:2240
+- Web 管理：<http://localhost:2240>
+- 音频流：<http://localhost:2241>（VLC、浏览器或任意支持 HTTP 的播放器）
 
-**音频流**: 
-- 单端口模式（默认）: http://localhost:2240/stream
-- 双端口模式: http://localhost:2241
-
-要切换模式，编辑 `settings.json` 将 `separate_stream_port` 设为 `true`（双端口）或 `false`（单端口），然后重启服务器。
-
+使用 `./stop.sh` 停止服务。
 
 ### 智能构建流程
 
