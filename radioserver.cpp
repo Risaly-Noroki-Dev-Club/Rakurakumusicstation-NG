@@ -902,7 +902,9 @@ private:
                     return crow::response(render_template("panel.html", admin_context, true));
                 } else {
                     // 普通用户显示收听界面
-                    return crow::response(render_template("index.html", {}, false));
+                    return crow::response(render_template("index.html", {
+                        {"ALLOW_GUEST_SKIP", config_.allow_guest_skip ? "true" : "false"}
+                    }, false));
                 }
             } catch (const std::exception& e) {
                 // 如果模板不存在，返回错误
@@ -1441,13 +1443,31 @@ private:
                     }
                 }
 
-                // 保存到文件
-                std::ofstream f("settings.json");
-                if (!f) return crow::response(500, "无法保存设置");
-                f << out.dump(4);
+                // 保存到文件，用独立作用域确保 ofstream 析构（flush+close）后再更新内存
+                {
+                    std::ofstream f("settings.json");
+                    if (!f) return crow::response(500, "无法保存设置");
+                    f << out.dump(4);
+                } // f 在此处关闭并 flush
 
-                // 重新加载配置（不重启服务器）
-                config_ = Config::load_from_settings();
+                // 直接用已验证的请求字段更新内存配置，避免重读文件时缓冲区未落盘的问题
+                if (j.has("station_name"))
+                    config_.station_name = std::string(j["station_name"].s());
+                if (j.has("subtitle"))
+                    config_.subtitle = std::string(j["subtitle"].s());
+                if (j.has("primary_color"))
+                    config_.primary_color = std::string(j["primary_color"].s());
+                if (j.has("secondary_color"))
+                    config_.secondary_color = std::string(j["secondary_color"].s());
+                if (j.has("bg_color"))
+                    config_.bg_color = std::string(j["bg_color"].s());
+                if (j.has("allow_guest_skip"))
+                    config_.allow_guest_skip = j["allow_guest_skip"].b();
+                if (j.has("admin_password")) {
+                    std::string new_password = std::string(j["admin_password"].s());
+                    if (!new_password.empty())
+                        config_.admin_password = new_password;
+                }
 
                 return crow::response(200, "设置已保存");
             } catch (const std::exception& e) {

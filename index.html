@@ -218,7 +218,7 @@
                 <source src="/stream" type="audio/mpeg">
             </audio>
             <div class="controls">
-                <button onclick="playNext()">⏭️ 下一首</button>
+                <button id="nextBtn" onclick="playNext()">⏭️ 下一首</button>
                 <div id="currentTrack">正在加载播放列表...</div>
             </div>
         </section>
@@ -241,36 +241,51 @@
     </div>
 
     <script>
-        // JS 逻辑保持完全不变
+        const allowGuestSkip = {{ALLOW_GUEST_SKIP}};
+
         document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("player").src = "/stream";
+            if (!allowGuestSkip) {
+                document.getElementById('nextBtn').style.display = 'none';
+            }
         });
-        
+
         async function loadPlaylist() {
             try {
                 const response = await fetch('/api/playlist');
                 const data = await response.json();
                 const playlist = data.playlist || [];
+                const metadata = data.metadata || [];
                 const currentIndex = data.current || 0;
-                
+
                 let currentTrackIndex = playlist.length > 0 ? currentIndex % playlist.length : 0;
                 let totalTracks = playlist.length;
-                
-                document.getElementById('currentTrack').textContent = playlist.length > 0 ? `正在播放: ${playlist[currentTrackIndex]}` : '播放列表为空';
+
+                const currentMeta = metadata[currentTrackIndex];
+                const currentDisplay = currentMeta
+                    ? (currentMeta.artist ? `${currentMeta.artist} - ${currentMeta.title}` : currentMeta.title)
+                    : (playlist[currentTrackIndex] || '');
+
+                document.getElementById('currentTrack').textContent = playlist.length > 0 ? `正在播放: ${currentDisplay}` : '播放列表为空';
                 document.getElementById('trackCount').textContent = totalTracks;
                 document.getElementById('totalTracks').textContent = totalTracks;
                 document.getElementById('currentIndex').textContent = playlist.length > 0 ? currentTrackIndex + 1 : '-';
-                
+
                 let html = '';
                 if (playlist.length === 0) {
                     html = '<div style="text-align: center; padding: 40px; color: #6c757d;"><div>播放列表为空，请上传音乐文件</div></div>';
                 } else {
-                    playlist.forEach((track, index) => {
+                    const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
+                    tracks.forEach((track, index) => {
                         const isCurrent = index === currentTrackIndex;
+                        const title = track.title || track.filename || playlist[index];
+                        const artist = track.artist || '';
+                        const displayText = artist ? `${artist} - ${title}` : title;
+                        const clickHandler = allowGuestSkip ? `onclick="playTrack(${index})"` : '';
                         html += `
-                            <div class="track ${isCurrent ? 'current' : ''}" onclick="playTrack(${index})">
+                            <div class="track ${isCurrent ? 'current' : ''}" ${clickHandler} style="${allowGuestSkip ? 'cursor:pointer' : ''}">
                                 <span class="track-number">${index + 1}</span>
-                                ${track}
+                                ${displayText}
                                 ${isCurrent ? ' <span>▶️</span>' : ''}
                             </div>
                         `;
@@ -281,7 +296,7 @@
                 console.error('加载播放列表失败:', error);
             }
         }
-        
+
         async function loadStats() {
             try {
                 const response = await fetch('/api/stats');
@@ -289,17 +304,18 @@
                 document.getElementById('clientCount').textContent = data.clients || 0;
             } catch (error) {}
         }
-        
+
         async function playTrack(index) {
+            if (!allowGuestSkip) return;
             try {
-                await fetch('/api/play/' + index);
+                await fetch('/api/play/' + index, { method: 'POST' });
                 setTimeout(() => { loadPlaylist(); document.getElementById('player').load(); }, 500);
             } catch (error) { console.error(error); }
         }
-        
+
         async function playNext() {
             try {
-                await fetch('/api/next');
+                await fetch('/api/next', { method: 'POST' });
                 setTimeout(() => { loadPlaylist(); document.getElementById('player').load(); }, 500);
             } catch (error) { console.error(error); }
         }
