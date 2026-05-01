@@ -1,0 +1,57 @@
+[package]
+name = "radio-backend"
+version = "2.0.0"
+edition = "2021"
+description = "Rakuraku Music Station - Rust Business Backend"
+
+[dependencies]
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+
+# Web 框架
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "auth"] }
+
+# 数据库
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "migrate"] }
+# 如需 PostgreSQL 支持，切换 features:
+# sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "migrate"] }
+
+# 用于服务间通信的 Redis 发布/订阅
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# JWT 认证
+jsonwebtoken = "9"
+
+# 密码哈希（argon2id，最安全）
+argon2 = "0.5"
+
+# UUID 生成
+uuid = { version = "1", features = ["v4"] }
+
+# 日期/时间
+chrono = { version = "0.4", features = ["serde"] }
+
+# 配置
+toml = "0.8"
+dotenvy = "0.15"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 用于 LRC 解析的正则表达式
+regex = "1"
+once_cell = "1"
+
+# 错误处理
+thiserror = "1"
+anyhow = "1"
+
+# Base64 编码
+base64 = "0.22"

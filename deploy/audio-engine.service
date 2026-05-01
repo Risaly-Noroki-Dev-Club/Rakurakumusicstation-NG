@@ -1,0 +1,34 @@
+[Unit]
+Description=Rakuraku Music Station - C++ Audio Engine
+Documentation=https://github.com/example/rakuraku
+After=network.target redis.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=radio
+Group=radio
+WorkingDirectory=/var/lib/rakuraku
+ExecStart=/usr/local/bin/audio_engine --config /etc/rakuraku/audio_engine.toml
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=audio-engine
+
+# 安全加固
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/rakuraku/media
+ReadOnlyPaths=/etc/rakuraku
+
+# 资源限制
+LimitNOFILE=4096
+MemoryMax=512M
+CPUQuota=200%
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,31 @@
+# 音频引擎配置
+# 复制为 audio_engine.toml 并放在二进制文件同级目录。
+
+[redis]
+# Redis 服务器，用于与 Rust 后端进行跨服务通信
+host = "127.0.0.1"
+port = 6379
+# password = ""              # 若 Redis 需要认证请设置
+playback_channel = "playback_state"
+command_channel = "command"
+queue_channel = "queue_event"
+
+[server]
+# Web/流媒体端口（HTTP + 音频流 + 文件服务的单一端口）
+web_port = 2240
+# 内部环形缓冲区容量（必须为 2 的幂）
+buffer_capacity = 524288    # 512KB
+# 最大并发流媒体客户端数
+max_connections = 1024
+
+[audio]
+# FFmpeg 可执行文件路径
+ffmpeg_path = "ffmpeg"
+# 音频文件的媒体目录
+media_path = "./media"
+# 流媒体编码比特率（kbps）
+bitrate_kbps = 128
+# 采样率
+sample_rate = 44100
+# 音频声道数
+channels = 2

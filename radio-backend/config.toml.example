@@ -1,0 +1,54 @@
+# Rakuraku Music Station - Rust 后端配置
+# 复制为 config.toml 并根据需要修改。
+# 环境变量（RADIO_* 前缀）可覆盖以下设置值。
+
+[server]
+# HTTP 监听地址
+host = "0.0.0.0"
+port = 8080
+
+[database]
+# SQLite（默认，无需外部依赖）
+url = "sqlite://data/radio.db?mode=rwc"
+# 若使用 PostgreSQL：
+# url = "postgres://user:pass@localhost/radio"
+
+[redis]
+# Redis 连接，用于与 C++ 音频引擎进行跨服务发布/订阅通信
+url = "redis://127.0.0.1:6379"
+# 频道名称
+playback_channel = "playback_state"
+command_channel = "command"
+queue_channel = "queue_event"
+
+[audio_engine]
+# C++ 音频引擎的基础 URL（用于生成文件 URL）
+base_url = "http://127.0.0.1:2240"
+# 媒体文件根目录（与 C++ 引擎共享）
+media_path = "./media"
+
+[jwt]
+# JWT 密钥（至少 32 个字符，生成命令：openssl rand -base64 32）
+secret = "change-me-to-a-random-string-32-chars"
+# Token 过期时间（小时）
+expiry_hours = 24
+
+[queue]
+# 队列中最大歌曲数量
+max_size = 100
+# 限速窗口内每用户最大提交数
+max_user_submissions = 3
+# 限速窗口（秒）
+rate_limit_window_secs = 300
+
+[station]
+# 网页界面上显示的电台名称
+name = "Rakuraku Music Station"
+subtitle = "A Community Radio Powered by Everyone"
+primary_color = "#764ba2"
+secondary_color = "#667eea"
+bg_color = "#f4f4f9"
+
+[logging]
+# 日志级别：trace、debug、info、warn、error
+level = "info"
