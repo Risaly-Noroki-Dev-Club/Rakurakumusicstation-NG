@@ -80,9 +80,9 @@ fi
 # 编译项目
 print_status "编译服务器程序..."
 RELEASE_DIR="dist"
-# Remove build artifacts but preserve media/ and settings.json
+# Remove build artifacts but preserve media/ and settings.json and playlist_order.json
 if [ -d "$RELEASE_DIR" ]; then
-    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'settings.json' -exec rm -rf {} +
+    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'settings.json' ! -name 'playlist_order.json' -exec rm -rf {} +
 fi
 mkdir -p $RELEASE_DIR/media
 mkdir -p $RELEASE_DIR/templates
