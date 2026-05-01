@@ -224,7 +224,7 @@ static const std::unordered_map<std::string, std::string> templates = {
                 <source src="/stream" type="audio/mpeg">
             </audio>
             <div class="controls">
-                <button onclick="playNext()">⏭️ 下一首</button>
+                <button id="nextBtn" onclick="playNext()">⏭️ 下一首</button>
                 <div id="currentTrack">正在加载播放列表...</div>
             </div>
         </section>
@@ -247,36 +247,51 @@ static const std::unordered_map<std::string, std::string> templates = {
     </div>
 
     <script>
-        // JS 逻辑保持完全不变
+        const allowGuestSkip = {{ALLOW_GUEST_SKIP}};
+
         document.addEventListener("DOMContentLoaded", () => {
             document.getElementById("player").src = "/stream";
+            if (!allowGuestSkip) {
+                document.getElementById('nextBtn').style.display = 'none';
+            }
         });
-        
+
         async function loadPlaylist() {
             try {
                 const response = await fetch('/api/playlist');
                 const data = await response.json();
                 const playlist = data.playlist || [];
+                const metadata = data.metadata || [];
                 const currentIndex = data.current || 0;
-                
+
                 let currentTrackIndex = playlist.length > 0 ? currentIndex % playlist.length : 0;
                 let totalTracks = playlist.length;
-                
-                document.getElementById('currentTrack').textContent = playlist.length > 0 ? `正在播放: ${playlist[currentTrackIndex]}` : '播放列表为空';
+
+                const currentMeta = metadata[currentTrackIndex];
+                const currentDisplay = currentMeta
+                    ? (currentMeta.artist ? `${currentMeta.artist} - ${currentMeta.title}` : currentMeta.title)
+                    : (playlist[currentTrackIndex] || '');
+
+                document.getElementById('currentTrack').textContent = playlist.length > 0 ? `正在播放: ${currentDisplay}` : '播放列表为空';
                 document.getElementById('trackCount').textContent = totalTracks;
                 document.getElementById('totalTracks').textContent = totalTracks;
                 document.getElementById('currentIndex').textContent = playlist.length > 0 ? currentTrackIndex + 1 : '-';
-                
+
                 let html = '';
                 if (playlist.length === 0) {
                     html = '<div style="text-align: center; padding: 40px; color: #6c757d;"><div>播放列表为空，请上传音乐文件</div></div>';
                 } else {
-                    playlist.forEach((track, index) => {
+                    const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
+                    tracks.forEach((track, index) => {
                         const isCurrent = index === currentTrackIndex;
+                        const title = track.title || track.filename || playlist[index];
+                        const artist = track.artist || '';
+                        const displayText = artist ? `${artist} - ${title}` : title;
+                        const clickHandler = allowGuestSkip ? `onclick="playTrack(${index})"` : '';
                         html += `
-                            <div class="track ${isCurrent ? 'current' : ''}" onclick="playTrack(${index})">
+                            <div class="track ${isCurrent ? 'current' : ''}" ${clickHandler} style="${allowGuestSkip ? 'cursor:pointer' : ''}">
                                 <span class="track-number">${index + 1}</span>
-                                ${track}
+                                ${displayText}
                                 ${isCurrent ? ' <span>▶️</span>' : ''}
                             </div>
                         `;
@@ -287,7 +302,7 @@ static const std::unordered_map<std::string, std::string> templates = {
                 console.error('加载播放列表失败:', error);
             }
         }
-        
+
         async function loadStats() {
             try {
                 const response = await fetch('/api/stats');
@@ -295,17 +310,18 @@ static const std::unordered_map<std::string, std::string> templates = {
                 document.getElementById('clientCount').textContent = data.clients || 0;
             } catch (error) {}
         }
-        
+
         async function playTrack(index) {
+            if (!allowGuestSkip) return;
             try {
-                await fetch('/api/play/' + index);
+                await fetch('/api/play/' + index, { method: 'POST' });
                 setTimeout(() => { loadPlaylist(); document.getElementById('player').load(); }, 500);
             } catch (error) { console.error(error); }
         }
-        
+
         async function playNext() {
             try {
-                await fetch('/api/next');
+                await fetch('/api/next', { method: 'POST' });
                 setTimeout(() => { loadPlaylist(); document.getElementById('player').load(); }, 500);
             } catch (error) { console.error(error); }
         }
@@ -845,6 +861,117 @@ static const std::unordered_map<std::string, std::string> templates = {
             }
         }
 
+        .settings-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        .settings-section h2 {
+            color: #495057;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .settings-form .form-group {
+            margin-bottom: 20px;
+        }
+        .settings-form label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #495057;
+        }
+        .settings-form input[type="text"],
+        .settings-form input[type="password"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+            box-sizing: border-box;
+        }
+        .settings-form input[type="text"]:focus,
+        .settings-form input[type="password"]:focus {
+            border-color: var(--primary-color);
+            outline: none;
+        }
+        .color-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        .color-group input[type="color"] {
+            width: 40px;
+            height: 40px;
+            border: 2px solid #e9ecef;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .color-group span {
+            font-size: 0.85em;
+            color: #6c757d;
+        }
+        .settings-form input[type="checkbox"] {
+            margin-right: 10px;
+        }
+        .form-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+        .form-actions button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .form-actions .save-btn {
+            background: var(--primary-color);
+            color: white;
+        }
+        .form-actions .save-btn:hover {
+            background: var(--secondary-color);
+            transform: translateY(-2px);
+        }
+        .form-actions button:first-child {
+            background: #6c757d;
+            color: white;
+        }
+        .form-actions button:first-child:hover {
+            background: #5a6268;
+        }
+        .result-message {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 6px;
+            display: none;
+        }
+        .result-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        .result-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        .result-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+
         @media (max-width: 480px) {
             .header-left h1 {
                 font-size: 1.8em;
@@ -867,131 +994,6 @@ static const std::unordered_map<std::string, std::string> templates = {
             #downloadLog {
                 font-size: 0.8em;
                 max-height: 200px;
-            }
-
-            .settings-section {
-                margin: 30px 0;
-            }
-
-            .settings-form {
-                background: white;
-                padding: 25px;
-                border-radius: 12px;
-                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
-            }
-
-            .settings-form .form-group {
-                margin-bottom: 20px;
-            }
-
-            .settings-form label {
-                display: block;
-                margin-bottom: 8px;
-                font-weight: 600;
-                color: #495057;
-            }
-
-            .settings-form input[type="text"],
-            .settings-form input[type="password"] {
-                width: 100%;
-                padding: 12px 15px;
-                border: 2px solid #e9ecef;
-                border-radius: 8px;
-                font-size: 1em;
-                transition: border-color 0.3s;
-                box-sizing: border-box;
-            }
-
-            .settings-form input[type="text"]:focus,
-            .settings-form input[type="password"]:focus {
-                border-color: var(--primary-color);
-                outline: none;
-            }
-
-            .color-group {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 15px;
-                align-items: center;
-            }
-
-            .color-group input[type="color"] {
-                width: 40px;
-                height: 40px;
-                border: 2px solid #e9ecef;
-                border-radius: 6px;
-                cursor: pointer;
-            }
-
-            .color-group span {
-                font-size: 0.85em;
-                color: #6c757d;
-            }
-
-            .settings-form input[type="checkbox"] {
-                margin-right: 10px;
-            }
-
-            .form-actions {
-                display: flex;
-                gap: 15px;
-                margin-top: 25px;
-            }
-
-            .form-actions button {
-                padding: 12px 25px;
-                border: none;
-                border-radius: 8px;
-                cursor: pointer;
-                font-weight: 600;
-                transition: all 0.3s ease;
-            }
-
-            .form-actions .save-btn {
-                background: var(--primary-color);
-                color: white;
-            }
-
-            .form-actions .save-btn:hover {
-                background: var(--secondary-color);
-                transform: translateY(-2px);
-            }
-
-            .form-actions button:first-child {
-                background: #6c757d;
-                color: white;
-            }
-
-            .form-actions button:first-child:hover {
-                background: #5a6268;
-            }
-
-            .result-message {
-                margin-top: 20px;
-                padding: 12px;
-                border-radius: 6px;
-                display: none;
-            }
-
-            .result-message.success {
-                background: #d4edda;
-                color: #155724;
-                border: 1px solid #c3e6cb;
-                display: block;
-            }
-
-            .result-message.error {
-                background: #f8d7da;
-                color: #721c24;
-                border: 1px solid #f5c6cb;
-                display: block;
-            }
-
-            .result-message.info {
-                background: #d1ecf1;
-                color: #0c5460;
-                border: 1px solid #bee5eb;
-                display: block;
             }
         }
     </style>
@@ -1158,13 +1160,18 @@ static const std::unordered_map<std::string, std::string> templates = {
                 if (playlist.length === 0) {
                     html = '<div style="text-align: center; padding: 40px; color: #6c757d;">播放列表为空，请上传音乐文件</div>';
                 } else {
-                    playlist.forEach((track, index) => {
+                    const metadata = data.metadata || [];
+                    const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
+                    tracks.forEach((track, index) => {
                         const isCurrent = index === currentIndex;
+                        const title = track.title || track.filename || playlist[index];
+                        const artist = track.artist || '';
+                        const displayText = artist ? `${artist} - ${title}` : title;
                         html += `
                             <div class="track ${isCurrent ? 'current' : ''}">
                                 <div class="track-header">
                                     <span class="track-number">#${index + 1}</span>
-                                    <div class="track-title" title="${track}">${track}</div>
+                                    <div class="track-title" title="${displayText}">${displayText}</div>
                                 </div>
                                 <div class="track-controls">
                                     <button onclick="playTrack(${index})" class="control-button play-button">▶️ 播放</button>
@@ -1442,8 +1449,6 @@ static const std::unordered_map<std::string, std::string> templates = {
                 document.getElementById('bgColor').value = data.bg_color || '#f4f4f9';
                 document.getElementById('allowGuestSkip').checked = data.allow_guest_skip || false;
                 document.getElementById('adminPassword').value = '';
-
-                showSettingsMessage('设置已加载', 'success');
             } catch (error) {
                 console.error('加载设置失败:', error);
                 showSettingsMessage('加载设置失败: ' + error.message, 'error');
@@ -1474,7 +1479,8 @@ static const std::unordered_map<std::string, std::string> templates = {
                 });
 
                 if (res.ok) {
-                    showSettingsMessage('设置保存成功！页面可能需要刷新才能完全生效', 'success');
+                    showSettingsMessage('设置保存成功，正在刷新页面...', 'success');
+                    setTimeout(() => window.location.reload(), 1000);
                 } else {
                     const text = await res.text();
                     showSettingsMessage('保存失败: ' + text, 'error');

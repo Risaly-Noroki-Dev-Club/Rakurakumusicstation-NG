@@ -865,12 +865,22 @@ private:
             return res;
         });
 
-        // 单端口模式下的流信息端点（实际音频流需要开启双端口模式）
-        CROW_ROUTE(app_, "/stream")([]() {
-            crow::json::wvalue result;
-            result["message"] = "单端口模式下音频流不可用，请在 settings.json 中启用 separate_stream_port";
-            result["stream_port"] = 2241;
-            return crow::response(result);
+        // 音频流端点：接管底层 socket 并注册到广播器
+        CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
+            if (!res.get_socket_fd_helper_) {
+                res.code = 500;
+                res.end("stream unavailable");
+                return;
+            }
+            int crow_fd = res.get_socket_fd_helper_();
+            int fd = ::dup(crow_fd);
+            if (fd < 0) {
+                res.code = 500;
+                res.end("dup failed");
+                return;
+            }
+            res.take_over();
+            stream_server_->add_client(fd);
         });
 
         // 主页 - 根据是否登录显示不同界面
