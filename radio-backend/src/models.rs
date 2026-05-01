@@ -43,11 +43,12 @@ pub struct UserPublic {
 
 impl From<User> for UserPublic {
     fn from(u: User) -> Self {
+        let is_banned = u.is_banned();
         Self {
             id: u.id,
             username: u.username,
             role: u.role,
-            is_banned: u.is_banned(),
+            is_banned,
             created_at: u.created_at,
         }
     }

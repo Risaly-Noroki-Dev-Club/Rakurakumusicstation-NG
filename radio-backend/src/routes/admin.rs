@@ -22,31 +22,9 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         .route("/rescan-songs", post(rescan_songs))
 }
 
-/// 从请求头中提取已认证管理员用户的辅助函数。
+/// 从请求头中提取已认证管理员用户的辅助函数（使用共享 auth 模块）。
 async fn get_admin(state: &AppState, headers: &HeaderMap) -> Result<crate::auth::AuthUser, AppError> {
-    let token = headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(AppError::Unauthorized)?;
-
-    let claims = auth::validate_token(token, &state.jwt_secret)?;
-
-    let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().unwrap_or(0))
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-
-    if user.role != "admin" {
-        return Err(AppError::Forbidden("Admin only".into()));
-    }
-
-    Ok(crate::auth::AuthUser {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-    })
+    auth::require_admin_from_headers(headers, &state.db, &state.jwt_secret).await
 }
 
 /// GET /api/admin/users — 列出所有用户
@@ -182,6 +160,41 @@ async fn get_logs(
 
 /// POST /api/admin/rescan-songs — 扫描媒体目录以查找新歌曲
 /// 向 C++ 音频引擎发布重新扫描的命令。
+/// 在音频文件所在目录查找封面图片
+fn find_cover(audio_path: &std::path::Path, media_root: &std::path::Path) -> String {
+    let cover_names = ["cover.jpg", "cover.png", "cover.jpeg",
+                       "folder.jpg", "folder.png",
+                       "album.jpg", "album.png",
+                       "front.jpg", "front.png",
+                       "AlbumCover.jpg", "AlbumCover.png"];
+    let parent = audio_path.parent().unwrap_or(audio_path);
+
+    for name in &cover_names {
+        let candidate = parent.join(name);
+        if candidate.exists() {
+            return candidate.strip_prefix(media_root)
+                .unwrap_or(&candidate)
+                .to_string_lossy()
+                .to_string();
+        }
+    }
+
+    // 也检查音频文件同名的封面: song.mp3 -> song.jpg
+    if let Some(stem) = audio_path.file_stem() {
+        for ext in &["jpg", "png", "jpeg"] {
+            let candidate = parent.join(format!("{}.{}", stem.to_string_lossy(), ext));
+            if candidate.exists() {
+                return candidate.strip_prefix(media_root)
+                    .unwrap_or(&candidate)
+                    .to_string_lossy()
+                    .to_string();
+            }
+        }
+    }
+
+    String::new()
+}
+
 async fn rescan_songs(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -222,7 +235,7 @@ async fn rescan_songs(
     for file_path in &audio_files {
         let relative = file_path.strip_prefix(media_path).unwrap_or(file_path);
         let rel_str = relative.to_string_lossy().to_string();
-        let filename = file_path.file_name()
+        let _filename = file_path.file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
@@ -262,13 +275,17 @@ async fn rescan_songs(
                 String::new()
             };
 
+            // 查找封面图片 (cover.jpg, folder.jpg, etc.)
+            let cover_path = find_cover(&file_path, media_path);
+
             sqlx::query(
-                "INSERT INTO songs (title, artist, file_path, lyrics_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO songs (title, artist, file_path, lyrics_path, cover_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&title)
             .bind(&artist)
             .bind(&rel_str)
             .bind(&lyrics_path)
+            .bind(&cover_path)
             .bind(duration_ms)
             .bind(0_i64)
             .execute(&state.db)

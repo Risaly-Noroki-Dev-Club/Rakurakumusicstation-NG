@@ -9,7 +9,7 @@ use crate::models::{
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
 use std::sync::Arc;
@@ -21,31 +21,9 @@ pub fn playlist_routes() -> Router<Arc<AppState>> {
         .route("/{id}/songs", post(add_song).delete(remove_song))
 }
 
-/// 从请求头中提取已认证用户的辅助函数。
+/// 从请求头中提取已认证用户的辅助函数（使用共享 auth 模块）。
 async fn get_user(state: &AppState, headers: &HeaderMap) -> Result<crate::auth::AuthUser, AppError> {
-    let token = headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(AppError::Unauthorized)?;
-
-    let claims = auth::validate_token(token, &state.jwt_secret)?;
-
-    let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().unwrap_or(0))
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-
-    if user.is_banned() {
-        return Err(AppError::Banned);
-    }
-
-    Ok(crate::auth::AuthUser {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-    })
+    auth::require_auth_from_headers(headers, &state.db, &state.jwt_secret).await
 }
 
 /// GET /api/playlists — 列出当前用户的播放列表

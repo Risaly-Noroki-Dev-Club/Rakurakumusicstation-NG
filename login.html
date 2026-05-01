@@ -14,10 +14,21 @@
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/favicon.ico">
     <style>
+        :root {
+            --primary-color: {{PRIMARY_COLOR}};
+            --secondary-color: {{SECONDARY_COLOR}};
+            --text: #495057;
+            --text-muted: #6c757d;
+            --text-inverse: #ffffff;
+            --card: #ffffff;
+            --border: #e9ecef;
+            --error-bg: #f8d7da;
+            --error-text: #721c24;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: linear-gradient(135deg, {{PRIMARY_COLOR}} 0%, {{SECONDARY_COLOR}} 100%);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -27,7 +38,7 @@
         .login-container {
             width: 100%;
             max-width: 400px;
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--card);
             border-radius: 20px;
             padding: 40px 30px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -38,11 +49,11 @@
         }
         .logo h1 {
             font-size: 2.2em;
-            color: {{PRIMARY_COLOR}};
+            color: var(--primary-color);
             margin-bottom: 10px;
         }
         .logo p {
-            color: #666;
+            color: var(--text-muted);
             font-size: 1em;
         }
         .form-group {
@@ -52,24 +63,24 @@
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #495057;
+            color: var(--text);
         }
         input[type="password"] {
             width: 100%;
             padding: 12px 15px;
             font-size: 1em;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             outline: none;
             transition: border-color 0.3s;
         }
         input[type="password"]:focus {
-            border-color: {{PRIMARY_COLOR}};
+            border-color: var(--primary-color);
         }
         .login-button {
             width: 100%;
-            background: {{PRIMARY_COLOR}};
-            color: white;
+            background: var(--primary-color);
+            color: var(--text-inverse);
             border: none;
             padding: 14px;
             border-radius: 8px;
@@ -79,14 +90,14 @@
             transition: all 0.3s ease;
         }
         .login-button:hover {
-            background: {{SECONDARY_COLOR}};
+            background: var(--secondary-color);
             transform: translateY(-2px);
         }
         .error-message {
             margin-top: 15px;
             padding: 10px;
-            background: #f8d7da;
-            color: #721c24;
+            background: var(--error-bg);
+            color: var(--error-text);
             border-radius: 5px;
             text-align: center;
             display: none;
@@ -96,12 +107,12 @@
             margin-top: 20px;
         }
         .back-link a {
-            color: #6c757d;
+            color: var(--text-muted);
             text-decoration: none;
         }
         .back-link a:hover {
             text-decoration: underline;
-            color: {{SECONDARY_COLOR}};
+            color: var(--secondary-color);
         }
 
         /* 移动端响应式适配 */
@@ -161,7 +172,7 @@
         <div class="logo">
             <h1>{{STATION_NAME}}</h1>
             <p>{{SUBTITLE}}</p>
-            <p style="margin-top: 10px; color: #495057;">管理员登录</p>
+            <p style="margin-top: 10px; color: var(--text);">管理员登录</p>
         </div>
         
         <form id="loginForm">

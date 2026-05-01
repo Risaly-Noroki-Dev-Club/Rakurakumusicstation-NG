@@ -4,7 +4,7 @@ use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{
-    ApiResponse, AuthResponse, Claims, LoginRequest, RegisterRequest,
+    ApiResponse, AuthResponse, LoginRequest, RegisterRequest,
 };
 use axum::{
     extract::State,

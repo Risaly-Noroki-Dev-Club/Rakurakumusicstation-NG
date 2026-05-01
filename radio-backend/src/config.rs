@@ -91,7 +91,7 @@ pub struct LoggingConfig {
 // ─── 默认值 ─────────────────────────────────────────────
 
 fn default_host() -> String { "0.0.0.0".into() }
-fn default_port() -> u16 { 8080 }
+fn default_port() -> u16 { 2241 }
 fn default_sqlite_url() -> String { "sqlite://data/radio.db?mode=rwc".into() }
 fn default_redis_url() -> String { "redis://127.0.0.1:6379".into() }
 fn default_playback_channel() -> String { "playback_state".into() }

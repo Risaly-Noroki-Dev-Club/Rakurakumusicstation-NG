@@ -78,7 +78,7 @@ impl Lyrics {
             // 解析此行中的所有时间戳（LRC 允许每行多个）
             let mut timestamps: Vec<i64> = Vec::new();
             let mut search_start = 0;
-            let line_bytes = line.as_bytes();
+            let _line_bytes = line.as_bytes();
 
             loop {
                 if search_start >= line.len() {
@@ -87,7 +87,7 @@ impl Lyrics {
 
                 if let Some(caps) = LRC_TIMESTAMP_RE.find(&line[search_start..]) {
                     let full_match = caps.as_str();
-                    let cap_start = search_start + caps.start();
+                    let _cap_start = search_start + caps.start();
                     let cap_end = search_start + caps.end();
 
                     // 解析捕获的时间戳
@@ -180,12 +180,6 @@ impl Lyrics {
     pub fn line_count(&self) -> usize {
         self.lines.len()
     }
-}
-
-/// 从磁盘文件路径加载歌词。
-pub fn load_lyrics(path: &std::path::Path) -> Result<Lyrics, std::io::Error> {
-    let content = std::fs::read_to_string(path)?;
-    Ok(Lyrics::parse(&content))
 }
 
 #[cfg(test)]

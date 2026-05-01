@@ -49,6 +49,9 @@ public:
 
     // 使用FFmpeg获取音频时长
     static int get_duration_via_ffmpeg(const std::string& file_path);
+
+    // 使用FFprobe提取内嵌歌词
+    static std::string get_lyrics_via_ffprobe(const std::string& file_path);
 };
 
 #endif // METADATA_HPP

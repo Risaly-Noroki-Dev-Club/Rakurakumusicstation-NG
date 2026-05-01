@@ -3,12 +3,10 @@
 use crate::error::AppError;
 use crate::models::{Claims, User};
 use axum::{
-    extract::FromRequestParts,
-    http::{header, request::Parts, StatusCode},
+    http::{header, HeaderMap},
 };
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use sqlx::SqlitePool;
-use std::sync::Arc;
 
 /// 为用户生成 JWT 令牌。
 pub fn generate_token(user: &User, secret: &str, expiry_hours: u64) -> Result<String, AppError> {
@@ -40,21 +38,6 @@ pub fn validate_token(token: &str, secret: &str) -> Result<Claims, AppError> {
     .map_err(|_| AppError::Unauthorized)
 }
 
-/// 从 Authorization 头中提取 bearer 令牌。
-pub fn extract_bearer_token(parts: &Parts) -> Option<String> {
-    parts
-        .headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| {
-            if value.starts_with("Bearer ") {
-                Some(value[7..].to_string())
-            } else {
-                None
-            }
-        })
-}
-
 /// Axum 的已认证用户提取器。
 /// 在处理器参数中用作 AuthUser 来要求认证。
 #[derive(Debug, Clone)]
@@ -64,48 +47,28 @@ pub struct AuthUser {
     pub role: String,
 }
 
-/// 从 JWT 中提取当前用户，从数据库加载完整 User 以检查封禁状态。
-/// 如果没有有效令牌或用户被封禁，返回 401。
-impl<S> FromRequestParts<S> for AuthUser
-where
-    S: Send + Sync,
-{
-    type Rejection = AppError;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        // 我们需要访问 AppState；这使用了 Axum 的扩展机制。
-        // 实际上我们将使用中间件方式替代。目前，定义
-        // 此类型用于文档说明，并在处理器中直接提取。
-        // 实际提取通过下面的 require_auth() 辅助函数完成。
-        let _ = parts;
-        let _ = state;
-        unreachable!("Use require_auth() helper instead of FromRequestParts")
+/// 检查用户是否为管理员。
+pub fn require_admin(auth_user: &AuthUser) -> Result<(), AppError> {
+    if auth_user.role == "admin" {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("Admin privileges required".into()))
     }
 }
 
-/// 从请求头中提取已认证用户的 claims。不检查数据库封禁状态。
-pub fn require_claims(parts: &Parts, secret: &str) -> Result<Claims, AppError> {
-    let token = extract_bearer_token(parts)
-        .or_else(|| {
-            // 也为 WebSocket 升级检查 cookie
-            parts
-                .headers
-                .get(header::COOKIE)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|cookie_str| {
-                    cookie_str.split(';')
-                        .find(|c| c.trim().starts_with("token="))
-                        .map(|c| c.trim()[6..].to_string())
-                })
-        })
+/// 从 HeaderMap 提取 Bearer token 并完整认证（供路由处理器使用）。
+pub async fn require_auth_from_headers(
+    headers: &HeaderMap,
+    db: &SqlitePool,
+    secret: &str,
+) -> Result<AuthUser, AppError> {
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or(AppError::Unauthorized)?;
 
-    validate_token(&token, secret)
-}
-
-/// 完整的认证检查：验证 JWT + 从数据库加载用户 + 检查封禁。
-pub async fn require_auth(parts: &Parts, db: &SqlitePool, secret: &str) -> Result<AuthUser, AppError> {
-    let claims = require_claims(parts, secret)?;
+    let claims = validate_token(token, secret)?;
 
     let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
         .bind(claims.sub.parse::<i64>().unwrap_or(0))
@@ -124,41 +87,46 @@ pub async fn require_auth(parts: &Parts, db: &SqlitePool, secret: &str) -> Resul
     })
 }
 
-/// 检查用户是否为管理员。
-pub fn require_admin(auth_user: &AuthUser) -> Result<(), AppError> {
-    if auth_user.role == "admin" {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("Admin privileges required".into()))
-    }
+/// 从 HeaderMap 提取并验证管理员用户。
+pub async fn require_admin_from_headers(
+    headers: &HeaderMap,
+    db: &SqlitePool,
+    secret: &str,
+) -> Result<AuthUser, AppError> {
+    let user = require_auth_from_headers(headers, db, secret).await?;
+    require_admin(&user)?;
+    Ok(user)
 }
 
-/// 可选认证：如果已认证则返回 Some(AuthUser)，否则返回 None。
-/// 在缺失/无效令牌时不会失败 — 仅返回 None。
-pub async fn optional_auth(parts: &Parts, db: &SqlitePool, secret: &str) -> Option<AuthUser> {
-    match require_claims(parts, secret) {
-        Ok(claims) => {
-            let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-                .bind(claims.sub.parse::<i64>().unwrap_or(0))
-                .fetch_optional(db)
-                .await
-                .ok()??;
+/// 从 HeaderMap 可选认证（已登录返回 Some，访客返回 None）。
+pub async fn optional_auth_from_headers(
+    headers: &HeaderMap,
+    db: &SqlitePool,
+    secret: &str,
+) -> Option<AuthUser> {
+    let token = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))?;
 
-            if user.is_banned() {
-                return None;
-            }
+    let claims = validate_token(token, secret).ok()?;
 
-            Some(AuthUser {
-                id: user.id,
-                username: user.username,
-                role: user.role,
-            })
-        }
-        Err(_) => None,
+    let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
+        .bind(claims.sub.parse::<i64>().unwrap_or(0))
+        .fetch_optional(db)
+        .await
+        .ok()??;
+
+    if user.is_banned() {
+        return None;
     }
-}
 
-/// 使用 Argon2id 哈希密码。
+    Some(AuthUser {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+    })
+}
 pub fn hash_password(password: &str) -> Result<String, AppError> {
     use argon2::{
         password_hash::{rand_core::OsRng, PasswordHasher, SaltString},

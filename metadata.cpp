@@ -4,6 +4,8 @@
 #include <cstring>
 #include <filesystem>
 #include <regex>
+#include <sstream>
+#include <cctype>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -77,6 +79,9 @@ TrackMetadata MetadataManager::extract_metadata(const std::string& file_path) {
 
     // 使用FFmpeg获取时长信息
     metadata.duration = get_duration_via_ffmpeg(file_path);
+
+    // 从内嵌元数据提取歌词
+    metadata.lyrics = get_lyrics_via_ffprobe(file_path);
 
     cout << "[Metadata] 成功提取基础元数据: " << metadata.get_display_name()
          << " (" << metadata.duration << "秒)" << endl;
@@ -188,4 +193,79 @@ int MetadataManager::get_duration_via_ffmpeg(const std::string& file_path) {
     }
 
     return 0;
+}
+
+std::string MetadataManager::get_lyrics_via_ffprobe(const std::string& file_path) {
+    int fds[2];
+    if (pipe2(fds, O_CLOEXEC) != 0) {
+        return "";
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(fds[0]);
+        close(fds[1]);
+        return "";
+    }
+
+    if (pid == 0) {
+        if (dup2(fds[1], STDOUT_FILENO) < 0) _exit(127);
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) {
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
+        }
+        const char* argv[] = {
+            "ffprobe", "-v", "error",
+            "-show_entries", "format_tags",
+            "-of", "default",
+            file_path.c_str(), nullptr
+        };
+        execvp("ffprobe", const_cast<char* const*>(argv));
+        _exit(127);
+    }
+
+    close(fds[1]);
+
+    std::string output;
+    char buffer[256];
+    ssize_t n;
+    while ((n = read(fds[0], buffer, sizeof(buffer))) > 0) {
+        output.append(buffer, buffer + n);
+        if (output.size() > 256 * 1024) break;
+    }
+    close(fds[0]);
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) break;
+    }
+
+    // 解析 ffprobe 输出的 format_tags，查找歌词标签
+    // 输出格式: TAG:<key>=<value>
+    std::istringstream stream(output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        // 跳过非 TAG 行（如 [FORMAT] / [/FORMAT]）
+        if (line.find("TAG:") != 0) continue;
+
+        std::string tag = line.substr(4);  // skip "TAG:"
+        size_t eq = tag.find('=');
+        if (eq == std::string::npos) continue;
+
+        std::string key = tag.substr(0, eq);
+        std::string value = tag.substr(eq + 1);
+
+        // 将 key 转小写后匹配
+        std::string key_lower = key;
+        for (char& c : key_lower) c = static_cast<char>(std::tolower(c));
+
+        if (key_lower == "lyrics" || key_lower == "unsyncedlyrics" ||
+            key_lower == "lyrics-eng" || key_lower == "lyrics-chi" ||
+            key_lower == "syncedlyrics" || key_lower.find("lyrics") != std::string::npos) {
+            return value;
+        }
+    }
+
+    return "";
 }

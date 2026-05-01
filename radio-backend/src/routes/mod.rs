@@ -5,6 +5,7 @@ pub mod songs;
 pub mod playlist;
 pub mod queue;
 pub mod admin;
+pub mod favorites;
 
 use axum::{Router, routing::get};
 use crate::db::AppState;
@@ -25,6 +26,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/api/queue", queue::queue_routes())
         // 管理端点
         .nest("/api/admin", admin::admin_routes())
+        // 收藏夹
+        .nest("/api/favorites", favorites::favorites_routes())
         // 电台信息（公开）
         .route("/api/station", get(station_info))
         // 正在播放（公开）

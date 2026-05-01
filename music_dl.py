@@ -294,6 +294,19 @@ def ncm_get_audio(song_id: int, bitrate: int) -> tuple[Optional[str], str, bool]
     return None, "mp3", False
 
 
+def ncm_get_lyrics(song_id: int) -> Optional[str]:
+    """从网易云获取 LRC 歌词文本，失败返回 None"""
+    if not HAS_PYNCM:
+        return None
+    try:
+        r = ncm_track.GetTrackLyric(song_id)
+        lrc = r.get("lrc", {}).get("lyric", "")
+        return lrc if lrc else None
+    except Exception as e:
+        print(f"  [获取歌词错误] {e}")
+        return None
+
+
 def _ncm_display(song: dict) -> str:
     artists = " / ".join(a["name"] for a in song.get("ar", []))
     name = song.get("name", "?")
@@ -336,12 +349,23 @@ def ncm_download(t: Track, output_dir: Path, bitrate: int,
     try:
         urllib.request.urlretrieve(url, dest)
         print(f"  → 下载完成: {dest.name}")
-        return True
     except Exception as e:
         print(f"  → 下载失败: {e}")
         if dest.exists():
             dest.unlink()
         return False
+
+    # 下载 LRC 歌词
+    lrc_text = ncm_get_lyrics(song_id)
+    if lrc_text:
+        lrc_dest = output_dir / SAFE_CHARS.sub("_", f"{ar_names} - {song_name}.lrc")
+        try:
+            lrc_dest.write_text(lrc_text, encoding="utf-8")
+            print(f"  → 歌词已保存: {lrc_dest.name}")
+        except Exception as e:
+            print(f"  → 歌词保存失败: {e}")
+
+    return True
 
 
 # ── Bilibili WBI 签名 ─────────────────────────────────────
@@ -425,6 +449,8 @@ def _ytdlp_download_url(url: str, label: str, output_dir: Path, fmt: str) -> boo
     cmd = [
         "yt-dlp", "--extract-audio", "--audio-format", fmt, "--audio-quality", "0",
         "--output", template, "--no-playlist", "--quiet", "--no-warnings",
+        "--write-subs", "--sub-format", "lrc/vtt", "--sub-lang", "all",
+        "--write-auto-subs",
         "--socket-timeout", "30", "--no-check-certificates", url
     ]
     rc, _, stderr = run_ytdlp(cmd)

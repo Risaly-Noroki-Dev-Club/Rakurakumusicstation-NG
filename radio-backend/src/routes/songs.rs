@@ -5,6 +5,8 @@ use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
 use axum::{
     extract::{Path, Query, State},
+    http::header,
+    response::Response,
     routing::get,
     Json, Router,
 };
@@ -14,6 +16,7 @@ pub fn song_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(search_songs))
         .route("/{id}", get(get_song))
+        .route("/{id}/cover", get(get_song_cover))
 }
 
 /// GET /api/songs?q=search&limit=20&offset=0
@@ -86,4 +89,37 @@ async fn get_song(
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
     Ok(Json(ApiResponse::ok(song)))
+}
+
+/// GET /api/songs/{id}/cover — 返回封面图片（JPEG/PNG 二进制数据）
+async fn get_song_cover(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let song = sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
+
+    if song.cover_path.is_empty() {
+        return Err(AppError::NotFound("No cover art".into()));
+    }
+
+    let cover_full = std::path::Path::new(&state.config.audio_engine.media_path)
+        .join(&song.cover_path);
+
+    let data = std::fs::read(&cover_full)
+        .map_err(|_| AppError::NotFound("Cover file not found".into()))?;
+
+    let mime = match cover_full.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        _ => "image/jpeg",
+    };
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, mime)
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .body(axum::body::Body::from(data))
+        .unwrap())
 }

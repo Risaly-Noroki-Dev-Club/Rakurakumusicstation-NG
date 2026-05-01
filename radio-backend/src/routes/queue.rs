@@ -3,7 +3,7 @@
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
-use crate::models::{AddToQueueRequest, ApiResponse, MoveQueueItemRequest, NowPlaying, PlaybackState};
+use crate::models::{AddToQueueRequest, ApiResponse, MoveQueueItemRequest, NowPlaying};
 use crate::queue_manager;
 use axum::{
     extract::{Path, State},
@@ -22,59 +22,6 @@ pub fn queue_routes() -> Router<Arc<AppState>> {
         .route("/history", get(get_history))
 }
 
-/// 从请求头中提取已认证用户的辅助函数。
-async fn get_user(state: &AppState, headers: &HeaderMap) -> Result<crate::auth::AuthUser, AppError> {
-    let token = headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(AppError::Unauthorized)?;
-
-    let claims = auth::validate_token(token, &state.jwt_secret)?;
-
-    let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().unwrap_or(0))
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-
-    if user.is_banned() {
-        return Err(AppError::Banned);
-    }
-
-    Ok(crate::auth::AuthUser {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-    })
-}
-
-/// 辅助函数：可选认证（已登录返回 Some，访客返回 None）。
-async fn get_optional_user(state: &AppState, headers: &HeaderMap) -> Option<crate::auth::AuthUser> {
-    let token = headers
-        .get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))?;
-
-    let claims = auth::validate_token(token, &state.jwt_secret).ok()?;
-
-    let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().unwrap_or(0))
-        .fetch_optional(&state.db)
-        .await
-        .ok()??;
-
-    if user.is_banned() {
-        return None;
-    }
-
-    Some(crate::auth::AuthUser {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-    })
-}
-
 /// GET /api/queue — 获取当前队列（公开，无需认证）
 async fn get_queue(
     State(state): State<Arc<AppState>>,
@@ -89,8 +36,7 @@ async fn add_to_queue(
     headers: HeaderMap,
     Json(req): Json<AddToQueueRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let user = get_user(&state, &headers).await?;
-
+    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
     let item_id = queue_manager::add_to_queue(&state, req.song_id, user.id, &user.username).await?;
 
     Ok(Json(ApiResponse::ok(serde_json::json!({
@@ -105,8 +51,7 @@ async fn remove_queue_item(
     Path(item_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = get_user(&state, &headers).await?;
-    auth::require_admin(&user)?;
+    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;    auth::require_admin(&user)?;
 
     queue_manager::remove_queue_item(&state.db, item_id).await?;
 
@@ -127,8 +72,7 @@ async fn move_queue_item(
     headers: HeaderMap,
     Json(req): Json<MoveQueueItemRequest>,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = get_user(&state, &headers).await?;
-    auth::require_admin(&user)?;
+    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;    auth::require_admin(&user)?;
 
     queue_manager::move_queue_item(&state.db, item_id, req.new_position).await?;
 
@@ -146,8 +90,7 @@ async fn skip_current(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = get_user(&state, &headers).await?;
-    auth::require_admin(&user)?;
+    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;    auth::require_admin(&user)?;
 
     queue_manager::skip_current(&state).await?;
 
@@ -189,16 +132,34 @@ pub async fn now_playing(
         None => None,
     };
 
+    let lyrics_text = match &song {
+        Some(s) if !s.lyrics_path.is_empty() => {
+            let lrc_full = std::path::Path::new(&state.config.audio_engine.media_path)
+                .join(&s.lyrics_path);
+            std::fs::read_to_string(&lrc_full).ok()
+        }
+        _ => None,
+    };
+
+    let lyrics_line = lyrics_text
+        .as_deref()
+        .map(|t| crate::lyrics::Lyrics::parse(t))
+        .and_then(|l| l.line_at(0));  // HTTP fallback 无实时位置，默认第 0 行
+
+    let song_summary = song.as_ref().map(|s| s.clone().into());
+    let duration_ms = song.as_ref().map(|s| s.duration_ms).unwrap_or(0);
+    let file_url = song.as_ref().map(|s| {
+        format!("{}:{}/file/{}", state.config.audio_engine.base_url, 2240, s.id)
+    });
+
     Ok(Json(ApiResponse::ok(NowPlaying {
-        song: song.map(|s| s.into()),
+        song: song_summary,
         position_ms: 0,
-        duration_ms: song.as_ref().map(|s| s.duration_ms).unwrap_or(0),
-        lyrics_line: None,
-        lyrics_text: None,
-        started_at: playing.as_ref().map(|p| p.played_at.map(|t| t.to_string()).unwrap_or_default()),
+        duration_ms,
+        lyrics_line,
+        lyrics_text,
+        started_at: playing.as_ref().and_then(|p| p.played_at.map(|t| t.to_string())),
         stream_url: format!("{}:{}/stream", state.config.audio_engine.base_url, 2240),
-        file_url: song.as_ref().map(|s| {
-            format!("{}:{}/file/{}", state.config.audio_engine.base_url, 2240, s.id)
-        }),
+        file_url,
     })))
 }

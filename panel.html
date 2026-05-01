@@ -19,6 +19,29 @@
             --primary-color: {{PRIMARY_COLOR}};
             --secondary-color: {{SECONDARY_COLOR}};
             --bg-color: {{BG_COLOR}};
+            --text: #333;
+            --text-muted: #6c757d;
+            --text-inverse: #ffffff;
+            --card: #ffffff;
+            --surface: #f8f9fa;
+            --border: #e9ecef;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --success-bg: #d4edda;
+            --success-text: #155724;
+            --error-bg: #f8d7da;
+            --error-text: #721c24;
+            --info-bg: #d1ecf1;
+            --info-text: #0c5460;
+            --info: #17a2b8;
+            --gray: #6c757d;
+            --gray-hover: #5a6268;
+            --neutral-bg: #e2e3e5;
+            --console-bg: #1e1e1e;
+            --console-text: #d4d4d4;
+            --alert-success-border: #c3e6cb;
+            --alert-error-border: #f5c6cb;
+            --alert-info-border: #bee5eb;
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -27,7 +50,7 @@
             background: var(--bg-color);
             min-height: 100vh;
             padding: 20px;
-            color: #333;
+            color: var(--text);
         }
         .container {
             max-width: 1200px;
@@ -39,7 +62,7 @@
             align-items: center;
             margin-bottom: 30px;
             padding: 20px;
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
@@ -49,7 +72,7 @@
             margin-bottom: 5px;
         }
         .header-left p {
-            color: #666;
+            color: var(--text-muted);
         }
         .admin-info {
             display: flex;
@@ -58,14 +81,14 @@
         }
         .admin-badge {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
             padding: 8px 15px;
             border-radius: 20px;
             font-size: 0.9em;
         }
         .logout-button {
-            background: #e74c3c;
-            color: white;
+            background: var(--danger);
+            color: var(--text-inverse);
             border: none;
             padding: 8px 20px;
             border-radius: 20px;
@@ -74,11 +97,11 @@
             font-size: 0.9em;
         }
         .logout-button:hover {
-            background: #c0392b;
+            background: var(--danger-hover);
         }
         .player-link {
             background: var(--secondary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 8px 20px;
             border-radius: 20px;
@@ -97,13 +120,13 @@
             margin-bottom: 30px;
         }
         .card {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .card h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 15px;
             display: flex;
             align-items: center;
@@ -116,18 +139,18 @@
             margin: 10px 0;
         }
         .stat-label {
-            color: #6c757d;
+            color: var(--text-muted);
             font-size: 0.9em;
         }
         .playlist-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .playlist-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -142,7 +165,7 @@
             padding-right: 10px;
         }
         .track {
-            background: #f8f9fa;
+            background: var(--surface);
             padding: 15px;
             border-radius: 8px;
             transition: all 0.2s ease;
@@ -159,7 +182,7 @@
         }
         .track-number {
             background: var(--secondary-color);
-            color: white;
+            color: var(--text-inverse);
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 0.9em;
@@ -184,21 +207,21 @@
         }
         .play-button {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
         }
         .delete-button {
-            background: #dc3545;
-            color: white;
+            background: var(--danger);
+            color: var(--text-inverse);
         }
         .upload-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .upload-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -212,12 +235,12 @@
         input[type="file"] {
             flex-grow: 1;
             padding: 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
         }
         button[type="submit"] {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 12px 25px;
             border-radius: 8px;
@@ -229,9 +252,9 @@
             padding: 12px;
             border-radius: 8px;
         }
-        .success { background: #d4edda; color: #155724; }
-        .error { background: #f8d7da; color: #721c24; }
-        .info { background: #d1ecf1; color: #0c5460; }
+        .success { background: var(--success-bg); color: var(--success-text); }
+        .error { background: var(--error-bg); color: var(--error-text); }
+        .info { background: var(--info-bg); color: var(--info-text); }
         .bottom-controls {
             display: flex;
             gap: 15px;
@@ -240,7 +263,7 @@
         }
         .bottom-controls button {
             background: var(--secondary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 12px 25px;
             border-radius: 8px;
@@ -248,21 +271,21 @@
             font-weight: 600;
         }
         .ncm-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         .ncm-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 6px;
             display: flex;
             align-items: center;
             gap: 10px;
         }
         .ncm-section > p {
-            color: #6c757d;
+            color: var(--text-muted);
             font-size: 0.88em;
             margin-bottom: 18px;
         }
@@ -274,8 +297,8 @@
             font-weight: 600;
             margin-bottom: 16px;
         }
-        .ncm-badge.ok   { background: #d4edda; color: #155724; }
-        .ncm-badge.none { background: #e2e3e5; color: #495057; }
+        .ncm-badge.ok   { background: var(--success-bg); color: var(--success-text); }
+        .ncm-badge.none { background: var(--neutral-bg); color: var(--text); }
         .ncm-tabs {
             display: flex;
             gap: 10px;
@@ -283,12 +306,12 @@
         }
         .ncm-tab {
             padding: 7px 18px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 20px;
             cursor: pointer;
             font-size: 0.88em;
-            background: white;
-            color: #495057;
+            background: var(--card);
+            color: var(--text);
         }
         .ncm-tab.active {
             border-color: var(--primary-color);
@@ -300,7 +323,7 @@
         .ncm-panel label {
             display: block;
             font-size: 0.88em;
-            color: #495057;
+            color: var(--text);
             margin-bottom: 5px;
         }
         .ncm-panel input[type="text"],
@@ -308,7 +331,7 @@
         .ncm-panel textarea {
             width: 100%;
             padding: 10px 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             font-size: 0.9em;
             box-sizing: border-box;
@@ -318,7 +341,7 @@
         .ncm-panel textarea { font-family: monospace; resize: vertical; }
         .ncm-panel small {
             display: block;
-            color: #6c757d;
+            color: var(--text-muted);
             font-size: 0.8em;
             margin-top: -8px;
             margin-bottom: 12px;
@@ -338,7 +361,7 @@
             font-size: 0.9em;
         }
         #ncmSaveBtn  { background: var(--primary-color); color: white; }
-        #ncmTestBtn  { background: #17a2b8; color: white; }
+        #ncmTestBtn  { background: var(--info); color: var(--text-inverse); }
         #ncmTestBtn:disabled { opacity: 0.5; cursor: not-allowed; }
         #ncmResult {
             margin-top: 12px;
@@ -348,14 +371,14 @@
             display: none;
         }
         .download-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         .download-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -364,7 +387,7 @@
         #playlistInput {
             width: 100%;
             padding: 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             font-family: monospace;
             font-size: 0.9em;
@@ -383,17 +406,17 @@
             align-items: center;
             gap: 6px;
             font-size: 0.9em;
-            color: #495057;
+            color: var(--text);
         }
         .download-options select {
             padding: 8px 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 6px;
-            background: white;
+            background: var(--card);
         }
         #startDownloadBtn {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 10px 22px;
             border-radius: 8px;
@@ -412,8 +435,8 @@
         }
         #downloadLog {
             margin-top: 12px;
-            background: #1e1e1e;
-            color: #d4d4d4;
+            background: var(--console-bg);
+            color: var(--console-text);
             padding: 14px;
             border-radius: 8px;
             font-size: 0.82em;
@@ -487,14 +510,14 @@
         }
 
         .settings-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .settings-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -507,13 +530,13 @@
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #495057;
+            color: var(--text);
         }
         .settings-form input[type="text"],
         .settings-form input[type="password"] {
             width: 100%;
             padding: 12px 15px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             font-size: 1em;
             transition: border-color 0.3s;
@@ -533,13 +556,13 @@
         .color-group input[type="color"] {
             width: 40px;
             height: 40px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 6px;
             cursor: pointer;
         }
         .color-group span {
             font-size: 0.85em;
-            color: #6c757d;
+            color: var(--text-muted);
         }
         .settings-form input[type="checkbox"] {
             margin-right: 10px;
@@ -559,18 +582,18 @@
         }
         .form-actions .save-btn {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
         }
         .form-actions .save-btn:hover {
             background: var(--secondary-color);
             transform: translateY(-2px);
         }
         .form-actions button:first-child {
-            background: #6c757d;
-            color: white;
+            background: var(--gray);
+            color: var(--text-inverse);
         }
         .form-actions button:first-child:hover {
-            background: #5a6268;
+            background: var(--gray-hover);
         }
         .result-message {
             margin-top: 20px;
@@ -579,21 +602,21 @@
             display: none;
         }
         .result-message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: var(--success-bg);
+            color: var(--success-text);
+            border: 1px solid var(--alert-success-border);
             display: block;
         }
         .result-message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: var(--error-bg);
+            color: var(--error-text);
+            border: 1px solid var(--alert-error-border);
             display: block;
         }
         .result-message.info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
+            background: var(--info-bg);
+            color: var(--info-text);
+            border: 1px solid var(--alert-info-border);
             display: block;
         }
 
@@ -784,7 +807,7 @@
                 
                 let html = '';
                 if (playlist.length === 0) {
-                    html = '<div style="text-align: center; padding: 40px; color: #6c757d;">播放列表为空，请上传音乐文件</div>';
+                    html = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">播放列表为空，请上传音乐文件</div>';
                 } else {
                     const metadata = data.metadata || [];
                     const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
