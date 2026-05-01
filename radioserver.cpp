@@ -911,26 +911,38 @@ private:
             bool is_admin = check_admin_auth(session_id);
 
             try {
-                if (is_admin) {
-                    // 管理员显示管理面板
-                    auto admin_context = std::map<std::string, std::string>{
-                        {"CLIENT_COUNT", std::to_string(stream_server_->client_count())}
-                    };
-
-                    // 获取播放列表信息
-                    std::lock_guard<std::mutex> lock(*playlist_mutex_);
-                    admin_context["TRACK_COUNT"] = std::to_string(playlist_->size());
-                    admin_context["CURRENT_TRACK"] = std::to_string(current_track_->load() + 1);
-
-                    return crow::response(render_template("panel.html", admin_context, true));
-                } else {
-                    // 普通用户显示收听界面
-                    return crow::response(render_template("index.html", {
-                        {"ALLOW_GUEST_SKIP", config_.allow_guest_skip ? "true" : "false"}
-                    }, false));
-                }
+                // 总是显示播放器界面
+                return crow::response(render_template("index.html", {
+                    {"ALLOW_GUEST_SKIP", config_.allow_guest_skip ? "true" : "false"}
+                }, is_admin));
             } catch (const std::exception& e) {
-                // 如果模板不存在，返回错误
+                return crow::response(500, std::string("模板错误: ") + e.what());
+            }
+        });
+
+        // 管理员管理面板
+        CROW_ROUTE(app_, "/panel")([this](const crow::request& req) {
+            std::string session_id = get_session_id_from_cookies(req.get_header_value("Cookie"));
+            bool is_admin = check_admin_auth(session_id);
+
+            if (!is_admin) {
+                // 重定向到登录页
+                crow::response res(302);
+                res.set_header("Location", "/admin");
+                return res;
+            }
+
+            try {
+                auto panel_context = std::map<std::string, std::string>{
+                    {"CLIENT_COUNT", std::to_string(stream_server_->client_count())}
+                };
+
+                std::lock_guard<std::mutex> lock(*playlist_mutex_);
+                panel_context["TRACK_COUNT"] = std::to_string(playlist_->size());
+                panel_context["CURRENT_TRACK"] = std::to_string(current_track_->load() + 1);
+
+                return crow::response(render_template("panel.html", panel_context, true));
+            } catch (const std::exception& e) {
                 return crow::response(500, std::string("模板错误: ") + e.what());
             }
         });
@@ -944,7 +956,7 @@ private:
             if (is_admin) {
                 // 如果已经登录，重定向到管理面板
                 crow::response res(302);
-                res.set_header("Location", "/");
+                res.set_header("Location", "/panel");
                 return res;
             }
             
@@ -970,7 +982,7 @@ private:
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({password: password})
         });
-        if (response.ok) window.location.href = '/';
+        if (response.ok) window.location.href = '/panel';
         else alert('密码错误');
     }
     </script>
@@ -1147,6 +1159,7 @@ private:
             if (index >= playlist_->size()) return crow::response{400, "索引超出范围"};
             
             size_t current = current_track_->load();
+            std::string removed_file = (*playlist_)[index];
 
             // 同步删除两个并行向量
             playlist_->erase(playlist_->begin() + index);
@@ -1171,6 +1184,12 @@ private:
             // index > current: 删除当前曲目之后，索引无需调整
 
             save_playlist_order();
+
+            try {
+                fs::path file_path = fs::path("media") / removed_file;
+                if (fs::exists(file_path)) fs::remove(file_path);
+            } catch (...) {}
+
             return crow::response{200, "删除成功"};
         });
 

@@ -76,6 +76,20 @@
         .logout-button:hover {
             background: #c0392b;
         }
+        .player-link {
+            background: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 0.9em;
+            display: inline-block;
+        }
+        .player-link:hover {
+            background: var(--primary-color);
+        }
         .dashboard {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -617,6 +631,7 @@
                 <p>管理面板</p>
             </div>
             <div class="admin-info">
+                <a class="player-link" href="/">🎧 返回播放器</a>
                 <span class="admin-badge">管理员</span>
                 <button onclick="logout()" class="logout-button">退出登录</button>
             </div>
@@ -811,7 +826,7 @@
         async function playTrack(index) {
             try {
                 await fetch('/api/play/' + index, { method: 'POST' });
-                setTimeout(loadPlaylist, 500);
+                loadPlaylist();
             } catch (error) {
                 console.error('播放失败:', error);
             }
@@ -820,7 +835,7 @@
         async function playNext() {
             try {
                 await fetch('/api/next', { method: 'POST' });
-                setTimeout(loadPlaylist, 500);
+                loadPlaylist();
             } catch (error) {
                 console.error('下一首失败:', error);
             }
@@ -829,7 +844,7 @@
         async function playPrev() {
             try {
                 await fetch('/api/prev', { method: 'POST' });
-                setTimeout(loadPlaylist, 500);
+                loadPlaylist();
             } catch (error) {
                 console.error('上一首失败:', error);
             }

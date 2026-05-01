@@ -135,6 +135,22 @@ static const std::unordered_map<std::string, std::string> templates = {
             border: 1px solid var(--primary-color); transition: all 0.2s ease;
         }
         .admin-link:hover { background: var(--primary-color); color: white; }
+        .admin-link.panel-link {
+            background: var(--primary-color); color: white;
+            margin-left: 10px;
+        }
+        .admin-link.panel-link:hover { background: var(--secondary-color); }
+        .admin-controls {
+            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px;
+        }
+        .admin-controls button {
+            background: var(--secondary-color);
+        }
+        .admin-controls .delete-btn {
+            background: #dc3545;
+            font-size: 0.8em;
+            padding: 4px 10px;
+        }
     /* 移动端响应式适配 */
         @media (max-width: 768px) {
             .container {
@@ -225,6 +241,7 @@ static const std::unordered_map<std::string, std::string> templates = {
             </audio>
             <div class="controls">
                 <button id="nextBtn" onclick="playNext()">⏭️ 下一首</button>
+                <button id="prevBtn" onclick="playPrev()" style="display:none;">⏮️ 上一首</button>
                 <div id="currentTrack">正在加载播放列表...</div>
             </div>
         </section>
@@ -241,17 +258,30 @@ static const std::unordered_map<std::string, std::string> templates = {
         </div>
         
         <footer>
-            <p>© {{STATION_NAME}} | 端口: 2240</p>
-            <a class="admin-link" href="/admin">🔐 管理员入口</a>
+            <p>&copy; {{STATION_NAME}} | 端口: 2240</p>
+            <div id="footerLinks">
+                <a class="admin-link" href="/admin">🔐 管理员入口</a>
+            </div>
         </footer>
     </div>
 
     <script>
         const allowGuestSkip = {{ALLOW_GUEST_SKIP}};
+        const isAdmin = {{IS_ADMIN}};
+        let skipPollTimer = null;
+        let lastKnownIndex = -1;
 
         document.addEventListener("DOMContentLoaded", () => {
-            if (!allowGuestSkip) {
+            if (allowGuestSkip || isAdmin) {
+                document.getElementById('nextBtn').style.display = '';
+            } else {
                 document.getElementById('nextBtn').style.display = 'none';
+            }
+            if (isAdmin) {
+                document.getElementById('prevBtn').style.display = '';
+                document.getElementById('footerLinks').innerHTML = 
+                    '<a class="admin-link panel-link" href="/panel">⚙️ 管理面板</a>' +
+                    ' <a class="admin-link" href="/admin/logout" onclick="logout(event)">退出</a>';
             }
         });
 
@@ -259,47 +289,52 @@ static const std::unordered_map<std::string, std::string> templates = {
             try {
                 const response = await fetch('/api/playlist');
                 const data = await response.json();
-                const playlist = data.playlist || [];
-                const metadata = data.metadata || [];
-                const currentIndex = data.current || 0;
-
-                let currentTrackIndex = playlist.length > 0 ? currentIndex % playlist.length : 0;
-                let totalTracks = playlist.length;
-
-                const currentMeta = metadata[currentTrackIndex];
-                const currentDisplay = currentMeta
-                    ? (currentMeta.artist ? `${currentMeta.artist} - ${currentMeta.title}` : currentMeta.title)
-                    : (playlist[currentTrackIndex] || '');
-
-                document.getElementById('currentTrack').textContent = playlist.length > 0 ? `正在播放: ${currentDisplay}` : '播放列表为空';
-                document.getElementById('trackCount').textContent = totalTracks;
-                document.getElementById('totalTracks').textContent = totalTracks;
-                document.getElementById('currentIndex').textContent = playlist.length > 0 ? currentTrackIndex + 1 : '-';
-
-                let html = '';
-                if (playlist.length === 0) {
-                    html = '<div style="text-align: center; padding: 40px; color: #6c757d;"><div>播放列表为空，请上传音乐文件</div></div>';
-                } else {
-                    const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
-                    tracks.forEach((track, index) => {
-                        const isCurrent = index === currentTrackIndex;
-                        const title = track.title || track.filename || playlist[index];
-                        const artist = track.artist || '';
-                        const displayText = artist ? `${artist} - ${title}` : title;
-                        const clickHandler = allowGuestSkip ? `onclick="playTrack(${index})"` : '';
-                        html += `
-                            <div class="track ${isCurrent ? 'current' : ''}" ${clickHandler} style="${allowGuestSkip ? 'cursor:pointer' : ''}">
-                                <span class="track-number">${index + 1}</span>
-                                ${displayText}
-                                ${isCurrent ? ' <span>▶️</span>' : ''}
-                            </div>
-                        `;
-                    });
-                }
-                document.getElementById('playlist').innerHTML = html;
+                renderPlaylistFromData(data);
             } catch (error) {
                 console.error('加载播放列表失败:', error);
             }
+        }
+
+        function renderPlaylistFromData(data) {
+            const playlist = data.playlist || [];
+            const metadata = data.metadata || [];
+            const currentIndex = data.current || 0;
+            lastKnownIndex = currentIndex;
+
+            const currentMeta = metadata[currentIndex];
+            const currentDisplay = currentMeta
+                ? (currentMeta.artist ? `${currentMeta.artist} - ${currentMeta.title}` : currentMeta.title)
+                : (playlist[currentIndex] || '');
+
+            document.getElementById('currentTrack').textContent = playlist.length > 0 ? `正在播放: ${currentDisplay}` : '播放列表为空';
+            document.getElementById('trackCount').textContent = playlist.length;
+            document.getElementById('totalTracks').textContent = playlist.length;
+            document.getElementById('currentIndex').textContent = playlist.length > 0 ? currentIndex + 1 : '-';
+
+            let html = '';
+            if (playlist.length === 0) {
+                html = '<div style="text-align: center; padding: 40px; color: #6c757d;"><div>播放列表为空，请上传音乐文件</div></div>';
+            } else {
+                const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
+                tracks.forEach((track, index) => {
+                    const isCurrent = index === currentIndex;
+                    const title = track.title || track.filename || playlist[index];
+                    const artist = track.artist || '';
+                    const displayText = artist ? `${artist} - ${title}` : title;
+                    const canInteract = allowGuestSkip || isAdmin;
+                    const clickHandler = canInteract ? `onclick="playTrack(${index})"` : '';
+                    const deleteBtn = isAdmin ? `<button class="delete-btn" onclick="event.stopPropagation(); deleteTrack(${index})">🗑️</button>` : '';
+                    html += `
+                        <div class="track ${isCurrent ? 'current' : ''}" ${clickHandler} style="${canInteract ? 'cursor:pointer' : ''}">
+                            <span class="track-number">${index + 1}</span>
+                            ${displayText}
+                            ${isCurrent ? ' <span>▶️</span>' : ''}
+                            ${deleteBtn}
+                        </div>
+                    `;
+                });
+            }
+            document.getElementById('playlist').innerHTML = html;
         }
 
         async function loadStats() {
@@ -310,25 +345,110 @@ static const std::unordered_map<std::string, std::string> templates = {
             } catch (error) {}
         }
 
+        function stopSkipPolling() {
+            if (skipPollTimer) { clearInterval(skipPollTimer); skipPollTimer = null; }
+        }
+
         async function playTrack(index) {
-            if (!allowGuestSkip) return;
+            if (!allowGuestSkip && !isAdmin) return;
+            stopSkipPolling();
             try {
                 await fetch('/api/play/' + index, { method: 'POST' });
-                setTimeout(() => { loadPlaylist(); document.getElementById('player').load(); }, 500);
-            } catch (error) { console.error(error); }
+                document.getElementById('nextBtn').disabled = true;
+                if (isAdmin) document.getElementById('prevBtn').disabled = true;
+                pollForTrackSwitch(index);
+            } catch (error) { console.error(error); resetButtons(); }
         }
 
         async function playNext() {
+            stopSkipPolling();
             try {
                 await fetch('/api/next', { method: 'POST' });
-                setTimeout(() => { loadPlaylist(); document.getElementById('player').load(); }, 500);
-            } catch (error) { console.error(error); }
+                document.getElementById('nextBtn').disabled = true;
+                if (isAdmin) document.getElementById('prevBtn').disabled = true;
+                pollForTrackSwitch(-1);
+            } catch (error) { console.error(error); resetButtons(); }
+        }
+
+        async function playPrev() {
+            if (!isAdmin) return;
+            stopSkipPolling();
+            try {
+                await fetch('/api/prev', { method: 'POST' });
+                document.getElementById('nextBtn').disabled = true;
+                document.getElementById('prevBtn').disabled = true;
+                pollForTrackSwitch(-1);
+            } catch (error) { console.error(error); resetButtons(); }
+        }
+
+        function pollForTrackSwitch(expectedIndex) {
+            let attempts = 0;
+            const MAX_ATTEMPTS = 20;
+            skipPollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/playlist');
+                    const data = await res.json();
+                    const newIndex = data.current || 0;
+                    renderPlaylistFromData(data);
+                    if (expectedIndex >= 0) {
+                        if (newIndex === expectedIndex) {
+                            onTrackSwitched();
+                            return;
+                        }
+                    } else {
+                        if (newIndex !== lastKnownIndex || attempts >= 2) {
+                            onTrackSwitched();
+                            return;
+                        }
+                    }
+                } catch(e) {}
+                attempts++;
+                if (attempts >= MAX_ATTEMPTS) {
+                    stopSkipPolling();
+                    resetButtons();
+                }
+            }, 250);
+        }
+
+        function onTrackSwitched() {
+            stopSkipPolling();
+            resetButtons();
+            setTimeout(() => {
+                document.getElementById('player').load();
+            }, 200);
+        }
+
+        function resetButtons() {
+            document.getElementById('nextBtn').disabled = false;
+            if (isAdmin) document.getElementById('prevBtn').disabled = false;
+        }
+
+        async function deleteTrack(index) {
+            if (!isAdmin) return;
+            if (!confirm(`确定要删除曲目 #${index + 1}吗？`)) return;
+            try {
+                const response = await fetch('/api/delete/' + index, { method: 'POST' });
+                if (response.ok) {
+                    loadPlaylist();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (error) {
+                console.error('删除失败:', error);
+            }
+        }
+
+        async function logout(e) {
+            e.preventDefault();
+            try {
+                await fetch('/admin/logout', { method: 'POST' });
+                window.location.href = '/';
+            } catch (error) {}
         }
 
         loadPlaylist(); loadStats();
-        setInterval(loadPlaylist, 3000); setInterval(loadStats, 2000);
+        setInterval(loadPlaylist, 5000); setInterval(loadStats, 3000);
 
-        // Service Worker 注册
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(() => {});
         }
@@ -415,6 +535,20 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .logout-button:hover {
             background: #c0392b;
+        }
+        .player-link {
+            background: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 0.9em;
+            display: inline-block;
+        }
+        .player-link:hover {
+            background: var(--primary-color);
         }
         .dashboard {
             display: grid;
@@ -957,6 +1091,7 @@ static const std::unordered_map<std::string, std::string> templates = {
                 <p>管理面板</p>
             </div>
             <div class="admin-info">
+                <a class="player-link" href="/">🎧 返回播放器</a>
                 <span class="admin-badge">管理员</span>
                 <button onclick="logout()" class="logout-button">退出登录</button>
             </div>
@@ -1151,7 +1286,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         async function playTrack(index) {
             try {
                 await fetch('/api/play/' + index, { method: 'POST' });
-                setTimeout(loadPlaylist, 500);
+                loadPlaylist();
             } catch (error) {
                 console.error('播放失败:', error);
             }
@@ -1160,7 +1295,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         async function playNext() {
             try {
                 await fetch('/api/next', { method: 'POST' });
-                setTimeout(loadPlaylist, 500);
+                loadPlaylist();
             } catch (error) {
                 console.error('下一首失败:', error);
             }
@@ -1169,7 +1304,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         async function playPrev() {
             try {
                 await fetch('/api/prev', { method: 'POST' });
-                setTimeout(loadPlaylist, 500);
+                loadPlaylist();
             } catch (error) {
                 console.error('上一首失败:', error);
             }
@@ -1686,7 +1821,7 @@ static const std::unordered_map<std::string, std::string> templates = {
                 
                 if (response.ok) {
                     // 登录成功，跳转到管理面板
-                    window.location.href = '/';
+                    window.location.href = '/panel';
                 } else {
                     const errorText = await response.text();
                     errorElement.textContent = errorText;

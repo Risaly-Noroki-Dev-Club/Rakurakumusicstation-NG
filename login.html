@@ -204,7 +204,7 @@
                 
                 if (response.ok) {
                     // 登录成功，跳转到管理面板
-                    window.location.href = '/';
+                    window.location.href = '/panel';
                 } else {
                     const errorText = await response.text();
                     errorElement.textContent = errorText;
