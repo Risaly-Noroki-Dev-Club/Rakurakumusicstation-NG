@@ -60,29 +60,6 @@ if [ "$PKG_MGR" == "apt" ]; then
     sudo apt-get update > /dev/null 2>&1
 fi
 
-# 检查 Crow 框架
-if [ ! -f "crow_all.h" ]; then
-    print_status "获取 Crow 最新版本信息..."
-    CROW_URL=$(curl -sf "https://api.github.com/repos/CrowCpp/Crow/releases/latest" \
-        | python3 -c "import sys,json; r=json.load(sys.stdin); print(next((a['browser_download_url'] for a in r.get('assets',[]) if a['name']=='crow_all.h'), ''))" 2>/dev/null)
-    if [ -z "$CROW_URL" ]; then
-        CROW_URL="https://github.com/CrowCpp/Crow/releases/download/v1.3.2/crow_all.h"
-        print_warning "无法获取最新版本，回退到 v1.3.2"
-    else
-        CROW_VER=$(echo "$CROW_URL" | grep -oP 'v[0-9]+\.[0-9]+\.[0-9]+')
-        print_status "下载 Crow ${CROW_VER}..."
-    fi
-    wget -q "$CROW_URL" -O crow_all.h
-    if [ $? -eq 0 ]; then
-        print_success "Crow 框架下载完成"
-    else
-        print_error "Crow 框架下载失败"
-        exit 1
-    fi
-else
-    print_success "Crow 框架已存在，跳过下载（如需更新请删除 crow_all.h 后重新构建）"
-fi
-
 # 安装系统依赖
 print_status "安装系统依赖包..."
 $INSTALL_CMD $DEPENDENCIES > /dev/null 2>&1
@@ -103,9 +80,9 @@ fi
 # 编译项目
 print_status "编译服务器程序..."
 RELEASE_DIR="dist"
-# Remove build artifacts but preserve media/ and settings.json
+# Remove build artifacts but preserve media/ and settings.json and playlist_order.json
 if [ -d "$RELEASE_DIR" ]; then
-    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'settings.json' -exec rm -rf {} +
+    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'settings.json' ! -name 'playlist_order.json' -exec rm -rf {} +
 fi
 mkdir -p $RELEASE_DIR/media
 mkdir -p $RELEASE_DIR/templates
