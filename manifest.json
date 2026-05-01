@@ -4,7 +4,15 @@
   "description": "轻松音乐电台 - 低延迟音频流媒体",
   "start_url": "/",
   "scope": "/",
-  "display": "minimal-ui",
+  "display": "standalone",
   "background_color": "{{BG_COLOR}}",
-  "theme_color": "{{PRIMARY_COLOR}}"
+  "theme_color": "{{PRIMARY_COLOR}}",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
 }

@@ -17,6 +17,9 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+
 try:
     from pyncm.apis import cloudsearch, track as ncm_track
     HAS_PYNCM = True
@@ -301,7 +304,7 @@ def ncm_download(t: Track, output_dir: Path, bitrate: int, authenticated: bool =
     song_id   = best["id"]
     ar_names  = "/".join(a["name"] for a in best.get("ar", []))
     song_name = best.get("name", "")
-    print(f"  → 网易云: {ar_names} - {song_name} (id:{song_id}, 匹配分:{sc:.2f})")
+    print(f"  → 网易云: {ar_names} - {song_name} (id:{song_id}, 匹配分:{sc:.2f})", flush=True)
 
     url, ext, is_trial = ncm_get_audio(song_id, bitrate)
     if not url:
@@ -331,15 +334,20 @@ def ncm_download(t: Track, output_dir: Path, bitrate: int, authenticated: bool =
 # ── yt-dlp 备用 ───────────────────────────────────────────
 
 def ytdlp_download(t: Track, output_dir: Path, fmt: str) -> bool:
-    print(f"  → yt-dlp 搜索 YouTube...")
+    print(f"  → yt-dlp 搜索 YouTube...", flush=True)
     cmd = [
         "yt-dlp",
         "--extract-audio", "--audio-format", fmt, "--audio-quality", "0",
         "--output", str(output_dir / "%(uploader)s - %(title)s.%(ext)s"),
         "--no-playlist", "--quiet", "--no-warnings",
+        "--socket-timeout", "30",
         f"ytsearch1:{t.label()}",
     ]
-    return subprocess.run(cmd).returncode == 0
+    try:
+        return subprocess.run(cmd, timeout=300).returncode == 0
+    except subprocess.TimeoutExpired:
+        print(f"  → yt-dlp 超时，跳过")
+        return False
 
 
 # ── 主流程 ────────────────────────────────────────────────
@@ -399,7 +407,7 @@ def main():
     if not args.no_ncm:
         ncm_label = f"网易云({'已登录' if authenticated else '游客'})"
     ytdlp_label = " + yt-dlp备用" if not args.no_ytdlp else ""
-    print(f"解析到 {len(tracks)} 首  |  音源: {ncm_label}{ytdlp_label}  |  输出: {output_dir}\n")
+    print(f"解析到 {len(tracks)} 首  |  音源: {ncm_label}{ytdlp_label}  |  输出: {output_dir}\n", flush=True)
 
     if args.dry_run:
         for i, t in enumerate(tracks, 1):
@@ -409,7 +417,7 @@ def main():
     failed: list[str] = []
 
     for i, t in enumerate(tracks, 1):
-        print(f"[{i}/{len(tracks)}] {t.label()}")
+        print(f"[{i}/{len(tracks)}] {t.label()}", flush=True)
         ok = False
 
         if not args.no_ncm and HAS_PYNCM:
@@ -418,7 +426,7 @@ def main():
         if not ok and not args.no_ytdlp:
             ok = ytdlp_download(t, output_dir, args.format)
 
-        print("  ✓ 完成" if ok else "  ✗ 失败")
+        print("  ✓ 完成" if ok else "  ✗ 失败", flush=True)
         if not ok:
             failed.append(t.label())
 
@@ -426,7 +434,7 @@ def main():
             time.sleep(args.delay)
 
     total = len(tracks)
-    print(f"\n完成 {total - len(failed)}/{total} 首")
+    print(f"\n完成 {total - len(failed)}/{total} 首", flush=True)
 
     if failed:
         failed_path = output_dir / "failed.txt"

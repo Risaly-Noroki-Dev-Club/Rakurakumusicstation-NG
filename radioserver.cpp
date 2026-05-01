@@ -36,6 +36,7 @@ namespace fs = std::filesystem;
 // =============================================================================
 namespace Config {
     constexpr int WEB_PORT = 2240;
+    constexpr int STREAM_PORT = 2241;
     constexpr size_t BUFFER_CAPACITY = 512 * 1024;  // 512KB - for better streaming
     constexpr size_t AUDIO_CHUNK_SIZE = 16384;      // 16KB - improved chunk size
     constexpr int EPOLL_TIMEOUT_MS = 100;
@@ -248,7 +249,7 @@ class StreamServer {
 public:
     StreamServer(BroadcastBuffer* buffer)
         : buffer_(buffer), running_(false), epoll_fd_(-1),
-          broadcast_watch_pos_(0) {}
+          server_fd_(-1), broadcast_watch_pos_(0) {}
 
     ~StreamServer() {
         stop();
@@ -257,9 +258,53 @@ public:
     bool start() {
         if (running_) return false;
 
+        // 创建监听 socket
+        server_fd_ = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+        if (server_fd_ < 0) {
+            perror("socket");
+            return false;
+        }
+
+        int opt = 1;
+        setsockopt(server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(Config::STREAM_PORT);
+
+        if (bind(server_fd_, (sockaddr*)&addr, sizeof(addr)) < 0) {
+            perror("bind");
+            close(server_fd_);
+            server_fd_ = -1;
+            return false;
+        }
+
+        if (listen(server_fd_, Config::MAX_CONNECTIONS) < 0) {
+            perror("listen");
+            close(server_fd_);
+            server_fd_ = -1;
+            return false;
+        }
+
         epoll_fd_ = epoll_create1(0);
         if (epoll_fd_ < 0) {
             perror("epoll_create1");
+            close(server_fd_);
+            server_fd_ = -1;
+            return false;
+        }
+
+        // 将监听 socket 加入 epoll
+        epoll_event ev{};
+        ev.events = EPOLLIN;
+        ev.data.fd = server_fd_;
+        if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, server_fd_, &ev) < 0) {
+            perror("epoll_ctl server_fd");
+            close(epoll_fd_);
+            close(server_fd_);
+            epoll_fd_ = -1;
+            server_fd_ = -1;
             return false;
         }
 
@@ -268,7 +313,7 @@ public:
         thread_ = std::thread(&StreamServer::worker_loop, this);
         broadcast_thread_ = std::thread(&StreamServer::broadcast_loop, this);
 
-        std::cout << "[Stream] Broadcaster started (serving at /stream)" << std::endl;
+        std::cout << "[Stream] Server started on port " << Config::STREAM_PORT << std::endl;
         return true;
     }
 
@@ -276,6 +321,13 @@ public:
         if (!running_.exchange(false)) return;
 
         buffer_->wakeup_all();
+
+        // 关闭监听 socket 以中断 accept
+        if (server_fd_ >= 0) {
+            epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, server_fd_, nullptr);
+            close(server_fd_);
+            server_fd_ = -1;
+        }
 
         if (thread_.joinable()) thread_.join();
         if (broadcast_thread_.joinable()) broadcast_thread_.join();
@@ -293,10 +345,9 @@ public:
             epoll_fd_ = -1;
         }
 
-        std::cout << "[Stream] Broadcaster stopped" << std::endl;
+        std::cout << "[Stream] Server stopped" << std::endl;
     }
 
-    // 由 Crow 的 /stream 路由调用；fd 必须是 dup 后的独立文件描述符。
     void add_client(int fd) {
         if (!running_) { close(fd); return; }
 
@@ -350,7 +401,16 @@ private:
             for (int i = 0; i < n; ++i) {
                 int fd = events[i].data.fd;
                 uint32_t events_mask = events[i].events;
-                if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
+
+                if (fd == server_fd_) {
+                    // 新连接
+                    sockaddr_in client_addr{};
+                    socklen_t addr_len = sizeof(client_addr);
+                    int client_fd = accept4(server_fd_, (sockaddr*)&client_addr, &addr_len, SOCK_NONBLOCK);
+                    if (client_fd >= 0) {
+                        add_client(client_fd);
+                    }
+                } else if (events_mask & (EPOLLERR | EPOLLRDHUP | EPOLLHUP)) {
                     remove_client(fd);
                 }
             }
@@ -380,10 +440,6 @@ private:
         std::lock_guard<std::mutex> lock(clients_mutex_);
         auto it = clients_.find(fd);
         if (it != clients_.end()) {
-            // 必须先 EPOLL_CTL_DEL 再 close()。Crow 的 adaptor 仍持有同一 socket 的
-            // 原始 fd，我们 dup 出来的 fd 关闭后，底层 struct file 仍存活，epoll
-            // 的兴趣条目不会被自动清理；此时再 EPOLL_CTL_DEL 会 EBADF 失败，
-            // 残留条目以电平触发模式持续回报 EPOLLHUP，导致 worker_loop 100% CPU。
             epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, fd, nullptr);
             it->second->close_socket();
             clients_.erase(it);
@@ -430,6 +486,7 @@ private:
     std::thread broadcast_thread_;
 
     int epoll_fd_;
+    int server_fd_;
     size_t broadcast_watch_pos_;
 
     mutable std::mutex clients_mutex_;
@@ -640,7 +697,7 @@ private:
             std::cerr << "[Audio] Error playing track: " << e.what() << std::endl;
         }
 
-        // 关闭管道并回收子进程；先 SIGTERM 让 ffmpeg 尽快退出。
+        // 关闭管道并回收子进程；SIGTERM + 超时后 SIGKILL
         if (pipe_fd >= 0) {
             close(pipe_fd);
             pipe_fd = -1;
@@ -648,8 +705,21 @@ private:
         if (child_pid > 0) {
             kill(child_pid, SIGTERM);
             int status = 0;
-            while (waitpid(child_pid, &status, 0) < 0) {
-                if (errno != EINTR) break;
+            int waited = 0;
+            const int max_wait_ms = 2000;
+            const int tick_ms = 50;
+            while (waited < max_wait_ms) {
+                pid_t w = waitpid(child_pid, &status, WNOHANG);
+                if (w > 0) break;
+                if (w < 0 && errno != EINTR) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(tick_ms));
+                waited += tick_ms;
+            }
+            if (waited >= max_wait_ms) {
+                kill(child_pid, SIGKILL);
+                while (waitpid(child_pid, &status, 0) < 0) {
+                    if (errno != EINTR) break;
+                }
             }
             child_pid = -1;
         }
@@ -854,6 +924,19 @@ private:
             }
         });
 
+        // PWA 图标：内联 SVG（紫色音符图标）
+        CROW_ROUTE(app_, "/icon.svg")([]() {
+            std::string svg = R"svg(
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="32" fill="#764ba2"/>
+  <text x="96" y="128" text-anchor="middle" font-size="96" fill="white">🎵</text>
+</svg>)svg";
+            crow::response res(svg);
+            res.set_header("Content-Type", "image/svg+xml");
+            res.set_header("Cache-Control", "public, max-age=86400");
+            return res;
+        });
+
         // Service Worker：原样返回 JS，并允许其作用于根路径
         CROW_ROUTE(app_, "/sw.js")([]() {
             std::string body = read_static_asset("sw.js");
@@ -865,22 +948,13 @@ private:
             return res;
         });
 
-        // 音频流端点：接管底层 socket 并注册到广播器
-        CROW_ROUTE(app_, "/stream")([this](const crow::request& /*req*/, crow::response& res) {
-            if (!res.get_socket_fd_helper_) {
-                res.code = 500;
-                res.end("stream unavailable");
-                return;
-            }
-            int crow_fd = res.get_socket_fd_helper_();
-            int fd = ::dup(crow_fd);
-            if (fd < 0) {
-                res.code = 500;
-                res.end("dup failed");
-                return;
-            }
-            res.take_over();
-            stream_server_->add_client(fd);
+        // 音频流信息端点
+        CROW_ROUTE(app_, "/stream")([this]() {
+            crow::json::wvalue result;
+            result["stream_url"] = "http://localhost:" + std::to_string(::Config::STREAM_PORT);
+            result["stream_port"] = ::Config::STREAM_PORT;
+            result["message"] = "使用此端口连接音频流";
+            return crow::response(result);
         });
 
         // 主页 - 根据是否登录显示不同界面
@@ -1124,19 +1198,29 @@ private:
             size_t index = static_cast<size_t>(idx);
             if (index >= playlist_->size()) return crow::response{400, "索引超出范围"};
             
+            size_t current = current_track_->load();
+
+            // 同步删除两个并行向量
             playlist_->erase(playlist_->begin() + index);
             if (index < playlist_metadata_->size()) {
                 playlist_metadata_->erase(playlist_metadata_->begin() + index);
             }
 
             // 调整当前播放索引
-            size_t current = current_track_->load();
-            if (current >= playlist_->size()) {
+            if (playlist_->empty()) {
                 current_track_->store(0);
-                if (!playlist_->empty()) {
-                    audio_player_->skip_current_track();
-                }
+            } else if (index < current) {
+                // 删除的曲目在当前曲目之前，索引需要减1
+                current_track_->store(current - 1);
+            } else if (index == current) {
+                // 删除了正在播放的曲目，当前索引不变（自动指向下一首）
+                audio_player_->skip_current_track();
+            } else if (current >= playlist_->size()) {
+                // current > index 且超出范围，回绕到开头
+                current_track_->store(0);
+                audio_player_->skip_current_track();
             }
+            // index > current: 删除当前曲目之后，索引无需调整
 
             save_playlist_order();
             return crow::response{200, "删除成功"};
@@ -1244,7 +1328,7 @@ private:
             }
 
             std::thread([this, tmp_str = std::string(tmp_path), quality, dl_fmt]() {
-                std::string cmd = "python3 ./music_dl.py --settings ./settings.json"
+                std::string cmd = "python3 -u ./music_dl.py --settings ./settings.json"
                                 + std::string(" -o ./media/ -q ") + quality
                                 + " -f " + dl_fmt + " " + tmp_str + " 2>&1";
                 FILE* pipe = popen(cmd.c_str(), "r");
@@ -1363,7 +1447,7 @@ private:
             if (!check_admin_auth(session_id))
                 return crow::response(403, "需要管理员权限");
 
-            FILE* pipe = popen("python3 ./music_dl.py --verify-login --settings ./settings.json 2>&1", "r");
+            FILE* pipe = popen("python3 -u ./music_dl.py --verify-login --settings ./settings.json 2>&1", "r");
             if (!pipe) return crow::response(500, "无法启动测试进程");
 
             std::string output;

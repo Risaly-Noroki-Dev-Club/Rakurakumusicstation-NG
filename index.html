@@ -18,7 +18,7 @@
         :root {
             --primary-color: {{PRIMARY_COLOR}};
             --secondary-color: {{SECONDARY_COLOR}};
-            --bg-gradient: {{BG_GRADIENT}};
+            --bg-color: {{BG_COLOR}};
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -215,7 +215,7 @@
         <section class="player-section">
             <h2><span class="icon">▶️</span> 当前播放</h2>
             <audio id="player" controls autoplay>
-                <source src="/stream" type="audio/mpeg">
+                <source src="" type="audio/mpeg">
             </audio>
             <div class="controls">
                 <button id="nextBtn" onclick="playNext()">⏭️ 下一首</button>
@@ -244,7 +244,9 @@
         const allowGuestSkip = {{ALLOW_GUEST_SKIP}};
 
         document.addEventListener("DOMContentLoaded", () => {
-            document.getElementById("player").src = "/stream";
+            var streamPort = 2241;
+            var player = document.getElementById("player");
+            player.src = window.location.protocol + "//" + window.location.hostname + ":" + streamPort + "/";
             if (!allowGuestSkip) {
                 document.getElementById('nextBtn').style.display = 'none';
             }
