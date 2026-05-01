@@ -221,7 +221,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         <section class="player-section">
             <h2><span class="icon">▶️</span> 当前播放</h2>
             <audio id="player" controls autoplay>
-                <source src="" type="audio/mpeg">
+                <source src="/stream" type="audio/mpeg">
             </audio>
             <div class="controls">
                 <button id="nextBtn" onclick="playNext()">⏭️ 下一首</button>
@@ -250,9 +250,6 @@ static const std::unordered_map<std::string, std::string> templates = {
         const allowGuestSkip = {{ALLOW_GUEST_SKIP}};
 
         document.addEventListener("DOMContentLoaded", () => {
-            var streamPort = 2241;
-            var player = document.getElementById("player");
-            player.src = window.location.protocol + "//" + window.location.hostname + ":" + streamPort + "/";
             if (!allowGuestSkip) {
                 document.getElementById('nextBtn').style.display = 'none';
             }
