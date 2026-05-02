@@ -8,7 +8,7 @@ use std::str::FromStr;
 /// 所有请求处理器共享的应用状态。
 pub struct AppState {
     pub db: SqlitePool,
-    pub redis_conn: redis::aio::ConnectionManager,
+    pub redis_conn: Option<redis::aio::ConnectionManager>,
     pub config: crate::config::AppConfig,
     pub jwt_secret: String,
     pub ws_tx: tokio::sync::broadcast::Sender<String>,
@@ -20,8 +20,8 @@ impl AppState {
         // 初始化数据库
         let db = init_database(&config.database).await?;
 
-        // 初始化 Redis 连接
-        let redis_conn = init_redis(&config.redis).await?;
+        // 初始化 Redis 连接（可选，失败时不阻止启动）
+        let redis_conn = init_redis(&config.redis).await;
 
         // WebSocket 广播通道（容量为 1024 条消息）
         let (ws_tx, _) = tokio::sync::broadcast::channel(1024);
@@ -70,10 +70,22 @@ async fn init_database(config: &DatabaseConfig) -> anyhow::Result<SqlitePool> {
     Ok(pool)
 }
 
-/// 初始化 Redis 连接。
-async fn init_redis(config: &crate::config::RedisConfig) -> anyhow::Result<redis::aio::ConnectionManager> {
-    let client = redis::Client::open(config.url.as_str())?;
-    let conn = redis::aio::ConnectionManager::new(client).await?;
-    tracing::info!("Redis connection established: {}", config.url);
-    Ok(conn)
-}
+    /// 初始化 Redis 连接（失败时返回 None，不阻止服务器启动）。
+    async fn init_redis(config: &crate::config::RedisConfig) -> Option<redis::aio::ConnectionManager> {
+        match redis::Client::open(config.url.as_str()) {
+            Ok(client) => match redis::aio::ConnectionManager::new(client).await {
+                Ok(conn) => {
+                    tracing::info!("Redis connection established: {}", config.url);
+                    Some(conn)
+                }
+                Err(e) => {
+                    tracing::warn!("Redis connection failed ({}): {}, Redis features disabled", config.url, e);
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Redis client error ({}): {}, Redis features disabled", config.url, e);
+                None
+            }
+        }
+    }

@@ -105,18 +105,20 @@ pub async fn add_to_queue(
     });
 
     // 通过 Redis 发布队列事件，以便 C++ 引擎感知
-    let queue_json = serde_json::to_string(&QueueEvent {
-        event_type: "added".into(),
-        song_id: Some(song_id),
-        file_path: Some(song.file_path.clone()),
-    })
-    .unwrap_or_default();
+    if let Some(ref mut conn) = state.redis_conn.clone() {
+        let queue_json = serde_json::to_string(&QueueEvent {
+            event_type: "added".into(),
+            song_id: Some(song_id),
+            file_path: Some(song.file_path.clone()),
+        })
+        .unwrap_or_default();
 
-    let _ = redis::cmd("PUBLISH")
-        .arg(&state.config.redis.queue_channel)
-        .arg(&queue_json)
-        .query_async::<_, ()>(&mut state.redis_conn.clone())
-        .await;
+        let _ = redis::cmd("PUBLISH")
+            .arg(&state.config.redis.queue_channel)
+            .arg(&queue_json)
+            .query_async::<_, ()>(conn)
+            .await;
+    }
 
     tracing::info!(
         "User '{}' added song '{}' to queue (item #{})",

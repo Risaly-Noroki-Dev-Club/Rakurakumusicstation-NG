@@ -257,6 +257,14 @@ pub async fn publish_command(
     state: &Arc<AppState>,
     command: &crate::models::AudioCommand,
 ) -> Result<(), AppError> {
+    let redis_conn = match &state.redis_conn {
+        Some(conn) => conn,
+        None => {
+            tracing::warn!("Cannot publish command: Redis not available");
+            return Err(AppError::Internal(anyhow::anyhow!("Redis not available")));
+        }
+    };
+
     let json = serde_json::to_string(command)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Serialize error: {}", e)))?;
 
@@ -265,7 +273,7 @@ pub async fn publish_command(
     redis::cmd("PUBLISH")
         .arg(channel)
         .arg(&json)
-        .query_async::<_, ()>(&mut state.redis_conn.clone())
+        .query_async::<_, ()>(&mut redis_conn.clone())
         .await
         .map_err(|e| AppError::Redis(e))?;
 
