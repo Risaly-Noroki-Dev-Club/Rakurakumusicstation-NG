@@ -895,10 +895,19 @@ private:
                 return;
             }
             int crow_fd = res.get_socket_fd_helper_();
+            if (crow_fd < 0) {
+                res.code = 500;
+                res.end("invalid socket");
+                std::cerr << "[Stream] get_socket_fd_helper_ returned invalid fd: "
+                          << crow_fd << std::endl;
+                return;
+            }
             int fd = ::dup(crow_fd);
             if (fd < 0) {
                 res.code = 500;
                 res.end("dup failed");
+                std::cerr << "[Stream] dup(" << crow_fd << ") failed: "
+                          << strerror(errno) << " (errno=" << errno << ")" << std::endl;
                 return;
             }
             res.take_over();

@@ -33,6 +33,10 @@ test.*
 *.swo
 *~
 
+# 构建产物
+crow_all.h
+embedded_templates.hpp
+
 # 项目配置和文档
 CLAUDE.md
 .DS_Store
@@ -41,6 +45,9 @@ Thumbs.db
 # 媒体文件目录
 media/
 media_backup/
+
+# Python缓存
+__pycache__/
 
 # 会话和临时文件
 *.tmp
@@ -51,3 +58,6 @@ media_backup/
 *.save
 *.orig
 .server.pid
+
+# 迁移遗留产物
+Rakurakumusicstation-NG/
