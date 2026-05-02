@@ -229,8 +229,14 @@ public:
             return;
         }
         clients_.emplace_back(std::make_unique<ClientConnection>(fd, buffer_));
-        // 标记需要将新客户端加入 epoll
-        new_clients_.push_back(clients_.back().get());
+        auto* cc = clients_.back().get();
+        // 立即发送 HTTP header，不等待 epoll 事件
+        if (!cc->send_header()) {
+            cc->close_socket();
+            clients_.pop_back();
+            return;
+        }
+        new_clients_.push_back(cc);
     }
 
     bool start() {
