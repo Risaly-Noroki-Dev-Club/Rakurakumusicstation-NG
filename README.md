@@ -273,5 +273,6 @@ MIT
 - [hiredis](https://github.com/redis/hiredis) — C Redis 客户端
 - [FFmpeg](https://ffmpeg.org/) — 音频解码
 - [Axum](https://github.com/tokio-rs/axum) — Rust HTTP 框架
+- [Vue 3](https://vuejs.org/) — 前端框架 (CDN, 无构建)
 - [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL 工具集
 - 灵感来源：《孤独摇滚！》— 伊地知虹夏

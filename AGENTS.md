@@ -12,7 +12,7 @@ This file provides guidance for OpenCode sessions working in this repository.
 - **Rust Backend** (`radio-backend/`) — port 2241
   - JWT auth, multi-user, SQLite, playlist/queue management, WebSocket
   - Drives C++ engine via Redis `command` channel; receives state via Redis `playback_state` channel
-  - Static web UI in `radio-backend/static/`
+  - Static web UI in `radio-backend/static/` (Vue 3 CDN SPA — no build tools)
 
 ## Build
 

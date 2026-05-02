@@ -143,6 +143,8 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
 
 /* ─── Misc ─────────────────────────────────────────────── */
 .hidden { display: none !important; }
+.auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 500; }
+.user-display { margin-right: 8px; font-size: 0.9em; color: var(--text-muted); }
 .mode-badge { font-size: 0.75em; padding: 3px 10px; border-radius: 12px; }
 .mode-stream { background: var(--info); color: var(--text-inverse); }
 .mode-file { background: var(--success); color: var(--text-inverse); }
