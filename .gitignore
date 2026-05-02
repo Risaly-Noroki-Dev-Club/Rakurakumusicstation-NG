@@ -17,6 +17,8 @@ test_build.*
 test_radioserver
 test_env
 test
+/target/
+**/target/
 test.*
 
 # 依赖和第三方库
