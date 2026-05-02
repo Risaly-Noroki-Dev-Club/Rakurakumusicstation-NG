@@ -19,7 +19,7 @@
                     <button class="theme-toggle" title="切换主题" @click="cycleTheme">{{ themeIcon }}</button>
                     <span v-if="store.useFileMode" class="mode-badge mode-file">推文件模式</span>
                     <span v-if="store.currentUser" class="user-display">{{ store.currentUser.username }}</span>
-                    <button v-if="!store.currentUser" class="btn btn-secondary btn-small" @click="store.showAuth = true">登录</button>
+                    <button v-if="!store.currentUser" class="btn btn-secondary btn-small" @click="openAuth">登录</button>
                     <button v-if="store.currentUser" class="btn btn-secondary btn-small" @click="logout">退出</button>
                 </div>
             </header>
@@ -320,15 +320,15 @@
             </div>
 
             <!-- Auth Modal -->
-            <div v-if="store.showAuth" class="auth-overlay" @click.self="store.showAuth = false">
+            <div v-if="store.showAuth" class="auth-overlay" @click.self="closeAuth">
                 <div class="card" style="width:360px;max-width:90vw">
                     <h2>{{ store.authMode === 'login' ? '登录' : '注册' }}</h2>
-                    <div class="form-group"><label>用户名</label><input type="text" v-model="store.authUsername" placeholder="3-32个字符" @keyup.enter="doAuth"></div>
-                    <div class="form-group"><label>密码</label><input type="password" v-model="store.authPassword" placeholder="至少6个字符" @keyup.enter="doAuth"></div>
+                    <div class="form-group"><label>用户名</label><input type="text" ref="authUsernameEl" autocomplete="username" placeholder="3-32个字符" @keyup.enter="doAuth"></div>
+                    <div class="form-group"><label>密码</label><input type="password" ref="authPasswordEl" autocomplete="current-password" placeholder="至少6个字符" @keyup.enter="doAuth"></div>
                     <div style="display:flex;gap:8px;margin-top:12px">
                         <button class="btn btn-primary" @click="doAuth">{{ store.authMode === 'login' ? '登录' : '注册' }}</button>
                         <button class="btn btn-secondary" @click="toggleAuthMode">{{ store.authMode === 'login' ? '切换到注册' : '切换到登录' }}</button>
-                        <button class="btn btn-secondary" @click="store.showAuth = false">取消</button>
+                        <button class="btn btn-secondary" @click="closeAuth">取消</button>
                     </div>
                     <div v-if="store.authError" style="color:var(--danger);margin-top:8px;font-size:0.85em">{{ store.authError }}</div>
                 </div>

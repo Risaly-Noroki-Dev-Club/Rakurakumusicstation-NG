@@ -298,24 +298,43 @@ async function removeQueueItem(id) {
 }
 
 // ─── AUTH ──────────────────────────────────────────────────────────────────
-async function doAuth() {
-    const username = store.authUsername.trim();
-    const password = store.authPassword;
+function openAuth() {
+    store.authMode = 'login';
+    store.authError = '';
+    store.authUsername = '';
+    store.authPassword = '';
+    store.showAuth = true;
+}
+
+function closeAuth() {
+    store.showAuth = false;
+    store.authError = '';
+    store.authUsername = '';
+    store.authPassword = '';
+}
+
+async function doAuthFn(username, password) {
+    username = (username || '').trim();
+    password = password || '';
 
     if (username.length < 3 || password.length < 6) {
         store.authError = '用户名3-32字符，密码至少6字符';
         return;
     }
 
-    const endpoint = store.authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    store.authError = '';
+    store.authUsername = username;
+    store.authPassword = password;
+
+    var endpoint = store.authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
     try {
-        const res = await fetch(BACKEND_URL + endpoint, {
+        var res = await fetch(BACKEND_URL + endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ username: username, password: password })
         });
-        const data = await res.json();
-        if (data.success) {
+        var data = await res.json();
+        if (data.success && data.data) {
             store.token = data.data.token;
             store.currentUser = data.data.user;
             localStorage.setItem('radio_token', store.token);
@@ -325,7 +344,7 @@ async function doAuth() {
             store.authPassword = '';
             toast(store.authMode === 'login' ? '登录成功' : '注册成功', 'success');
         } else {
-            store.authError = data.error || '操作失败';
+            store.authError = (data && data.error) || '操作失败';
         }
     } catch (e) {
         store.authError = '无法连接到服务器';
@@ -440,7 +459,7 @@ function onSearchInput() {
 }
 
 async function addToQueue(songId) {
-    if (!store.token) { toast('请先登录再点歌', 'error'); store.showAuth = true; return; }
+    if (!store.token) { toast('请先登录再点歌', 'error'); openAuth(); return; }
     try {
         const res = await fetch(BACKEND_URL + '/api/queue', {
             method: 'POST',
@@ -888,7 +907,8 @@ function switchAdminTab(name) {
 const app = createApp({
     setup() {
         const audioEl = ref(null);
-        const lyricsBoxRef = ref(null);
+        const authUsernameEl = ref(null);
+        const authPasswordEl = ref(null);
         const coverContainer = ref(null);
 
         const themeIcon = computed(() => {
@@ -954,7 +974,7 @@ const app = createApp({
         }
 
         function onSwitchPlaybackMode() {
-            switchPlaybackMode(audioEl.value);
+            if (audioEl.value) switchPlaybackMode(audioEl.value);
         }
 
         function onVolumeDown() {
@@ -962,6 +982,12 @@ const app = createApp({
         }
         function onVolumeUp() {
             if (audioEl.value) volumeUp(audioEl.value);
+        }
+
+        function doAuth() {
+            var u = authUsernameEl.value ? authUsernameEl.value.value : '';
+            var p = authPasswordEl.value ? authPasswordEl.value.value : '';
+            doAuthFn(u, p);
         }
 
         return {
@@ -977,6 +1003,8 @@ const app = createApp({
             lyricActiveIdx,
             scrollLyricIntoView,
             audioEl,
+            authUsernameEl,
+            authPasswordEl,
             switchPlaybackMode: onSwitchPlaybackMode,
             volumeDown: onVolumeDown,
             volumeUp: onVolumeUp,
@@ -986,6 +1014,8 @@ const app = createApp({
             switchTab,
             switchAdminTab,
             formatTime,
+            openAuth,
+            closeAuth,
             doAuth,
             toggleAuthMode,
             logout,
