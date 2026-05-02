@@ -229,7 +229,7 @@ fn find_cover(audio_path: &std::path::Path, media_root: &std::path::Path) -> Str
                        "album.jpg", "album.png",
                        "front.jpg", "front.png",
                        "AlbumCover.jpg", "AlbumCover.png"];
-    let parent = audio_path.parent().unwrap_or(audio_path);
+    let parent = audio_path.parent().unwrap_or_else(|| std::path::Path::new("."));
 
     for name in &cover_names {
         let candidate = parent.join(name);
@@ -691,7 +691,7 @@ pub async fn start_download(
 
     // 检查是否已有下载任务在运行
     {
-        let status = download_state().lock().unwrap();
+        let status = download_state().lock().unwrap_or_else(|e| e.into_inner());
         if status.running {
             return Err(AppError::BadRequest("已有下载任务在运行中".into()));
         }
@@ -708,7 +708,7 @@ pub async fn start_download(
 
     // 更新下载状态
     {
-        let mut status = download_state().lock().unwrap();
+        let mut status = download_state().lock().unwrap_or_else(|e| e.into_inner());
         status.running = true;
         status.log = format!("开始下载...\n音质: {}\n格式: {}\n", quality, format);
     }
@@ -733,7 +733,7 @@ pub async fn start_download(
             .arg(&format_clone)
             .output();
 
-        let mut status = download_state().lock().unwrap();
+        let mut status = download_state().lock().unwrap_or_else(|e| e.into_inner());
         match result {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -761,7 +761,7 @@ pub async fn download_status(
 ) -> Result<Json<ApiResponse<DownloadStatus>>, AppError> {
     let _admin = get_admin(&_state, &headers).await?;
 
-    let status = download_state().lock().unwrap();
+    let status = download_state().lock().unwrap_or_else(|e| e.into_inner());
     Ok(Json(ApiResponse::ok(status.clone())))
 }
 

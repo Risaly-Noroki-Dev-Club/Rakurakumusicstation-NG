@@ -124,7 +124,7 @@ async fn get_me(
     let claims = auth::validate_token(token, secret)?;
 
     let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().unwrap_or(0))
+        .bind(claims.sub.parse::<i64>().map_err(|_| AppError::Unauthorized)?)
         .fetch_optional(&state.db)
         .await?
         .ok_or(AppError::Unauthorized)?;

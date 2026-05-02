@@ -160,12 +160,12 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
 /* ─── Download Section ─────────────────────────────────── */
 #downloadPlaylistInput { width: 100%; padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-family: monospace; font-size: 0.9em; resize: vertical; box-sizing: border-box; margin-bottom: 8px; background: var(--card); color: var(--text); }
 .download-options { display: flex; gap: 15px; flex-wrap: wrap; align-items: center; margin-top: 8px; margin-bottom: 12px; }
-.download-log { background: #1e1e1e; color: #d4d4d4; padding: 14px; border-radius: 8px; font-size: 0.82em; max-height: 280px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-family: monospace; display: none; }
+.download-log { background: var(--card); color: var(--text); padding: 14px; border-radius: 8px; font-size: 0.82em; max-height: 280px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-family: monospace; display: none; }
 
 /* ─── NCM Section ──────────────────────────────────────── */
 .ncm-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.82em; font-weight: 600; margin-bottom: 10px; }
-.ncm-badge.ok { background: #d4edda; color: #155724; }
-.ncm-badge.none { background: #e2e3e5; color: var(--text); }
+.ncm-badge.ok { background: rgba(40, 167, 69, 0.15); color: var(--success); }
+.ncm-badge.none { background: var(--border); color: var(--text-muted); }
 .ncm-tabs { display: flex; gap: 10px; margin-bottom: 12px; }
 .ncm-tab { padding: 6px 16px; border: 2px solid var(--border); border-radius: 20px; cursor: pointer; font-size: 0.85em; background: var(--card); color: var(--text); }
 .ncm-tab.active { border-color: var(--primary); color: var(--primary); font-weight: 600; }
@@ -185,9 +185,9 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
 .color-group input[type="color"] { width: 40px; height: 40px; border: 2px solid var(--border); border-radius: 6px; cursor: pointer; padding: 2px; }
 .color-group span { font-size: 0.85em; color: var(--text-muted); }
 .result-message { margin-top: 15px; padding: 10px 14px; border-radius: 6px; font-size: 0.88em; display: none; }
-.result-message.success { background: #d4edda; color: #155724; display: block; }
-.result-message.error { background: #f8d7da; color: #721c24; display: block; }
-.result-message.info { background: #d1ecf1; color: #0c5460; display: block; }
+.result-message.success { background: rgba(40, 167, 69, 0.15); color: var(--success); display: block; }
+.result-message.error { background: rgba(220, 53, 69, 0.15); color: var(--danger); display: block; }
+.result-message.info { background: rgba(23, 162, 184, 0.15); color: var(--info); display: block; }
 
 /* ─── Song Management Table ────────────────────────────── */
 .song-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }

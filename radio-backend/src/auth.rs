@@ -71,7 +71,7 @@ pub async fn require_auth_from_headers(
     let claims = validate_token(token, secret)?;
 
     let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().unwrap_or(0))
+        .bind(claims.sub.parse::<i64>().map_err(|_| AppError::Unauthorized)?)
         .fetch_optional(db)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -112,10 +112,11 @@ pub async fn optional_auth_from_headers(
     let claims = validate_token(token, secret).ok()?;
 
     let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().unwrap_or(0))
+        .bind(claims.sub.parse::<i64>().ok()?)
         .fetch_optional(db)
         .await
-        .ok()??;
+        .ok()
+        .flatten()?;
 
     if user.is_banned() {
         return None;

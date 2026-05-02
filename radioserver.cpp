@@ -76,10 +76,11 @@ static std::string json_escape(const std::string& s) {
 class BroadcastBuffer {
 public:
     explicit BroadcastBuffer(size_t capacity = Config::BUFFER_CAPACITY)
-        : capacity_(capacity), mask_(capacity - 1), buffer_(capacity) {
+        : capacity_(capacity), buffer_(capacity) {
         if (capacity == 0 || (capacity & (capacity - 1)) != 0) {
             throw std::runtime_error("Capacity must be power of two");
         }
+        mask_ = capacity - 1;
     }
 
     void push(const char* data, size_t len) {
@@ -92,7 +93,8 @@ public:
                      (capacity_ - current_rp + current_wp);
         size_t free = capacity_ - used;
         if (len > free) {
-            consume_pos_.store((current_rp + (len - free)) & mask_,
+            size_t advance = len - free;  // Safe: len > free guaranteed above
+            consume_pos_.store((current_rp + advance) & mask_,
                                std::memory_order_relaxed);
         }
         size_t new_wp = (current_wp + len) & mask_;
@@ -141,7 +143,7 @@ public:
 
 private:
     const size_t capacity_;
-    const size_t mask_;
+    size_t mask_;
     std::vector<char> buffer_;
     std::atomic<size_t> write_pos_{0};
     std::atomic<size_t> consume_pos_{0};
@@ -869,10 +871,17 @@ private:
                         position_ms = current_duration_ms_;
                     }
                     const char* status = preload_triggered ? "crossfading" : "playing";
+                    std::string track_name;
+                    {
+                        std::lock_guard<std::mutex> lock(*playlist_mutex_);
+                        if (track_idx < playlist_->size()) {
+                            track_name = playlist_->at(track_idx);
+                        }
+                    }
                     redis_->publish_state(
                         build_playback_state_json(
                             static_cast<int64_t>(track_idx),
-                            playlist_->at(track_idx),
+                            track_name,
                             position_ms,
                             current_duration_ms_,
                             status,

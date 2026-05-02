@@ -16,6 +16,11 @@ let mediaSource = null;
 let sourceBuffer = null;
 let downloadPoller = null;
 let searchTimer = null;
+let queuePoller = null;
+let playbackPoller = null;
+let wsReconnectAttempts = 0;
+const WS_MAX_RECONNECT_ATTEMPTS = 20;
+const WS_BASE_RECONNECT_DELAY = 3000;
 
 // ─── REACTIVE STORE ────────────────────────────────────────────────────────
 const store = reactive({
@@ -174,14 +179,28 @@ async function loadStationInfo() {
 function connectWebSocket() {
     try {
         ws = new WebSocket(WS_URL);
-        ws.onopen = () => { console.log('[WS] Connected'); toast('已连接到电台服务器', 'success'); };
+        ws.onopen = () => {
+            wsReconnectAttempts = 0;
+            console.log('[WS] Connected');
+            toast('已连接到电台服务器', 'success');
+        };
         ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
                 handleWsMessage(msg);
             } catch (e) { /* ignore malformed */ }
         };
-        ws.onclose = () => { console.log('[WS] Disconnected, reconnecting in 3s...'); setTimeout(connectWebSocket, 3000); };
+        ws.onclose = () => {
+            wsReconnectAttempts++;
+            if (wsReconnectAttempts > WS_MAX_RECONNECT_ATTEMPTS) {
+                console.log('[WS] Max reconnection attempts reached');
+                toast('WebSocket 连接失败，请刷新页面', 'error');
+                return;
+            }
+            const delay = Math.min(WS_BASE_RECONNECT_DELAY * Math.pow(1.5, wsReconnectAttempts - 1), 30000);
+            console.log(`[WS] Disconnected, reconnecting in ${delay}ms (attempt ${wsReconnectAttempts})...`);
+            setTimeout(connectWebSocket, delay);
+        };
         ws.onerror = () => { /* ignore */ };
     } catch (e) {
         setTimeout(connectWebSocket, 3000);
@@ -326,14 +345,14 @@ async function doAuthFn(username, password) {
     store.authUsername = username;
     store.authPassword = password;
 
-    var endpoint = store.authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+    const endpoint = store.authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
     try {
-        var res = await fetch(BACKEND_URL + endpoint, {
+        const res = await fetch(BACKEND_URL + endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: username, password: password })
         });
-        var data = await res.json();
+        const data = await res.json();
         if (data.success && data.data) {
             store.token = data.data.token;
             store.currentUser = data.data.user;
@@ -419,7 +438,7 @@ function startFilePlayback(audio) {
 
 async function fetchFileChunk(offset) {
     if (store.playbackState.song_id <= 0) return;
-    var chunkSize = 256 * 1024;
+    const chunkSize = 256 * 1024;
     try {
         const res = await fetch(AUDIO_ENGINE_URL + '/file/' + store.playbackState.song_id, {
             headers: { 'Range': 'bytes=' + offset + '-' }
@@ -909,7 +928,6 @@ const app = createApp({
         const audioEl = ref(null);
         const authUsernameEl = ref(null);
         const authPasswordEl = ref(null);
-        const coverContainer = ref(null);
 
         const themeIcon = computed(() => {
             const icons = { auto: '🌓', light: '☀️', dark: '🌙' };
@@ -985,8 +1003,8 @@ const app = createApp({
         }
 
         function doAuth() {
-            var u = authUsernameEl.value ? authUsernameEl.value.value : '';
-            var p = authPasswordEl.value ? authPasswordEl.value.value : '';
+            const u = authUsernameEl.value ? authUsernameEl.value.value : '';
+            const p = authPasswordEl.value ? authPasswordEl.value.value : '';
             doAuthFn(u, p);
         }
 
@@ -1048,13 +1066,15 @@ const app = createApp({
         if (store.token) {
             loadCurrentUser();
         }
-        setInterval(refreshQueue, 5000);
-        setInterval(refreshPlaybackPoll, 2000);
+        queuePoller = setInterval(refreshQueue, 5000);
+        playbackPoller = setInterval(refreshPlaybackPoll, 2000);
     },
 
     beforeUnmount() {
         if (downloadPoller) clearInterval(downloadPoller);
         if (searchTimer) clearTimeout(searchTimer);
+        if (queuePoller) clearInterval(queuePoller);
+        if (playbackPoller) clearInterval(playbackPoller);
         if (ws) ws.close();
     }
 });
