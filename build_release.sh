@@ -1,7 +1,14 @@
 #!/bin/bash
 
 # =============================================================================
-# Rakuraku Music Station - Build Script v2.0
+# Rakuraku Music Station - Build Script v2.1
+# =============================================================================
+#
+# Usage:
+#   ./build_release.sh              # Full build (C++ + Rust, auto-download crow_all.h)
+#   ./build_release.sh --no-crow    # Skip crow_all.h download (fail if missing)
+#   ./build_release.sh --skip-rust  # Skip Rust build
+#
 # =============================================================================
 
 set -e
@@ -13,21 +20,15 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
+# 解析参数
+AUTO_CROW=true
+SKIP_RUST=false
+for arg in "$@"; do
+    case "$arg" in
+        --no-crow)  AUTO_CROW=false ;;
+        --skip-rust) SKIP_RUST=true ;;
+    esac
+done
 
 echo -e "${BLUE}
 ══════════════════════════════════════════════
@@ -75,6 +76,42 @@ if command -v ffmpeg > /dev/null 2>&1; then
 else
     print_error "FFmpeg 未找到，请确保已正确安装"
     exit 1
+fi
+
+# 检查 crow_all.h（C++ 构建必需）
+print_status "检查 Crow 框架头文件..."
+if [ ! -f "crow_all.h" ]; then
+    if [ "$AUTO_CROW" = true ]; then
+        print_warning "crow_all.h 未找到，正在自动下载..."
+        if command -v wget > /dev/null 2>&1 && command -v python3 > /dev/null 2>&1; then
+            CROW_URL=$(curl -sf https://api.github.com/repos/CrowCpp/Crow/releases/latest 2>/dev/null \
+                | python3 -c "import sys,json; r=json.load(sys.stdin); print(next(a['browser_download_url'] for a in r['assets'] if a['name']=='crow_all.h'))" 2>/dev/null)
+            if [ -n "$CROW_URL" ]; then
+                wget -q "$CROW_URL" -O crow_all.h && print_success "crow_all.h 下载完成" || {
+                    print_error "下载 crow_all.h 失败"
+                    print_error "请手动下载：wget <url> -O crow_all.h"
+                    print_error "或参考 README.md 中的下载命令"
+                    exit 1
+                }
+            else
+                print_error "无法获取 crow_all.h 下载地址"
+                print_error "请参考 README.md 手动下载"
+                exit 1
+            fi
+        else
+            print_error "缺少 wget 或 python3，无法自动下载 crow_all.h"
+            print_error "请手动下载后放置到仓库根目录"
+            exit 1
+        fi
+    else
+        print_error "crow_all.h 未找到！"
+        print_error "请下载后放置到仓库根目录："
+        print_error "  wget \$(curl -sf https://api.github.com/repos/CrowCpp/Crow/releases/latest | python3 -c \"import sys,json; r=json.load(sys.stdin); print(next(a['browser_download_url'] for a in r['assets'] if a['name']=='crow_all.h'))\") -O crow_all.h"
+        print_error "或使用 ./build_release.sh（不加 --no-crow）自动下载"
+        exit 1
+    fi
+else
+    print_success "crow_all.h 已就绪"
 fi
 
 # 编译项目
@@ -308,6 +345,67 @@ EOF
 
 chmod +x $RELEASE_DIR/start.sh $RELEASE_DIR/stop.sh
 
+# =============================================================================
+# Rust 后端编译
+# =============================================================================
+if [ "$SKIP_RUST" = true ]; then
+    print_warning "跳过 Rust 后端编译（--skip-rust）"
+elif [ -d "radio-backend" ] && [ -f "radio-backend/Cargo.toml" ]; then
+    if command -v cargo > /dev/null 2>&1; then
+        print_status "编译 Rust 后端（radio-backend）..."
+        (cd radio-backend && cargo build --release 2>&1 | while IFS= read -r line; do
+            case "$line" in
+                *"Compiling"*|*"Finished"*) echo "  $line" ;;
+            esac
+        done)
+        if [ -f "radio-backend/target/release/radio-backend" ]; then
+            cp radio-backend/target/release/radio-backend "$RELEASE_DIR/"
+            # 复制静态资源和配置模板
+            if [ -d "radio-backend/static" ]; then
+                cp -r radio-backend/static "$RELEASE_DIR/"
+            fi
+            if [ -f "radio-backend/config.toml.example" ]; then
+                cp radio-backend/config.toml.example "$RELEASE_DIR/config.toml"
+                print_warning "已生成 config.toml，请检查并修改配置"
+            fi
+            # 创建 Rust 后端启动/停止脚本
+            cat > "$RELEASE_DIR/start-rust.sh" << 'EOF'
+#!/bin/bash
+echo "🎵 Rakuraku Music Station (Rust 后端) 启动中..."
+export LANG=zh_CN.UTF-8
+export LC_ALL=zh_CN.UTF-8
+nohup ./radio-backend > rust-server.log 2>&1 &
+echo $! > .rust-server.pid
+echo "✅ Rust 后端已启动 (PID: $(cat .rust-server.pid))"
+echo "📄 查看日志: tail -f rust-server.log"
+echo "🛑 停止服务: ./stop-rust.sh"
+EOF
+            cat > "$RELEASE_DIR/stop-rust.sh" << 'EOF'
+#!/bin/bash
+if [ -f .rust-server.pid ]; then
+    PID=$(cat .rust-server.pid)
+    if ps -p $PID > /dev/null 2>&1; then
+        kill $PID 2>/dev/null
+        sleep 2
+        kill -9 $PID 2>/dev/null || true
+        echo "✅ Rust 后端已停止 (PID: $PID)"
+    fi
+    rm -f .rust-server.pid
+fi
+EOF
+            chmod +x "$RELEASE_DIR/start-rust.sh" "$RELEASE_DIR/stop-rust.sh"
+            print_success "Rust 后端编译完成"
+        else
+            print_warning "Rust 编译未生成二进制，请检查 radio-backend/"
+        fi
+    else
+        print_warning "未检测到 Rust 工具链（cargo），跳过 Rust 后端编译"
+        print_warning "安装 Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    fi
+else
+    print_warning "未找到 radio-backend/Cargo.toml，跳过 Rust 后端编译"
+fi
+
 # 完成提示
 print_success "构建完成！"
 echo -e "${BLUE}
@@ -320,5 +418,13 @@ echo "4. 访问地址: http://localhost:2240"
 echo ""
 echo "支持格式: MP3, WAV, FLAC, OGG, M4A, AAC"
 echo "管理员密码: admin123 (可在 settings.json 中修改)"
+echo ""
+if [ "$SKIP_RUST" = false ] && [ -f "$RELEASE_DIR/radio-backend" ]; then
+    echo -e "${BLUE}Rust 后端已编译到 dist/${NC}"
+    echo "  C++ 服务器: ./start.sh    (端口 2240)"
+    echo "  Rust 后端:  ./start-rust.sh (端口 2241)"
+else
+    echo "如需 Rust 后端，安装 cargo 后重新运行: ./build_release.sh"
+fi
 echo ""
 echo -e "${GREEN}🎵 享受音乐时光！${NC}"
