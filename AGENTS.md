@@ -55,7 +55,6 @@ cd dist
 
 ## Important codebase gotchas
 
-- **`CLAUDE.md` is listed in `.gitignore`** (line 35), so it won't be committed. `AGENTS.md` is not gitignored.
 - **`Rakurakumusicstation-NG/`** is a nested directory containing its own `.git` repo — likely cruft from a migration.
 - `secrets.json` and `settings.json` contain credentials. Never commit them.
 - `crow_all.h` and `radioserver` (top-level) are build artifacts; delete before committing.

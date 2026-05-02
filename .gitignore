@@ -39,7 +39,6 @@ test.*
 # embedded_templates.hpp - 不再生成，C++ 引擎已精简至仅音频流 + Redis 桥接
 
 # 项目配置和文档
-CLAUDE.md
 .DS_Store
 Thumbs.db
 
