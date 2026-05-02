@@ -34,7 +34,6 @@ test.*
 *~
 
 # 构建产物
-crow_all.h
 embedded_templates.hpp
 
 # 项目配置和文档
