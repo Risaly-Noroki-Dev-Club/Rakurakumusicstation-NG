@@ -124,49 +124,36 @@ print_status "编译服务器程序..."
 RELEASE_DIR="dist"
 # Remove build artifacts but preserve media/ and settings.json and playlist_order.json
 if [ -d "$RELEASE_DIR" ]; then
-    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'settings.json' ! -name 'playlist_order.json' -exec rm -rf {} +
+    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'playlist_order.json' -exec rm -rf {} +
 fi
 mkdir -p $RELEASE_DIR/media
 mkdir -p $RELEASE_DIR/templates
 
-# 生成内嵌 HTML 模板头文件
-print_status "生成内嵌 HTML 模板..."
-python3 - <<'PYEOF'
-import os, sys
-
-files = ['index.html', 'panel.html', 'login.html', 'manifest.json', 'sw.js']
-lines = [
-    '#pragma once',
-    '#include <string>',
-    '#include <unordered_map>',
-    'namespace EmbeddedTemplates {',
-    'static const std::unordered_map<std::string, std::string> templates = {',
-]
-found = []
-for f in files:
-    if os.path.exists(f):
-        with open(f, encoding='utf-8') as fh:
-            content = fh.read()
-        lines.append(f'  {{"{f}", R"RKTML(')
-        lines.append(content)
-        lines.append(')RKTML"},')
-        found.append(f)
-lines += ['};', '}']
-with open('embedded_templates.hpp', 'w', encoding='utf-8') as out:
-    out.write('\n'.join(lines) + '\n')
-print(f"已内嵌模板: {', '.join(found) if found else '（无 HTML 文件）'}", file=sys.stderr)
-PYEOF
-
-if [ ! -f "embedded_templates.hpp" ]; then
-    print_error "模板头文件生成失败"
-    exit 1
+# 编译 hiredis 静态库（如果不存在）
+print_status "检查 hiredis 依赖..."
+HIREDIS_DIR="third_party/hiredis"
+if [ ! -f "$HIREDIS_DIR/libhiredis.a" ]; then
+    if [ -d "$HIREDIS_DIR" ]; then
+        print_warning "正在编译 hiredis..."
+        (cd "$HIREDIS_DIR" && gcc -c -O2 -I. hiredis.c alloc.c async.c net.c read.c sds.c sockcompat.c dict.c && ar rcs libhiredis.a *.o && rm -f *.o) || {
+            print_error "hiredis 编译失败，请检查 third_party/hiredis/"
+            exit 1
+        }
+        print_success "hiredis 编译完成"
+    else
+        print_error "未找到 third_party/hiredis/ 目录"
+        print_error "请从 https://github.com/redis/hiredis 获取源文件"
+        exit 1
+    fi
+else
+    print_success "hiredis 已就绪"
 fi
-print_success "模板头文件生成完成"
 
 # 编译参数
-CXXFLAGS="-std=c++17 -O3 -flto -march=native -lpthread -lssl -lcrypto -I. -w"
+CXXFLAGS="-std=c++17 -O3 -flto -march=native -lpthread -lssl -lcrypto -I. -I$HIREDIS_DIR -w"
+LDFLAGS="$HIREDIS_DIR/libhiredis.a"
 
-g++ radioserver.cpp metadata.cpp -o $RELEASE_DIR/radioserver $CXXFLAGS
+g++ radioserver.cpp metadata.cpp -o $RELEASE_DIR/radioserver $CXXFLAGS $LDFLAGS
 
 if [ -f "$RELEASE_DIR/radioserver" ]; then
     # 可选：移除调试符号减小体积
@@ -233,21 +220,6 @@ else
 EOF
 fi
 
-# 配置文件和脚本
-if [ ! -f "$RELEASE_DIR/settings.json" ]; then
-    cat > $RELEASE_DIR/settings.json << 'EOF'
-{
-    "station_name": "Rakuraku Music Station",
-    "subtitle": "轻量级流媒体服务器",
-    "primary_color": "#764ba2",
-    "secondary_color": "#667eea",
-    "bg_color": "#f4f4f9",
-    "admin_password": "admin123",
-    "allow_guest_skip": false
-}
-EOF
-fi
-
 # 创建启动脚本
 cat > $RELEASE_DIR/start.sh << 'EOF'
 #!/bin/bash
@@ -261,11 +233,12 @@ fi
 # 确保媒体目录存在
 mkdir -p media
 
-echo "🎵 Rakuraku Music Station 启动中..."
+echo "🎵 Rakuraku Audio Engine 启动中..."
 echo "========================================"
-echo "Web 界面: http://localhost:2240"
-echo "流媒体: http://localhost:2240/stream"
+echo "音频流: http://localhost:2240/stream"
+echo "健康检查: http://localhost:2240/health"
 echo "========================================"
+echo "Web 界面请启动 Rust 后端 (radio-backend)"
 echo "音乐文件请放置在 media/ 目录"
 echo ""
 
@@ -418,18 +391,19 @@ echo -e "${BLUE}
 ══════════════════════════════════════════════${NC}"
 echo "1. 进入目录: cd $RELEASE_DIR"
 echo "2. 添加音乐: 将音频文件放入 media/ 目录"
-echo "3. 启动服务: ./start.sh"
-echo "4. 访问地址: http://localhost:2240"
+echo "3. 启动音频引擎: ./start.sh"
+echo "4. 音频流地址: http://localhost:2240/stream"
+echo "5. 如需 Web 界面，启动 Rust 后端 (radio-backend)"
 echo ""
 echo "支持格式: MP3, WAV, FLAC, OGG, M4A, AAC"
-echo "管理员密码: admin123 (可在 settings.json 中修改)"
 echo ""
 if [ "$SKIP_RUST" = false ] && [ -f "$RELEASE_DIR/radio-backend" ]; then
     echo -e "${BLUE}Rust 后端已编译到 dist/${NC}"
-    echo "  C++ 服务器: ./start.sh    (端口 2240)"
-    echo "  Rust 后端:  ./start-rust.sh (端口 2241)"
+    echo "  音频引擎: ./start.sh       (端口 2240)"
+    echo "  Rust 后端: ./start-rust.sh  (端口 2241)"
+    echo "  两者需同时运行，通过 Redis 通信"
 else
-    echo "如需 Rust 后端，安装 cargo 后重新运行: ./build_release.sh"
+    echo "如需 Web/API 功能，安装 cargo 后重新运行: ./build_release.sh"
 fi
 echo ""
 echo -e "${GREEN}🎵 享受音乐时光！${NC}"

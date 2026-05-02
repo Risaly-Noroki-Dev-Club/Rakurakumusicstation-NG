@@ -10,6 +10,8 @@ radioserver
 build/
 mybuild/
 cmake-build-*/
+third_party/hiredis/*.o
+third_party/hiredis/*.a
 
 # 测试/调试构建产物
 test_build
@@ -34,7 +36,7 @@ test.*
 *~
 
 # 构建产物
-embedded_templates.hpp
+# embedded_templates.hpp - 不再生成，C++ 引擎已精简至仅音频流 + Redis 桥接
 
 # 项目配置和文档
 CLAUDE.md
