@@ -32,6 +32,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/station", get(station_info))
         // 正在播放（公开）
         .route("/api/now-playing", get(queue::now_playing))
+        // 静态文件服务（作为回退，在其他路由之后）
+        .fallback_service(
+            tower_http::services::ServeDir::new("static")
+        )
         .with_state(state)
 }
 

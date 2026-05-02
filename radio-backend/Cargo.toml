@@ -9,9 +9,9 @@ description = "Rakuraku Music Station - Rust Business Backend"
 tokio = { version = "1", features = ["full"] }
 
 # Web 框架
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.7", features = ["ws", "multipart"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["cors", "auth"] }
+tower-http = { version = "0.5", features = ["cors", "auth", "fs"] }
 
 # 数据库
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "migrate"] }

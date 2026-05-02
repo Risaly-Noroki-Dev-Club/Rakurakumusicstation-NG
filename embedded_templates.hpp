@@ -25,6 +25,16 @@ static const std::unordered_map<std::string, std::string> templates = {
             --primary-color: {{PRIMARY_COLOR}};
             --secondary-color: {{SECONDARY_COLOR}};
             --bg-color: {{BG_COLOR}};
+            --text: #333;
+            --text-muted: #6c757d;
+            --text-inverse: #ffffff;
+            --card: #ffffff;
+            --surface: #f8f9fa;
+            --border: #e9ecef;
+            --danger: #dc3545;
+            --success: #28a745;
+            --info: #17a2b8;
+            --warning: #ffc107;
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,12 +43,12 @@ static const std::unordered_map<std::string, std::string> templates = {
             background: var(--bg-color);
             min-height: 100vh;
             padding: 20px;
-            color: #333;
+            color: var(--text);
         }
         .container {
             max-width: 1000px;
             margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--card);
             border-radius: 20px;
             padding: 30px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -56,19 +66,19 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         h1 .icon { font-size: 1.2em; }
         .subtitle {
-            color: #666;
+            color: var(--text-muted);
             font-size: 1.2em;
             margin-bottom: 30px;
         }
         .player-section, .playlist-section {
-            background: #f8f9fa;
+            background: var(--surface);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
-            border: 1px solid #e9ecef;
+            border: 1px solid var(--border);
         }
         .player-section h2, .playlist-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -80,7 +90,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         button {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 12px 25px;
             border-radius: 8px;
@@ -95,59 +105,54 @@ static const std::unordered_map<std::string, std::string> templates = {
         button:hover { transform: translateY(-2px); opacity: 0.9; }
         button:active { transform: translateY(0); }
         #currentTrack {
-            font-size: 1.2em; color: #495057; font-weight: 600;
-            background: white; padding: 10px 20px; border-radius: 8px;
-            flex-grow: 1; border: 2px solid #e9ecef;
+            font-size: 1.2em; color: var(--text); font-weight: 600;
+            background: var(--card); padding: 10px 20px; border-radius: 8px;
+            flex-grow: 1; border: 2px solid var(--border);
         }
         #playlist {
             display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
             gap: 12px; max-height: 400px; overflow-y: auto; padding-right: 10px;
         }
         .track {
-            background: white; padding: 15px; border-radius: 8px;
+            background: var(--card); padding: 15px; border-radius: 8px;
             cursor: pointer; transition: all 0.2s ease; border-left: 4px solid transparent;
         }
-        .track:hover { background: #e9ecef; transform: translateX(5px); }
+        .track:hover { background: var(--border); transform: translateX(5px); }
         .track.current {
             background: rgba(102, 126, 234, 0.1);
             border-left-color: var(--secondary-color);
         }
         .track-number {
             display: inline-block; width: 25px; text-align: center;
-            background: var(--secondary-color); color: white;
+            background: var(--secondary-color); color: var(--text-inverse);
             border-radius: 4px; margin-right: 10px; font-size: 0.9em; padding: 2px 5px;
         }
         .stats { display: flex; gap: 20px; margin-top: 30px; flex-wrap: wrap; }
         .stat-box {
-            background: white; padding: 20px; border-radius: 10px;
-            flex: 1; min-width: 200px; border: 1px solid #e9ecef; text-align: center;
+            background: var(--card); padding: 20px; border-radius: 10px;
+            flex: 1; min-width: 200px; border: 1px solid var(--border); text-align: center;
         }
         .stat-value { font-size: 2.5em; font-weight: bold; color: var(--secondary-color); margin: 10px 0; }
-        .stat-label { color: #6c757d; font-size: 0.9em; }
+        .stat-label { color: var(--text-muted); font-size: 0.9em; }
         footer {
-            text-align: center; margin-top: 40px; color: #6c757d;
-            font-size: 0.9em; padding-top: 20px; border-top: 1px solid #e9ecef;
+            text-align: center; margin-top: 40px; color: var(--text-muted);
+            font-size: 0.9em; padding-top: 20px; border-top: 1px solid var(--border);
         }
-        .admin-link {
-            display: inline-block; margin-top: 10px;
+        .admin-link { display: inline-block; margin-top: 10px;
             color: var(--primary-color); text-decoration: none;
             font-weight: 600; padding: 6px 14px; border-radius: 6px;
             border: 1px solid var(--primary-color); transition: all 0.2s ease;
         }
-        .admin-link:hover { background: var(--primary-color); color: white; }
+        .admin-link:hover { background: var(--primary-color); color: var(--text-inverse); }
         .admin-link.panel-link {
-            background: var(--primary-color); color: white;
+            background: var(--primary-color); color: var(--text-inverse);
             margin-left: 10px;
         }
         .admin-link.panel-link:hover { background: var(--secondary-color); }
-        .admin-controls {
-            display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px;
-        }
-        .admin-controls button {
-            background: var(--secondary-color);
-        }
+        .admin-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 15px; }
+        .admin-controls button { background: var(--secondary-color); }
         .admin-controls .delete-btn {
-            background: #dc3545;
+            background: var(--danger);
             font-size: 0.8em;
             padding: 4px 10px;
         }
@@ -313,7 +318,7 @@ static const std::unordered_map<std::string, std::string> templates = {
 
             let html = '';
             if (playlist.length === 0) {
-                html = '<div style="text-align: center; padding: 40px; color: #6c757d;"><div>播放列表为空，请上传音乐文件</div></div>';
+                html = '<div style="text-align: center; padding: 40px; color: var(--text-muted);"><div>播放列表为空，请上传音乐文件</div></div>';
             } else {
                 const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
                 tracks.forEach((track, index) => {
@@ -479,6 +484,29 @@ static const std::unordered_map<std::string, std::string> templates = {
             --primary-color: {{PRIMARY_COLOR}};
             --secondary-color: {{SECONDARY_COLOR}};
             --bg-color: {{BG_COLOR}};
+            --text: #333;
+            --text-muted: #6c757d;
+            --text-inverse: #ffffff;
+            --card: #ffffff;
+            --surface: #f8f9fa;
+            --border: #e9ecef;
+            --danger: #e74c3c;
+            --danger-hover: #c0392b;
+            --success-bg: #d4edda;
+            --success-text: #155724;
+            --error-bg: #f8d7da;
+            --error-text: #721c24;
+            --info-bg: #d1ecf1;
+            --info-text: #0c5460;
+            --info: #17a2b8;
+            --gray: #6c757d;
+            --gray-hover: #5a6268;
+            --neutral-bg: #e2e3e5;
+            --console-bg: #1e1e1e;
+            --console-text: #d4d4d4;
+            --alert-success-border: #c3e6cb;
+            --alert-error-border: #f5c6cb;
+            --alert-info-border: #bee5eb;
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -487,7 +515,7 @@ static const std::unordered_map<std::string, std::string> templates = {
             background: var(--bg-color);
             min-height: 100vh;
             padding: 20px;
-            color: #333;
+            color: var(--text);
         }
         .container {
             max-width: 1200px;
@@ -499,7 +527,7 @@ static const std::unordered_map<std::string, std::string> templates = {
             align-items: center;
             margin-bottom: 30px;
             padding: 20px;
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
@@ -509,7 +537,7 @@ static const std::unordered_map<std::string, std::string> templates = {
             margin-bottom: 5px;
         }
         .header-left p {
-            color: #666;
+            color: var(--text-muted);
         }
         .admin-info {
             display: flex;
@@ -518,14 +546,14 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .admin-badge {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
             padding: 8px 15px;
             border-radius: 20px;
             font-size: 0.9em;
         }
         .logout-button {
-            background: #e74c3c;
-            color: white;
+            background: var(--danger);
+            color: var(--text-inverse);
             border: none;
             padding: 8px 20px;
             border-radius: 20px;
@@ -534,11 +562,11 @@ static const std::unordered_map<std::string, std::string> templates = {
             font-size: 0.9em;
         }
         .logout-button:hover {
-            background: #c0392b;
+            background: var(--danger-hover);
         }
         .player-link {
             background: var(--secondary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 8px 20px;
             border-radius: 20px;
@@ -557,13 +585,13 @@ static const std::unordered_map<std::string, std::string> templates = {
             margin-bottom: 30px;
         }
         .card {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .card h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 15px;
             display: flex;
             align-items: center;
@@ -576,18 +604,18 @@ static const std::unordered_map<std::string, std::string> templates = {
             margin: 10px 0;
         }
         .stat-label {
-            color: #6c757d;
+            color: var(--text-muted);
             font-size: 0.9em;
         }
         .playlist-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .playlist-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -602,7 +630,7 @@ static const std::unordered_map<std::string, std::string> templates = {
             padding-right: 10px;
         }
         .track {
-            background: #f8f9fa;
+            background: var(--surface);
             padding: 15px;
             border-radius: 8px;
             transition: all 0.2s ease;
@@ -619,7 +647,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .track-number {
             background: var(--secondary-color);
-            color: white;
+            color: var(--text-inverse);
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 0.9em;
@@ -644,21 +672,21 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .play-button {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
         }
         .delete-button {
-            background: #dc3545;
-            color: white;
+            background: var(--danger);
+            color: var(--text-inverse);
         }
         .upload-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .upload-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -672,12 +700,12 @@ static const std::unordered_map<std::string, std::string> templates = {
         input[type="file"] {
             flex-grow: 1;
             padding: 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
         }
         button[type="submit"] {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 12px 25px;
             border-radius: 8px;
@@ -689,9 +717,9 @@ static const std::unordered_map<std::string, std::string> templates = {
             padding: 12px;
             border-radius: 8px;
         }
-        .success { background: #d4edda; color: #155724; }
-        .error { background: #f8d7da; color: #721c24; }
-        .info { background: #d1ecf1; color: #0c5460; }
+        .success { background: var(--success-bg); color: var(--success-text); }
+        .error { background: var(--error-bg); color: var(--error-text); }
+        .info { background: var(--info-bg); color: var(--info-text); }
         .bottom-controls {
             display: flex;
             gap: 15px;
@@ -700,7 +728,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .bottom-controls button {
             background: var(--secondary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 12px 25px;
             border-radius: 8px;
@@ -708,21 +736,21 @@ static const std::unordered_map<std::string, std::string> templates = {
             font-weight: 600;
         }
         .ncm-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         .ncm-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 6px;
             display: flex;
             align-items: center;
             gap: 10px;
         }
         .ncm-section > p {
-            color: #6c757d;
+            color: var(--text-muted);
             font-size: 0.88em;
             margin-bottom: 18px;
         }
@@ -734,8 +762,8 @@ static const std::unordered_map<std::string, std::string> templates = {
             font-weight: 600;
             margin-bottom: 16px;
         }
-        .ncm-badge.ok   { background: #d4edda; color: #155724; }
-        .ncm-badge.none { background: #e2e3e5; color: #495057; }
+        .ncm-badge.ok   { background: var(--success-bg); color: var(--success-text); }
+        .ncm-badge.none { background: var(--neutral-bg); color: var(--text); }
         .ncm-tabs {
             display: flex;
             gap: 10px;
@@ -743,12 +771,12 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .ncm-tab {
             padding: 7px 18px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 20px;
             cursor: pointer;
             font-size: 0.88em;
-            background: white;
-            color: #495057;
+            background: var(--card);
+            color: var(--text);
         }
         .ncm-tab.active {
             border-color: var(--primary-color);
@@ -760,7 +788,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         .ncm-panel label {
             display: block;
             font-size: 0.88em;
-            color: #495057;
+            color: var(--text);
             margin-bottom: 5px;
         }
         .ncm-panel input[type="text"],
@@ -768,7 +796,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         .ncm-panel textarea {
             width: 100%;
             padding: 10px 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             font-size: 0.9em;
             box-sizing: border-box;
@@ -778,7 +806,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         .ncm-panel textarea { font-family: monospace; resize: vertical; }
         .ncm-panel small {
             display: block;
-            color: #6c757d;
+            color: var(--text-muted);
             font-size: 0.8em;
             margin-top: -8px;
             margin-bottom: 12px;
@@ -798,7 +826,7 @@ static const std::unordered_map<std::string, std::string> templates = {
             font-size: 0.9em;
         }
         #ncmSaveBtn  { background: var(--primary-color); color: white; }
-        #ncmTestBtn  { background: #17a2b8; color: white; }
+        #ncmTestBtn  { background: var(--info); color: var(--text-inverse); }
         #ncmTestBtn:disabled { opacity: 0.5; cursor: not-allowed; }
         #ncmResult {
             margin-top: 12px;
@@ -808,14 +836,14 @@ static const std::unordered_map<std::string, std::string> templates = {
             display: none;
         }
         .download-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         .download-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -824,7 +852,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         #playlistInput {
             width: 100%;
             padding: 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             font-family: monospace;
             font-size: 0.9em;
@@ -843,17 +871,17 @@ static const std::unordered_map<std::string, std::string> templates = {
             align-items: center;
             gap: 6px;
             font-size: 0.9em;
-            color: #495057;
+            color: var(--text);
         }
         .download-options select {
             padding: 8px 12px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 6px;
-            background: white;
+            background: var(--card);
         }
         #startDownloadBtn {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
             border: none;
             padding: 10px 22px;
             border-radius: 8px;
@@ -872,8 +900,8 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         #downloadLog {
             margin-top: 12px;
-            background: #1e1e1e;
-            color: #d4d4d4;
+            background: var(--console-bg);
+            color: var(--console-text);
             padding: 14px;
             border-radius: 8px;
             font-size: 0.82em;
@@ -947,14 +975,14 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
 
         .settings-section {
-            background: white;
+            background: var(--card);
             border-radius: 15px;
             padding: 25px;
             margin-bottom: 30px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         .settings-section h2 {
-            color: #495057;
+            color: var(--text);
             margin-bottom: 20px;
             display: flex;
             align-items: center;
@@ -967,13 +995,13 @@ static const std::unordered_map<std::string, std::string> templates = {
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #495057;
+            color: var(--text);
         }
         .settings-form input[type="text"],
         .settings-form input[type="password"] {
             width: 100%;
             padding: 12px 15px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             font-size: 1em;
             transition: border-color 0.3s;
@@ -993,13 +1021,13 @@ static const std::unordered_map<std::string, std::string> templates = {
         .color-group input[type="color"] {
             width: 40px;
             height: 40px;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 6px;
             cursor: pointer;
         }
         .color-group span {
             font-size: 0.85em;
-            color: #6c757d;
+            color: var(--text-muted);
         }
         .settings-form input[type="checkbox"] {
             margin-right: 10px;
@@ -1019,18 +1047,18 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .form-actions .save-btn {
             background: var(--primary-color);
-            color: white;
+            color: var(--text-inverse);
         }
         .form-actions .save-btn:hover {
             background: var(--secondary-color);
             transform: translateY(-2px);
         }
         .form-actions button:first-child {
-            background: #6c757d;
-            color: white;
+            background: var(--gray);
+            color: var(--text-inverse);
         }
         .form-actions button:first-child:hover {
-            background: #5a6268;
+            background: var(--gray-hover);
         }
         .result-message {
             margin-top: 20px;
@@ -1039,21 +1067,21 @@ static const std::unordered_map<std::string, std::string> templates = {
             display: none;
         }
         .result-message.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: var(--success-bg);
+            color: var(--success-text);
+            border: 1px solid var(--alert-success-border);
             display: block;
         }
         .result-message.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: var(--error-bg);
+            color: var(--error-text);
+            border: 1px solid var(--alert-error-border);
             display: block;
         }
         .result-message.info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
+            background: var(--info-bg);
+            color: var(--info-text);
+            border: 1px solid var(--alert-info-border);
             display: block;
         }
 
@@ -1244,7 +1272,7 @@ static const std::unordered_map<std::string, std::string> templates = {
                 
                 let html = '';
                 if (playlist.length === 0) {
-                    html = '<div style="text-align: center; padding: 40px; color: #6c757d;">播放列表为空，请上传音乐文件</div>';
+                    html = '<div style="text-align: center; padding: 40px; color: var(--text-muted);">播放列表为空，请上传音乐文件</div>';
                 } else {
                     const metadata = data.metadata || [];
                     const tracks = metadata.length > 0 ? metadata : playlist.map(f => ({ title: f, artist: '' }));
@@ -1631,10 +1659,21 @@ static const std::unordered_map<std::string, std::string> templates = {
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
     <link rel="apple-touch-icon" href="/favicon.ico">
     <style>
+        :root {
+            --primary-color: {{PRIMARY_COLOR}};
+            --secondary-color: {{SECONDARY_COLOR}};
+            --text: #495057;
+            --text-muted: #6c757d;
+            --text-inverse: #ffffff;
+            --card: #ffffff;
+            --border: #e9ecef;
+            --error-bg: #f8d7da;
+            --error-text: #721c24;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: linear-gradient(135deg, {{PRIMARY_COLOR}} 0%, {{SECONDARY_COLOR}} 100%);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -1644,7 +1683,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         .login-container {
             width: 100%;
             max-width: 400px;
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--card);
             border-radius: 20px;
             padding: 40px 30px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
@@ -1655,11 +1694,11 @@ static const std::unordered_map<std::string, std::string> templates = {
         }
         .logo h1 {
             font-size: 2.2em;
-            color: {{PRIMARY_COLOR}};
+            color: var(--primary-color);
             margin-bottom: 10px;
         }
         .logo p {
-            color: #666;
+            color: var(--text-muted);
             font-size: 1em;
         }
         .form-group {
@@ -1669,24 +1708,24 @@ static const std::unordered_map<std::string, std::string> templates = {
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #495057;
+            color: var(--text);
         }
         input[type="password"] {
             width: 100%;
             padding: 12px 15px;
             font-size: 1em;
-            border: 2px solid #e9ecef;
+            border: 2px solid var(--border);
             border-radius: 8px;
             outline: none;
             transition: border-color 0.3s;
         }
         input[type="password"]:focus {
-            border-color: {{PRIMARY_COLOR}};
+            border-color: var(--primary-color);
         }
         .login-button {
             width: 100%;
-            background: {{PRIMARY_COLOR}};
-            color: white;
+            background: var(--primary-color);
+            color: var(--text-inverse);
             border: none;
             padding: 14px;
             border-radius: 8px;
@@ -1696,14 +1735,14 @@ static const std::unordered_map<std::string, std::string> templates = {
             transition: all 0.3s ease;
         }
         .login-button:hover {
-            background: {{SECONDARY_COLOR}};
+            background: var(--secondary-color);
             transform: translateY(-2px);
         }
         .error-message {
             margin-top: 15px;
             padding: 10px;
-            background: #f8d7da;
-            color: #721c24;
+            background: var(--error-bg);
+            color: var(--error-text);
             border-radius: 5px;
             text-align: center;
             display: none;
@@ -1713,12 +1752,12 @@ static const std::unordered_map<std::string, std::string> templates = {
             margin-top: 20px;
         }
         .back-link a {
-            color: #6c757d;
+            color: var(--text-muted);
             text-decoration: none;
         }
         .back-link a:hover {
             text-decoration: underline;
-            color: {{SECONDARY_COLOR}};
+            color: var(--secondary-color);
         }
 
         /* 移动端响应式适配 */
@@ -1778,7 +1817,7 @@ static const std::unordered_map<std::string, std::string> templates = {
         <div class="logo">
             <h1>{{STATION_NAME}}</h1>
             <p>{{SUBTITLE}}</p>
-            <p style="margin-top: 10px; color: #495057;">管理员登录</p>
+            <p style="margin-top: 10px; color: var(--text);">管理员登录</p>
         </div>
         
         <form id="loginForm">

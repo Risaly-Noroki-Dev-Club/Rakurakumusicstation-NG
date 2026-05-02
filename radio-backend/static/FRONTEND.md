@@ -8,12 +8,14 @@
 
 | 文件 | 用途 | 状态 |
 |------|------|------|
-| `radio-backend/static/index.html` | 主力播放器 UI（单文件 HTML+CSS+JS） | **活跃开发** |
-| `index.html` | C++ Crow 服务器听众页模板 | 遗留（仍在使用，靠 `{{VAR}}` 模板变量） |
+| `radio-backend/static/index.html` | 主力播放器 UI（HTML 结构） | **活跃开发** |
+| `radio-backend/static/style.css` | 所有 CSS 样式（从 index.html 拆分） | **活跃开发** |
+| `radio-backend/static/app.js` | 所有 JavaScript（从 index.html 拆分） | **活跃开发** |
+| `radio-backend/static/manifest.json` | PWA Web Manifest | 公用 |
+| `radio-backend/static/sw.js` | PWA Service Worker | 公用 |
+| `index.html` | C++ Crow 服务器听众页模板 | 遗留 |
 | `panel.html` | C++ Crow 管理面板模板 | 遗留 |
 | `login.html` | C++ Crow 登录页模板 | 遗留 |
-| `manifest.json` | PWA Web Manifest | 公用 |
-| `sw.js` | PWA Service Worker | 公用 |
 
 C++ 模板的功能正在逐步迁移到 Rust 后端的前端中，后续 `index.html` / `panel.html` / `login.html` 将被废弃。
 
@@ -182,14 +184,27 @@ cargo run
 ### 注意
 
 - 前端不依赖任何构建工具（无 webpack / vite / npm）
-- 所有依赖通过 `<script>` 引入或手写
-- CSS 写在 `<style>` 标签内，JS 写在 `<script>` 标签内
+- CSS 在 `style.css` 中，JS 在 `app.js` 中，HTML 结构在 `index.html` 中
 - **不要**引入外部 CDN 资源（会使离线 PWA 场景失效）
+- 新增样式时，在 `style.css` 中添加；新增逻辑时，在 `app.js` 中添加
+- 所有颜色必须通过 CSS 自定义属性（变量）引用，禁止裸色码
+
+### 管理面板（Admin Panel）
+
+管理员登录后，管理面板提供以下子标签页：
+- **用户管理** — 查看/封禁/解封用户，操作日志
+- **歌曲管理** — 查看所有歌曲，删除歌曲，重新扫描媒体目录，播放控制
+- **上传** — 上传 MP3/WAV/FLAC/OGG/M4A/AAC 文件到媒体目录
+- **下载** — 批量下载歌单（通过 music_dl.py）
+- **网易云** — 配置网易云音乐 Cookie 或手机号登录
+- **设置** — 电台名称、主题颜色、管理员密码
+- **统计** — 用户数、歌曲数、队列数、歌单数
 
 ---
 
 ## 维护清单
 
-- [ ] C++ 模板（`index.html` / `panel.html` / `login.html`）中仍有许多功能未迁移到 Rust 前端，迁移后可删除
-- [ ] `panel.html` 的上传、设置、下载管理功能待移植
-- [ ] 当前 `radio-backend/static/index.html` 约 970 行，后续迁移完功能后可拆分为独立 CSS/JS 文件
+- [x] `panel.html` 的上传、下载、设置、网易云功能已移植到 Rust 前端
+- [x] `radio-backend/static/index.html` 已拆分为 `index.html` + `style.css` + `app.js`
+- [ ] C++ 模板（`index.html` / `panel.html` / `login.html`）在下一次主要发布时可删除
+- [ ] `allow_guest_skip` 功能待实现（需在配置文件中新增字段）

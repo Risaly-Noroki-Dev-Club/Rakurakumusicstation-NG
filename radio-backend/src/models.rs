@@ -369,3 +369,39 @@ impl<T: Serialize> ApiResponse<T> {
 
 /// 用于无数据体的响应
 pub type SimpleResponse = ApiResponse<serde_json::Value>;
+
+// ─── 设置 DTO ────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct SaveSettingsRequest {
+    pub station_name: Option<String>,
+    pub subtitle: Option<String>,
+    pub primary_color: Option<String>,
+    pub secondary_color: Option<String>,
+    pub bg_color: Option<String>,
+    pub admin_password: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SettingsResponse {
+    pub station_name: String,
+    pub subtitle: String,
+    pub primary_color: String,
+    pub secondary_color: String,
+    pub bg_color: String,
+}
+
+// ─── 下载状态 ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadRequest {
+    pub playlist: String,
+    pub quality: Option<String>,
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadStatus {
+    pub running: bool,
+    pub log: String,
+}

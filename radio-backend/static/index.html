@@ -6,119 +6,8 @@
     <title>Rakuraku Music Station NG</title>
     <meta name="theme-color" content="#764ba2">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎵</text></svg>">
-    <style>
-        :root {
-            --primary: #764ba2;
-            --secondary: #667eea;
-            --bg: #f4f4f9;
-            --card: #ffffff;
-            --text: #333;
-            --text-muted: #6c757d;
-            --text-inverse: #ffffff;
-            --border: #e9ecef;
-            --success: #28a745;
-            --danger: #dc3545;
-            --warning: #ffc107;
-            --info: #17a2b8;
-            --radius: 12px;
-            --shadow: 0 4px 20px rgba(0,0,0,0.08);
-        }
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg: #1a1a2e;
-                --card: #2a2a3e;
-                --text: #e0e0e0;
-                --text-muted: #9898a8;
-                --border: #3a3a4e;
-            }
-        }
-        /* 手动暗色模式（覆盖自动检测） */
-        :root[data-theme="dark"] {
-            --bg: #1a1a2e;
-            --card: #2a2a3e;
-            --text: #e0e0e0;
-            --text-muted: #9898a8;
-            --border: #3a3a4e;
-        }
-        :root[data-theme="light"] {
-            --bg: #f4f4f9;
-            --card: #ffffff;
-            --text: #333;
-            --text-muted: #6c757d;
-            --border: #e9ecef;
-        }
-        .theme-toggle { cursor: pointer; font-size: 1.2em; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); transition: 0.2s; }
-        .theme-toggle:hover { opacity: 0.7; }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .app { max-width: 900px; margin: 0 auto; padding: 16px; }
-        header { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; margin-bottom: 16px; }
-        header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items: center; gap: 8px; }
-        .btn { padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9em; font-weight: 600; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
-        .btn-primary { background: var(--primary); color: var(--text-inverse); }
-        .btn-secondary { background: var(--secondary); color: var(--text-inverse); }
-        .btn-danger { background: var(--danger); color: var(--text-inverse); }
-        .btn-small { padding: 4px 12px; font-size: 0.8em; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
-        .card { background: var(--card); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
-        .card h2 { display: flex; align-items: center; gap: 8px; font-size: 1.1em; margin-bottom: 12px; color: var(--text); }
-        .now-playing { text-align: center; }
-        .player-layout { display: flex; gap: 16px; align-items: center; }
-        .cover-container { flex-shrink: 0; width: 120px; height: 120px; border-radius: 8px; overflow: hidden; background: var(--border); display: none; }
-        .cover-container img { width: 100%; height: 100%; object-fit: cover; }
-        .cover-container.show { display: block; }
-        .player-info { flex: 1; min-width: 0; }
-        .now-playing .title { font-size: 1.3em; font-weight: 700; margin: 8px 0; }
-        .now-playing .artist { font-size: 1em; color: var(--text-muted); }
-        @media (max-width: 500px) {
-            .player-layout { flex-direction: column; }
-            .cover-container { width: 180px; height: 180px; margin: 0 auto 8px; }
-        }
-        .progress-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin: 12px 0; overflow: hidden; }
-        .progress-bar .fill { height: 100%; background: var(--primary); transition: width 0.3s linear; width: 0%; }
-        .time-row { display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-muted); }
-        .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
-        .lyrics-box { max-height: 300px; overflow-y: auto; padding: 10px; font-size: 0.95em; line-height: 1.8; text-align: center; scroll-behavior: smooth; }
-        .lyrics-box .line { padding: 4px 0; transition: 0.3s; border-radius: 4px; }
-        .lyrics-box .line.active { color: var(--primary); font-weight: 700; font-size: 1.05em; background: rgba(118,75,162,0.08); }
-        .lyrics-box .line.inactive { color: var(--text-muted); }
-        .queue-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,0.05); transition: 0.2s; }
-        .queue-item:hover { background: rgba(118,75,162,0.05); }
-        .queue-item .info { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .queue-item .meta { font-size: 0.8em; color: var(--text-muted); }
-        .queue-item .badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75em; font-weight: 600; }
-        .badge-playing { background: var(--success); color: var(--text-inverse); }
-        .badge-pending { background: var(--border); color: var(--text); }
-        .tab-bar { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid var(--border); }
-        .tab { padding: 8px 18px; cursor: pointer; font-size: 0.9em; border: none; background: none; color: var(--text-muted); transition: 0.2s; }
-        .tab.active { color: var(--primary); border-bottom: 2px solid var(--primary); margin-bottom: -2px; font-weight: 600; }
-        .form-group { margin-bottom: 12px; }
-        .form-group label { display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 4px; }
-        .form-group input { width: 100%; padding: 10px 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 0.9em; transition: 0.2s; background: var(--card); color: var(--text); }
-        .form-group input:focus { border-color: var(--primary); outline: none; }
-        .search-box { width: 100%; padding: 10px 14px; border: 2px solid var(--border); border-radius: 8px; font-size: 0.9em; margin-bottom: 12px; background: var(--card); color: var(--text); }
-        .song-list { max-height: 400px; overflow-y: auto; }
-        .song-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,0.05); }
-        .song-item:hover { background: rgba(118,75,162,0.05); }
-        .toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: var(--text-inverse); font-weight: 600; z-index: 1000; animation: slideIn 0.3s ease; }
-        .toast-info { background: var(--info); }
-        .toast-success { background: var(--success); }
-        .toast-error { background: var(--danger); }
-        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-        .hidden { display: none !important; }
-        .mode-badge { font-size: 0.75em; padding: 3px 10px; border-radius: 12px; }
-        .mode-stream { background: var(--info); color: var(--text-inverse); }
-        .mode-file { background: var(--success); color: var(--text-inverse); }
-        .admin-panel .users-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-        .admin-panel .users-table th, .admin-panel .users-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid rgba(0,0,0,0.05); }
-        @media (max-width: 600px) {
-            .app { padding: 8px; }
-            .btn { padding: 6px 14px; font-size: 0.85em; }
-            .controls { gap: 6px; }
-            .tab { padding: 6px 12px; font-size: 0.8em; }
-        }
-    </style>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="manifest" href="/manifest.json">
 </head>
 <body>
     <div class="app">
@@ -207,17 +96,163 @@
 
         <!-- Admin tab -->
         <div id="tab-admin" class="hidden">
-            <div class="card admin-panel">
-                <h2>👥 用户管理</h2>
-                <table class="users-table"><thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="usersTable"></tbody></table>
+            <!-- Admin sub-tabs -->
+            <div class="admin-subtabs">
+                <button class="subtab active" onclick="switchAdminTab('users')">👥 用户管理</button>
+                <button class="subtab" onclick="switchAdminTab('songs')">🎵 歌曲管理</button>
+                <button class="subtab" onclick="switchAdminTab('upload')">📤 上传</button>
+                <button class="subtab" onclick="switchAdminTab('download')">⬇️ 下载</button>
+                <button class="subtab" onclick="switchAdminTab('ncm')">🎵 网易云</button>
+                <button class="subtab" onclick="switchAdminTab('settings')">⚙️ 设置</button>
+                <button class="subtab" onclick="switchAdminTab('stats')">📊 统计</button>
             </div>
-            <div class="card admin-panel">
-                <h2>📊 系统统计</h2>
-                <div id="adminStats"></div>
+
+            <!-- Users panel -->
+            <div id="admin-panel-users" class="admin-subpanel active">
+                <div class="card admin-panel">
+                    <h2>👥 用户管理</h2>
+                    <table class="users-table"><thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead><tbody id="usersTable"></tbody></table>
+                </div>
+                <div class="card admin-panel">
+                    <h2>📋 操作日志 (最近100条)</h2>
+                    <div id="adminLogs" style="max-height:300px;overflow-y:auto;font-size:0.85em"></div>
+                </div>
             </div>
-            <div class="card admin-panel">
-                <h2>📋 操作日志 (最近100条)</h2>
-                <div id="adminLogs" style="max-height:300px;overflow-y:auto;font-size:0.85em"></div>
+
+            <!-- Songs panel -->
+            <div id="admin-panel-songs" class="admin-subpanel">
+                <div class="card admin-panel">
+                    <h2>🎵 歌曲管理</h2>
+                    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                        <button class="btn btn-info btn-small" onclick="adminRescanSongs()">🔄 重新扫描</button>
+                        <button class="btn btn-primary btn-small" onclick="adminPlayNext()">⏭ 下一首</button>
+                        <button class="btn btn-secondary btn-small" onclick="adminPlayPrev()">⏮ 上一首</button>
+                    </div>
+                    <div style="max-height:500px;overflow-y:auto">
+                        <table class="song-table">
+                            <thead><tr><th>标题</th><th>艺术家</th><th>操作</th></tr></thead>
+                            <tbody id="adminSongsTable"><tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:20px">点击重新扫描加载歌曲</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload panel -->
+            <div id="admin-panel-upload" class="admin-subpanel">
+                <div class="card">
+                    <h2>📤 上传新音乐</h2>
+                    <div class="upload-section">
+                        <input type="file" id="uploadFileInput" name="file" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac" onchange="handleFileSelect(event)">
+                        <button class="btn btn-primary" id="uploadBtn" onclick="uploadSong()" disabled>上传文件</button>
+                    </div>
+                    <div class="upload-status" id="uploadStatus"></div>
+                </div>
+            </div>
+
+            <!-- Download panel -->
+            <div id="admin-panel-download" class="admin-subpanel">
+                <div class="card">
+                    <h2>⬇️ 批量下载歌单</h2>
+                    <textarea id="downloadPlaylistInput" rows="8"
+                        placeholder="每行一首，格式：艺术家 - 歌名&#10;例：&#10;toe - tremolo+delay&#10;Whale Fall - True Places&#10;rinri - 君の世界は透明なんだね"></textarea>
+                    <div class="download-options">
+                        <div class="form-group" style="margin-bottom:0">
+                            <label>音质：</label>
+                            <select id="qualitySelect">
+                                <option value="exhigh">超高音质 (320k)</option>
+                                <option value="lossless">无损</option>
+                                <option value="high">高音质 (192k)</option>
+                                <option value="standard">标准 (128k)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom:0">
+                            <label>备用格式：</label>
+                            <select id="formatSelect">
+                                <option value="mp3">MP3</option>
+                                <option value="flac">FLAC</option>
+                                <option value="m4a">M4A</option>
+                                <option value="opus">Opus</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="startDownloadBtn" onclick="startDownload()">开始下载</button>
+                    </div>
+                    <div class="upload-status" id="downloadStatusMsg"></div>
+                    <div class="download-log" id="downloadLog"></div>
+                </div>
+            </div>
+
+            <!-- NCM panel -->
+            <div id="admin-panel-ncm" class="admin-subpanel">
+                <div class="card">
+                    <h2>🎵 网易云账号</h2>
+                    <p style="color:var(--text-muted);font-size:0.85em;margin-bottom:12px">登录后可下载 VIP 歌曲。Cookie 方式更稳定，手机号方式可能触发验证码。</p>
+                    <div id="ncmBadge" class="ncm-badge none">未配置</div>
+
+                    <div class="ncm-tabs">
+                        <button class="ncm-tab active" onclick="switchNcmTab('cookie')">Cookie（推荐）</button>
+                        <button class="ncm-tab" onclick="switchNcmTab('phone')">手机号 + 密码</button>
+                    </div>
+
+                    <div id="ncmPanelCookie" class="ncm-panel active">
+                        <label>Cookie</label>
+                        <textarea id="ncmCookie" rows="4" placeholder="粘贴网易云 Cookie 字符串..."></textarea>
+                        <small>获取方式：浏览器打开 <b>music.163.com</b> 并登录 → F12 → Network → 任意请求 → Request Headers → Cookie</small>
+                    </div>
+
+                    <div id="ncmPanelPhone" class="ncm-panel">
+                        <label>手机号</label>
+                        <input type="text" id="ncmPhone" placeholder="186xxxxxxxx">
+                        <label>密码</label>
+                        <input type="password" id="ncmPassword" placeholder="网易云密码">
+                    </div>
+
+                    <div class="ncm-actions">
+                        <button class="btn btn-primary" id="ncmSaveBtn" onclick="saveNcmSettings()">保存</button>
+                        <button class="btn btn-info" id="ncmTestBtn" onclick="testNcmLogin()">测试连接</button>
+                    </div>
+                    <div class="upload-status" id="ncmResult"></div>
+                </div>
+            </div>
+
+            <!-- Settings panel -->
+            <div id="admin-panel-settings" class="admin-subpanel">
+                <div class="card">
+                    <h2>⚙️ 系统设置</h2>
+                    <div class="form-group">
+                        <label>站点名称:</label>
+                        <input type="text" id="settingStationName" placeholder="Rakuraku Music Station">
+                    </div>
+                    <div class="form-group">
+                        <label>副标题:</label>
+                        <input type="text" id="settingSubtitle" placeholder="A Community Radio">
+                    </div>
+                    <div class="form-group color-group">
+                        <label>主题颜色:</label>
+                        <input type="color" id="settingPrimaryColor" value="#764ba2">
+                        <span>主色</span>
+                        <input type="color" id="settingSecondaryColor" value="#667eea">
+                        <span>次色</span>
+                        <input type="color" id="settingBgColor" value="#f4f4f9">
+                        <span>背景色</span>
+                    </div>
+                    <div class="form-group">
+                        <label>管理员密码:</label>
+                        <input type="password" id="settingAdminPassword" placeholder="留空则不修改密码">
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-secondary" onclick="loadSettings()">加载设置</button>
+                        <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
+                    </div>
+                    <div id="settingsResult" class="result-message"></div>
+                </div>
+            </div>
+
+            <!-- Stats panel -->
+            <div id="admin-panel-stats" class="admin-subpanel">
+                <div class="card admin-panel">
+                    <h2>📊 系统统计</h2>
+                    <div id="adminStats"></div>
+                </div>
             </div>
         </div>
 
@@ -240,729 +275,6 @@
     <!-- Toast container -->
     <div id="toastContainer"></div>
 
-    <script>
-    // =========================================================================
-    // CONFIGURATION — auto-detected from the serving host
-    // =========================================================================
-    const BACKEND_URL = window.location.origin;
-    const AUDIO_ENGINE_URL = window.location.protocol + '//' + window.location.hostname + ':2240';
-    const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
-    const STREAM_URL = AUDIO_ENGINE_URL + '/stream';
-
-    // =========================================================================
-    // GLOBAL STATE
-    // =========================================================================
-    let token = localStorage.getItem('radio_token') || null;
-    let currentUser = null;
-    let ws = null;
-    let playbackState = { song_id: 0, title: '', artist: '', position_ms: 0, duration_ms: 0, lyrics_line: null, status: 'stopped', cover_url: '' };
-    let lyricsLines = [];
-    let useFileMode = false;  // false = stream, true = file mode
-    let mediaSource = null;
-    let sourceBuffer = null;
-    let fileModeQueue = [];
-    let activeTab = 'player';
-
-    // =========================================================================
-    // THEME
-    // =========================================================================
-    const THEMES = ['auto', 'light', 'dark'];
-    let themeIdx = THEMES.indexOf(localStorage.getItem('radio_theme') || 'auto');
-    if (themeIdx < 0) themeIdx = 0;
-
-    function applyTheme() {
-        const theme = THEMES[themeIdx];
-        const icons = { auto: '🌓', light: '☀️', dark: '🌙' };
-        document.getElementById('themeToggle').textContent = icons[theme];
-        if (theme === 'auto') {
-            document.documentElement.removeAttribute('data-theme');
-        } else {
-            document.documentElement.setAttribute('data-theme', theme);
-        }
-        localStorage.setItem('radio_theme', theme);
-    }
-
-    function cycleTheme() {
-        themeIdx = (themeIdx + 1) % THEMES.length;
-        applyTheme();
-    }
-
-    applyTheme();
-
-    // =========================================================================
-    // FETCH UTILITY — auto JSON parse + error toast
-    // =========================================================================
-    async function api(url, opts = {}) {
-        try {
-            const res = await fetch(url, opts);
-            if (!res.ok && res.status >= 500) {
-                toast('服务器错误 ' + res.status, 'error');
-            }
-            return res;
-        } catch (e) {
-            toast('网络不可用', 'error');
-            throw e;
-        }
-    }
-
-    // =========================================================================
-    // INITIALIZATION
-    // =========================================================================
-    document.addEventListener('DOMContentLoaded', async () => {
-        await loadStationInfo();
-        connectWebSocket();
-        if (token) {
-            await loadCurrentUser();
-        }
-        // Poll queue and history (fallback if WS not available)
-        setInterval(refreshQueue, 5000);
-        setInterval(refreshPlaybackPoll, 2000);
-    });
-
-    async function loadStationInfo() {
-        try {
-            const res = await fetch(BACKEND_URL + '/api/station');
-            const data = await res.json();
-            if (data.success && data.data) {
-                document.getElementById('stationName').textContent = data.data.name;
-                document.title = data.data.name;
-                document.querySelector('meta[name="theme-color"]').content = data.data.primary_color;
-                document.documentElement.style.setProperty('--primary', data.data.primary_color);
-                document.documentElement.style.setProperty('--secondary', data.data.secondary_color);
-                document.documentElement.style.setProperty('--bg', data.data.bg_color);
-            }
-        } catch (e) { /* backend may not be available yet */ }
-    }
-
-    // =========================================================================
-    // WEBSOCKET
-    // =========================================================================
-    function connectWebSocket() {
-        try {
-            ws = new WebSocket(WS_URL);
-            ws.onopen = () => { console.log('[WS] Connected'); toast('已连接到电台服务器', 'success'); };
-            ws.onmessage = (event) => {
-                try {
-                    const msg = JSON.parse(event.data);
-                    handleWsMessage(msg);
-                } catch (e) { /* non-JSON messages ignored */ }
-            };
-            ws.onclose = () => { console.log('[WS] Disconnected, reconnecting in 3s...'); setTimeout(connectWebSocket, 3000); };
-            ws.onerror = () => { /* will trigger onclose */ };
-        } catch (e) {
-            setTimeout(connectWebSocket, 3000);
-        }
-    }
-
-    function handleWsMessage(msg) {
-        switch (msg.type) {
-            case 'playback_state':
-                const prevSongId = playbackState.song_id;
-                playbackState = {
-                    song_id: msg.song_id || 0,
-                    title: msg.title || '',
-                    artist: msg.artist || '',
-                    position_ms: msg.position_ms || 0,
-                    duration_ms: msg.duration_ms || 0,
-                    lyrics_line: msg.lyrics_line,
-                    status: msg.status || 'stopped',
-                };
-                updateNowPlayingDisplay();
-                updateProgressBar();
-                if (msg.song_id) loadCoverFromWs(msg);
-                // 曲目切换或首次收到歌词时重新解析
-                if (msg.lyrics_text && (msg.song_id !== prevSongId || lyricsLines.length === 0)) {
-                    parseLyrics(msg.lyrics_text);
-                }
-                updateLyricsHighlight();
-                break;
-
-            case 'queue_update':
-                toast(`${msg.requested_by || '某人'} 为电台点了《${msg.song_title || '未知歌曲'}》`, 'info');
-                refreshQueue();
-                break;
-
-            case 'notice':
-                toast(msg.message, msg.level === 'error' ? 'error' : 'info');
-                break;
-
-            case 'ping':
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send('pong');
-                }
-                break;
-        }
-    }
-
-    // =========================================================================
-    // NOW PLAYING DISPLAY
-    // =========================================================================
-    function updateNowPlayingDisplay() {
-        const info = document.getElementById('nowPlayingInfo');
-        if (playbackState.title) {
-            info.innerHTML = `<div class="title">${escapeHtml(playbackState.title)}</div>
-                              <div class="artist">${escapeHtml(playbackState.artist || '')}</div>`;
-        }
-        document.getElementById('totalTime').textContent = formatTime(playbackState.duration_ms);
-    }
-
-    function loadCover(songId) {
-        const container = document.getElementById('coverContainer');
-        const img = document.getElementById('coverImage');
-        if (!songId || songId <= 0) {
-            container.classList.remove('show');
-            return;
-        }
-        img.src = BACKEND_URL + '/api/songs/' + songId + '/cover';
-        container.classList.add('show');
-    }
-
-    function loadCoverFromWs(msg) {
-        const container = document.getElementById('coverContainer');
-        const img = document.getElementById('coverImage');
-        if (msg.cover_url) {
-            img.src = msg.cover_url;
-            container.classList.add('show');
-        } else if (msg.song_id && msg.song_id > 0) {
-            loadCover(msg.song_id);
-        } else {
-            container.classList.remove('show');
-        }
-    }
-
-    function updateProgressBar() {
-        const pct = playbackState.duration_ms > 0
-            ? Math.min(100, (playbackState.position_ms / playbackState.duration_ms) * 100)
-            : 0;
-        document.getElementById('progressFill').style.width = pct + '%';
-        document.getElementById('currentTime').textContent = formatTime(playbackState.position_ms);
-    }
-
-    function refreshPlaybackPoll() {
-        // Fallback polling if WS is down
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            fetch(BACKEND_URL + '/api/now-playing')
-                .then(r => r.json())
-                .then(resp => {
-                    if (resp.success && resp.data) {
-                        const d = resp.data;
-                        if (d.song) {
-                            playbackState.song_id = d.song.id;
-                            playbackState.title = d.song.title;
-                            playbackState.artist = d.song.artist;
-                            playbackState.position_ms = d.position_ms || 0;
-                            playbackState.duration_ms = d.duration_ms || 0;
-                            playbackState.lyrics_line = d.lyrics_line;
-                            updateNowPlayingDisplay();
-                            updateProgressBar();
-                            if (d.lyrics_text) parseLyrics(d.lyrics_text);
-                            loadCover(d.song.id);
-                            document.getElementById('lyricsCard').classList.toggle('hidden', !d.lyrics_text);
-                        }
-                    }
-                }).catch(() => {});
-        }
-    }
-
-    // =========================================================================
-    // LYRICS
-    // =========================================================================
-    function parseLyrics(lrcText) {
-        const lines = [];
-        const re = /\[(\d{1,3}):(\d{1,2})(?:\.(\d{1,3}))?\](.*)/g;
-        let match;
-        while ((match = re.exec(lrcText)) !== null) {
-            const min = parseInt(match[1]);
-            const sec = parseInt(match[2]);
-            const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0;
-            const timeMs = min * 60000 + sec * 1000 + ms;
-            const text = match[4].trim();
-            if (text) lines.push({ timeMs, text });
-        }
-        lines.sort((a, b) => a.timeMs - b.timeMs);
-        // Deduplicate timestamps
-        const merged = [];
-        for (const l of lines) {
-            if (merged.length > 0 && merged[merged.length - 1].timeMs === l.timeMs) {
-                merged[merged.length - 1].text = l.text;
-            } else {
-                merged.push(l);
-            }
-        }
-        lyricsLines = merged;
-        renderLyrics();
-    }
-
-    function renderLyrics() {
-        const box = document.getElementById('lyricsBox');
-        const card = document.getElementById('lyricsCard');
-        if (lyricsLines.length === 0) {
-            box.innerHTML = '<div class="line inactive">暂无歌词</div>';
-            return;
-        }
-        card.classList.remove('hidden');
-        box.innerHTML = lyricsLines.map((l, i) =>
-            `<div class="line inactive" data-idx="${i}">${escapeHtml(l.text)}</div>`
-        ).join('');
-        updateLyricsHighlight();
-    }
-
-    function updateLyricsHighlight() {
-        if (lyricsLines.length === 0) return;
-        const pos = playbackState.position_ms;
-        let activeIdx = -1;
-        for (let i = lyricsLines.length - 1; i >= 0; i--) {
-            if (lyricsLines[i].timeMs <= pos) {
-                activeIdx = i;
-                break;
-            }
-        }
-
-        const lines = document.querySelectorAll('#lyricsBox .line');
-        lines.forEach((el, i) => {
-            el.className = 'line ' + (i === activeIdx ? 'active' : 'inactive');
-        });
-
-        // Auto-scroll
-        if (activeIdx >= 0 && lines[activeIdx]) {
-            lines[activeIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }
-
-    // =========================================================================
-    // PLAYBACK MODE (Stream vs File)
-    // =========================================================================
-    function switchPlaybackMode() {
-        useFileMode = !useFileMode;
-        const audio = document.getElementById('audioPlayer');
-        const badge = document.getElementById('modeBadge');
-
-        if (useFileMode) {
-            if (typeof MediaSource !== 'undefined') {
-                badge.textContent = '推文件模式';
-                badge.className = 'mode-badge mode-file';
-                badge.classList.remove('hidden');
-                startFilePlayback();
-            } else {
-                toast('你的浏览器不支持推文件模式，使用推流模式', 'error');
-                useFileMode = false;
-            }
-        } else {
-            badge.classList.add('hidden');
-            audio.src = STREAM_URL;
-            audio.load();
-            audio.play().catch(() => {});
-        }
-    }
-
-    function startFilePlayback() {
-        const audio = document.getElementById('audioPlayer');
-        mediaSource = new MediaSource();
-        audio.src = URL.createObjectURL(mediaSource);
-
-        mediaSource.addEventListener('sourceopen', async () => {
-            try {
-                sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
-                fetchFileChunk(0);
-            } catch (e) {
-                toast('推文件模式初始化失败，回退到推流模式', 'error');
-                useFileMode = false;
-                document.getElementById('modeBadge').classList.add('hidden');
-                audio.src = STREAM_URL;
-                audio.load();
-                audio.play().catch(() => {});
-            }
-        });
-    }
-
-    async function fetchFileChunk(offset) {
-        if (playbackState.song_id <= 0) return;
-
-        const chunkSize = 256 * 1024; // 256KB per chunk
-        const rangeEnd = Math.min(offset + chunkSize - 1, (playbackState.duration_ms / 1000) * 16 * 1024); // ~16KB/s per 128kbps
-
-        try {
-            const res = await fetch(AUDIO_ENGINE_URL + '/file/' + playbackState.song_id, {
-                headers: { 'Range': `bytes=${offset}-` }
-            });
-            if (!res.ok) return;
-
-            const buffer = await res.arrayBuffer();
-            if (buffer.byteLength > 0 && sourceBuffer && !sourceBuffer.updating) {
-                sourceBuffer.appendBuffer(buffer);
-            }
-        } catch (e) {
-            console.error('File chunk fetch error:', e);
-        }
-    }
-
-    // Volume controls
-    function volumeDown() {
-        const a = document.getElementById('audioPlayer');
-        a.volume = Math.max(0, a.volume - 0.1);
-    }
-    function volumeUp() {
-        const a = document.getElementById('audioPlayer');
-        a.volume = Math.min(1, a.volume + 0.1);
-    }
-
-    // =========================================================================
-    // QUEUE
-    // =========================================================================
-    async function refreshQueue() {
-        try {
-            const res = await fetch(BACKEND_URL + '/api/queue');
-            const data = await res.json();
-            if (!data.success) return;
-
-            const items = data.data || [];
-            document.getElementById('queueCount').textContent = `(${items.length}首)`;
-            const list = document.getElementById('queueList');
-
-            if (items.length === 0) {
-                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">队列为空</div>';
-                return;
-            }
-
-            list.innerHTML = items.map(item => {
-                const song = item.song || {};
-                const isPlaying = item.status === 'playing';
-                return `<div class="queue-item">
-                    <div class="info">
-                        <span>${escapeHtml(song.title || '未知歌曲')}</span>
-                        ${song.artist ? ` <span style="color:var(--text-muted);font-size:0.85em">- ${escapeHtml(song.artist)}</span>` : ''}
-                        <div class="meta">
-                            <span class="badge ${isPlaying ? 'badge-playing' : 'badge-pending'}">${isPlaying ? '播放中' : '等待'}</span>
-                            点歌: ${escapeHtml(item.requested_by)}
-                            ${currentUser && currentUser.role === 'admin' && !isPlaying ? `<button class="btn btn-danger btn-small" style="margin-left:8px" onclick="removeQueueItem(${item.id})">移除</button>` : ''}
-                        </div>
-                    </div>
-                </div>`;
-            }).join('');
-
-            // Also refresh history
-            refreshHistory();
-        } catch (e) { /* backend may not be up */ }
-    }
-
-    async function refreshHistory() {
-        try {
-            const res = await fetch(BACKEND_URL + '/api/queue/history');
-            const data = await res.json();
-            if (!data.success) return;
-            const items = data.data || [];
-            const list = document.getElementById('historyList');
-            if (items.length === 0) {
-                list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">暂无播放历史</div>';
-                return;
-            }
-            list.innerHTML = items.slice(0, 20).map(h => {
-                const song = h.song || {};
-                return `<div class="queue-item">
-                    <span>${escapeHtml(song.title || '未知')}</span>
-                    <span style="color:var(--text-muted);font-size:0.8em">${h.requested_by || ''} · ${h.played_at || ''}</span>
-                </div>`;
-            }).join('');
-        } catch (e) {}
-    }
-
-    async function removeQueueItem(id) {
-        if (!token) return;
-        try {
-            await fetch(`${BACKEND_URL}/api/queue/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-            refreshQueue();
-        } catch (e) { toast('移除失败', 'error'); }
-    }
-
-    // =========================================================================
-    // SONG LIBRARY
-    // =========================================================================
-    let searchTimer = null;
-    function searchSongs() {
-        clearTimeout(searchTimer);
-        searchTimer = setTimeout(async () => {
-            const q = document.getElementById('searchInput').value.trim();
-            if (!q) {
-                document.getElementById('songList').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">输入关键词搜索曲库</div>';
-                return;
-            }
-            try {
-                const res = await fetch(`${BACKEND_URL}/api/songs?q=${encodeURIComponent(q)}&limit=50`);
-                const data = await res.json();
-                if (!data.success) return;
-                const songs = data.data?.data || [];
-                renderSongList(songs);
-            } catch (e) {}
-        }, 300);
-    }
-
-    function renderSongList(songs) {
-        const list = document.getElementById('songList');
-        if (songs.length === 0) {
-            list.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:20px">未找到匹配的歌曲</div>';
-            return;
-        }
-        list.innerHTML = songs.map(s => `
-            <div class="song-item">
-                <div>
-                    <div style="font-weight:600">${escapeHtml(s.title)}</div>
-                    <div style="font-size:0.85em;color:var(--text-muted)">${escapeHtml(s.artist)} · ${escapeHtml(s.album)} · ${formatTime(s.duration_ms)}</div>
-                </div>
-                <div style="display:flex;gap:4px">
-                    <button class="btn btn-primary btn-small" onclick="addToQueue(${s.id})" title="投喂到电台">📻 点歌</button>
-                    ${currentUser ? `<button class="btn btn-secondary btn-small" onclick="addToMyPlaylist(${s.id})" title="收藏到歌单">⭐</button>` : ''}
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async function addToQueue(songId) {
-        if (!token) { toast('请先登录再点歌', 'error'); showAuthView(); return; }
-        try {
-            const res = await fetch(BACKEND_URL + '/api/queue', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ song_id: songId })
-            });
-            const data = await res.json();
-            if (data.success) {
-                toast('已添加到电台队列！', 'success');
-                refreshQueue();
-            } else {
-                toast(data.error || '点歌失败', 'error');
-            }
-        } catch (e) { toast('请求失败', 'error'); }
-    }
-
-    async function addToMyPlaylist(songId) {
-        toast('请先在"我的歌单"中创建歌单，再从歌单中添加', 'info');
-    }
-
-    // =========================================================================
-    // AUTH
-    // =========================================================================
-    function showAuthView() {
-        document.getElementById('authModal').classList.remove('hidden');
-        document.getElementById('authError').style.display = 'none';
-    }
-    function hideAuthView() {
-        document.getElementById('authModal').classList.add('hidden');
-    }
-    let authMode = 'login';
-    function toggleAuthMode() {
-        authMode = authMode === 'login' ? 'register' : 'login';
-        document.getElementById('authTitle').textContent = authMode === 'login' ? '登录' : '注册';
-        document.getElementById('authSubmitBtn').textContent = authMode === 'login' ? '登录' : '注册';
-        document.querySelector('#authModal .btn-secondary').textContent = authMode === 'login' ? '切换到注册' : '切换到登录';
-    }
-
-    async function doAuth() {
-        const username = document.getElementById('authUsername').value.trim();
-        const password = document.getElementById('authPassword').value;
-        const errEl = document.getElementById('authError');
-
-        if (username.length < 3 || password.length < 6) {
-            errEl.textContent = '用户名3-32字符，密码至少6字符';
-            errEl.style.display = 'block';
-            return;
-        }
-
-        const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
-        try {
-            const res = await fetch(BACKEND_URL + endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-            const data = await res.json();
-            if (data.success) {
-                token = data.data.token;
-                currentUser = data.data.user;
-                localStorage.setItem('radio_token', token);
-                updateUserUI();
-                hideAuthView();
-                toast(authMode === 'login' ? '登录成功' : '注册成功', 'success');
-            } else {
-                errEl.textContent = data.error || '操作失败';
-                errEl.style.display = 'block';
-            }
-        } catch (e) {
-            errEl.textContent = '无法连接到服务器';
-            errEl.style.display = 'block';
-        }
-    }
-
-    async function loadCurrentUser() {
-        try {
-            const res = await fetch(BACKEND_URL + '/api/auth/me', {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-            const data = await res.json();
-            if (data.success) {
-                currentUser = data.data;
-                updateUserUI();
-            } else {
-                token = null;
-                localStorage.removeItem('radio_token');
-            }
-        } catch (e) { /* offline */ }
-    }
-
-    function updateUserUI() {
-        if (currentUser) {
-            document.getElementById('userDisplay').textContent = currentUser.username;
-            document.getElementById('userDisplay').classList.remove('hidden');
-            document.getElementById('loginBtn').classList.add('hidden');
-            document.getElementById('logoutBtn').classList.remove('hidden');
-            document.getElementById('myPlaylistsCard').classList.remove('hidden');
-
-            if (currentUser.role === 'admin') {
-                document.getElementById('adminTab').classList.remove('hidden');
-            }
-        }
-    }
-
-    function logout() {
-        token = null;
-        currentUser = null;
-        localStorage.removeItem('radio_token');
-        document.getElementById('userDisplay').classList.add('hidden');
-        document.getElementById('loginBtn').classList.remove('hidden');
-        document.getElementById('logoutBtn').classList.add('hidden');
-        document.getElementById('adminTab').classList.add('hidden');
-        document.getElementById('myPlaylistsCard').classList.add('hidden');
-        toast('已退出登录', 'info');
-    }
-
-    // =========================================================================
-    // ADMIN
-    // =========================================================================
-    async function loadAdminPanel() {
-        if (!currentUser || currentUser.role !== 'admin') return;
-        try {
-            const [usersRes, statsRes, logsRes] = await Promise.all([
-                fetch(BACKEND_URL + '/api/admin/users', { headers: { 'Authorization': 'Bearer ' + token } }),
-                fetch(BACKEND_URL + '/api/admin/stats', { headers: { 'Authorization': 'Bearer ' + token } }),
-                fetch(BACKEND_URL + '/api/admin/logs', { headers: { 'Authorization': 'Bearer ' + token } }),
-            ]);
-
-            const users = (await usersRes.json()).data || [];
-            const stats = (await statsRes.json()).data || {};
-            const logs = (await logsRes.json()).data || [];
-
-            document.getElementById('usersTable').innerHTML = users.map(u =>
-                `<tr>
-                    <td>${u.id}</td><td>${escapeHtml(u.username)}</td><td>${u.role}</td>
-                    <td>${u.is_banned ? '🔴已封禁' : '🟢正常'}</td>
-                    <td>
-                        ${u.is_banned
-                            ? `<button class="btn btn-secondary btn-small" onclick="adminUnban(${u.id})">解封</button>`
-                            : `<button class="btn btn-danger btn-small" onclick="adminBan(${u.id})">封禁</button>`}
-                    </td>
-                </tr>`
-            ).join('');
-
-            document.getElementById('adminStats').innerHTML = `
-                用户: ${stats.users || 0} | 歌曲: ${stats.songs || 0} | 队列: ${stats.queue_size || 0} | 歌单: ${stats.playlists || 0}
-            `;
-
-            document.getElementById('adminLogs').innerHTML = logs.map(l =>
-                `<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.05)">
-                    <span style="color:var(--text-muted)">[${l.created_at}]</span>
-                    ${escapeHtml(l.action)} — ${escapeHtml(l.details)}
-                </div>`
-            ).join('');
-        } catch (e) {}
-    }
-
-    async function adminBan(userId) {
-        try {
-            await fetch(`${BACKEND_URL}/api/admin/users/${userId}/ban`, {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-            loadAdminPanel();
-        } catch (e) {}
-    }
-    async function adminUnban(userId) {
-        try {
-            await fetch(`${BACKEND_URL}/api/admin/users/${userId}/unban`, {
-                method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
-            loadAdminPanel();
-        } catch (e) {}
-    }
-
-    // =========================================================================
-    // TAB SWITCHING
-    // =========================================================================
-    function switchTab(name) {
-        activeTab = name;
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('[id^="tab-"]').forEach(d => d.classList.add('hidden'));
-
-        const tabEl = document.querySelector(`.tab:nth-child(${
-            name === 'player' ? 1 : name === 'queue' ? 2 : name === 'library' ? 3 : 4
-        })`);
-        if (tabEl) tabEl.classList.add('active');
-
-        const tabContent = document.getElementById('tab-' + name);
-        if (tabContent) tabContent.classList.remove('hidden');
-
-        if (name === 'queue') refreshQueue();
-        if (name === 'admin') loadAdminPanel();
-    }
-
-    // =========================================================================
-    // UTILITY
-    // =========================================================================
-    function formatTime(ms) {
-        if (!ms || ms < 0) return '0:00';
-        const secs = Math.floor(ms / 1000);
-        const m = Math.floor(secs / 60);
-        const s = secs % 60;
-        return m + ':' + s.toString().padStart(2, '0');
-    }
-
-    function escapeHtml(str) {
-        const d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
-    }
-
-    function toast(message, level = 'info') {
-        const container = document.getElementById('toastContainer');
-        const el = document.createElement('div');
-        el.className = 'toast toast-' + level;
-        el.textContent = message;
-        container.appendChild(el);
-        setTimeout(() => el.remove(), 4000);
-    }
-
-    // =========================================================================
-    // MY PLAYLISTS (simple version)
-    // =========================================================================
-    async function createPlaylist() {
-        if (!token) return;
-        const name = document.getElementById('newPlaylistName').value.trim();
-        if (!name) return;
-        try {
-            const res = await fetch(BACKEND_URL + '/api/playlists', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-                body: JSON.stringify({ name })
-            });
-            const data = await res.json();
-            if (data.success) {
-                toast('歌单创建成功', 'success');
-                document.getElementById('newPlaylistName').value = '';
-            }
-        } catch (e) {}
-    }
-    </script>
+    <script src="/app.js"></script>
 </body>
 </html>

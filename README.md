@@ -283,9 +283,17 @@ Tracks are ordered by a saved JSON array of filenames on startup. New files (not
 │   ├── media/               # Audio files directory (gitignored)
 │   └── templates/           # Optional custom template overrides (override embedded)
 │
-├── radio-backend/           # Rust REST + WebSocket API server (Actix-web, SQLite, Redis pub/sub)
+├── radio-backend/           # Rust REST + WebSocket API server (Axum, SQLite, Redis pub/sub)
+│   ├── src/
+│   │   └── routes/          # API handlers: auth, songs, queue, playlist, admin, favorites
+│   ├── migrations/          # SQLite migration files
+│   ├── config.toml.example  # Config template (port 2241, station, redis, jwt, queue)
 │   └── static/
-│       ├── index.html       # Player UI (vanilla JS + CSS, served on port 2241)
+│       ├── index.html       # Player UI (HTML structure)
+│       ├── style.css        # Player + admin panel styles
+│       ├── app.js           # Player + admin panel logic
+│       ├── manifest.json    # PWA Web Manifest
+│       ├── sw.js            # PWA Service Worker
 │       └── FRONTEND.md      # Frontend design spec
 ├── audio-engine/            # C++ audio decoding & streaming engine (FFmpeg, Redis client)
 ├── deploy/                  # Systemd deployment manifests (radio-backend, audio-engine, nginx)
@@ -356,9 +364,21 @@ make -j$(nproc)
 
 Both `radio-backend/` and `audio-engine/` share the same Redis instance and communicate through pub/sub. The Rust backend provides the user-facing API + Web UI, while the audio engine handles the actual streaming.
 
-### Frontend Architecture — `radio-backend/static/index.html`
+### Frontend Architecture — `radio-backend/static/`
 
-A single-file vanilla JS + CSS player UI served by the Rust backend (port 2241).
+Split into three files served by the Rust backend (port 2241):
+
+- **`index.html`** (280 lines) — HTML structure with tab navigation (Player, Queue, Library, Admin)
+- **`style.css`** (206 lines) — All CSS via custom properties; supports light/dark themes and admin panel styles
+- **`app.js`** (1130 lines) — All client logic: WebSocket, audio playback, lyrics, queue, search, auth, admin panel
+
+**Admin panel** (JWT-protected, admin role required) provides sub-tabs for:
+- User management (ban/unban, audit logs)
+- Song management (list, delete, rescan, skip controls)
+- Music upload (multipart form, ≤ 100 MB)
+- Batch download (via `music_dl.py`, with quality/format selection and live log)
+- NetEase Cloud Music credentials (cookie or phone+password + login test)
+- System settings (station name, theme colors, admin password)
 
 **Color system**: All colors use CSS custom properties (`var(--primary)`, `var(--text)`, `var(--border)`, etc.) defined in `:root`. The backend's `/api/station` endpoint injects `--primary`, `--secondary`, `--bg` at runtime. **Never hardcode a hex color in CSS properties or inline styles.**
 
@@ -366,10 +386,10 @@ A single-file vanilla JS + CSS player UI served by the Rust backend (port 2241).
 
 **Communication**:
 - WebSocket `ws://<host>:2241/ws` for real-time playback state (title, artist, position, `lyrics_line`, `lyrics_text`)
-- HTTP REST on the same port (2241) — see API table above
+- HTTP REST on the same port (2241) — see API table below
 - `lyrics_line` + `lyrics_text` are computed server-side by the Rust backend; the frontend only renders pre-parsed LRC
 
-**Legacy templates** (`index.html`, `panel.html`, `login.html`): served by the C++ Crow server on port 2240. These use `{{VAR}}` template substitution and are gradually being migrated to the Rust frontend.
+**Legacy templates** (`index.html`, `panel.html`, `login.html`): served by the C++ Crow server on port 2240. These use `{{VAR}}` template substitution. Admin panel features (upload, download, settings, NCM) have been migrated to the Rust frontend; the legacy templates are kept for backward compatibility during the transition period.
 
 Full design spec: [`radio-backend/static/FRONTEND.md`](radio-backend/static/FRONTEND.md)
 
@@ -705,9 +725,17 @@ g++ radioserver.cpp metadata.cpp -o dist/radioserver \
 │   ├── media/               # 音频文件目录（gitignored）
 │   └── templates/           # 可选的自定义模板覆盖
 │
-├── radio-backend/           # Rust REST + WebSocket API 服务器（Actix-web、SQLite、Redis 发布/订阅）
+├── radio-backend/           # Rust REST + WebSocket API 服务器（Axum、SQLite、Redis 发布/订阅）
+│   ├── src/
+│   │   └── routes/          # API 路由：auth, songs, queue, playlist, admin, favorites
+│   ├── migrations/          # SQLite 数据库迁移文件
+│   ├── config.toml.example  # 配置模板（端口 2241, station, redis, jwt, queue）
 │   └── static/
-│       ├── index.html       # 播放器 UI（原生 JS + CSS，2241 端口托管）
+│       ├── index.html       # 播放器 UI（HTML 结构）
+│       ├── style.css        # 播放器 + 管理面板样式
+│       ├── app.js           # 播放器 + 管理面板逻辑
+│       ├── manifest.json    # PWA Web Manifest
+│       ├── sw.js            # PWA Service Worker
 │       └── FRONTEND.md      # 前端设计规范
 ├── audio-engine/            # C++ 音频解码与流媒体引擎（FFmpeg、Redis 客户端）
 ├── deploy/                  # Systemd 部署清单（radio-backend、audio-engine、nginx）
@@ -778,9 +806,21 @@ make -j$(nproc)
 
 `radio-backend/` 和 `audio-engine/` 共享同一个 Redis 实例，通过发布/订阅进行通信。Rust 后端提供面向用户的 API 和 Web UI，而音频引擎负责实际的音频流处理。
 
-### 前端架构 — `radio-backend/static/index.html`
+### 前端架构 — `radio-backend/static/`
 
-由 Rust 后端在 2241 端口托管的一个单文件原生 JavaScript + CSS 播放器 UI。
+已拆分为三个文件，由 Rust 后端在 2241 端口托管：
+
+- **`index.html`**（280 行）— HTML 结构，包含标签页导航（播放、队列、曲库、管理）
+- **`style.css`**（206 行）— 所有 CSS 样式，通过自定义属性管理；支持亮/暗主题及管理面板样式
+- **`app.js`**（1130 行）— 所有客户端逻辑：WebSocket、音频播放、歌词、队列、搜索、认证、管理面板
+
+**管理面板**（需 JWT 认证及管理员角色）提供以下子标签页：
+- 用户管理（封禁/解封、操作日志）
+- 歌曲管理（列表查看、删除、重新扫描、切歌控制）
+- 音乐上传（multipart 表单，≤ 100 MB）
+- 批量下载（通过 `music_dl.py`，支持音质/格式选择和实时日志）
+- 网易云音乐凭据（Cookie 或手机号+密码 + 登录测试）
+- 系统设置（站点名称、主题颜色、管理员密码）
 
 **色彩系统**：所有颜色通过 CSS 自定义属性（`var(--primary)`、`var(--text)`、`var(--border)` 等）引用，在 `:root` 中定义。后端 `/api/station` 接口在运行时注入 `--primary`、`--secondary`、`--bg`。**严禁在 CSS 属性或内联 style 中直接写色码。**
 
@@ -791,7 +831,7 @@ make -j$(nproc)
 - HTTP REST 同端口（2241）—— 见上文 API 表
 - `lyrics_line` 和 `lyrics_text` 由 Rust 后端服务端计算和注入，前端仅负责渲染预解析的 LRC 歌词
 
-**遗留模板**（`index.html`、`panel.html`、`login.html`）：由 C++ Crow 服务器在 2240 端口托管，使用 `{{VAR}}` 模板变量替换，功能正在逐步迁移到 Rust 前端。
+**遗留模板**（`index.html`、`panel.html`、`login.html`）：由 C++ Crow 服务器在 2240 端口托管，使用 `{{VAR}}` 模板变量替换。管理面板功能（上传、下载、设置、网易云）已迁移至 Rust 前端，遗留模板在过渡期间保留以保持向后兼容。
 
 完整设计规范：[`radio-backend/static/FRONTEND.md`](radio-backend/static/FRONTEND.md)
 
