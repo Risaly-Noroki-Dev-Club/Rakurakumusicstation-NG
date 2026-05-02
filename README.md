@@ -155,16 +155,123 @@ No configuration file needed. Scans `media/` on startup. Playlist order persists
 
 MP3, WAV, FLAC, OGG, M4A, AAC
 
+---
+
+## 中文 / Chinese
+
+### 架构
+
+两个服务，一个 Redis：
+
+| 服务 | 端口 | 职责 |
+|------|------|------|
+| **C++ 音频引擎** (`radioserver.cpp`) | 2240 | ffmpeg 管道 → 环形缓冲 → TCP 推流；向 Redis 发布 `PlaybackState`；订阅 `command` 频道接收控制指令 |
+| **Rust 后端** (`radio-backend/`) | 2241 | REST API、WebSocket、多用户 JWT 认证、SQLite、队列/播放列表管理；通过 Redis 驱动 C++ 引擎 |
+
+- Redis 对 C++ 引擎**可选** — 未连接时独立运行。
+- 两者共享 `media/` 目录。
+
+### 快速开始
+
+```bash
+# 1. 下载 crow_all.h（一次性）
+wget $(curl -sf https://api.github.com/repos/CrowCpp/Crow/releases/latest \
+  | python3 -c "import sys,json; r=json.load(sys.stdin); print(next(a['browser_download_url'] for a in r['assets'] if a['name']=='crow_all.h'))") \
+  -O crow_all.h
+
+# 2. 构建
+./build_release.sh
+
+# 3. 放入音频文件
+cp /path/to/music/*.mp3 dist/media/
+
+# 4. 启动音频引擎
+cd dist && ./start.sh
+
+# 5. 启动 Rust 后端（可选 — 提供 Web UI 和 API）
+cd radio-backend
+cp config.toml.example config.toml
+cargo run --release
+```
+
+- 音频流：`http://localhost:2240/stream`
+- 健康检查：`http://localhost:2240/health`
+- Web 界面（Rust）：`http://localhost:2241`
+
+停止：C++ 用 `./stop.sh`，Rust 用 `Ctrl+C`。
+
+### C++ 音频引擎 — API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/stream` | 音频流（`Content-Type: audio/mpeg`），接管 TCP 套接字 |
+| `GET` | `/health` | `{"status":"ok","service":"rakuraku-audio-engine","clients":N}` |
+
+无认证、无管理面板 — 所有管理操作通过 Rust 后端完成。
+
+### Rust 后端 — API
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| `GET` | `/api/station` | 无 | 电台信息 + 主题色 |
+| `GET` | `/api/now-playing` | 无 | 当前曲目 + `lyrics_line` / `lyrics_text` |
+| `GET` | `/api/songs?q=` | 无 | 曲库搜索 |
+| `GET` | `/api/songs/{id}/cover` | 无 | 封面图片 |
+| `GET` | `/api/queue` | 无 | 队列 |
+| `GET` | `/api/queue/history` | 无 | 播放历史 |
+| `POST` | `/api/queue` | JWT | 点歌 |
+| `DELETE` | `/api/queue/{id}` | Admin | 移除队列项 |
+| `POST` | `/api/queue/skip` | Admin | 切歌（→ Redis `command`） |
+| `POST` | `/api/auth/register` | 无 | 注册 |
+| `POST` | `/api/auth/login` | 无 | 登录 → JWT |
+| `GET` | `/api/auth/me` | JWT | 当前用户 |
+| `GET` | `/api/favorites` | JWT | 收藏 |
+| `POST` `DELETE` | `/api/favorites/{id}` | JWT | 添加/取消收藏 |
+| `GET` `POST` `DELETE` | `/api/playlists` | JWT | 歌单 CRUD |
+| `GET` `POST` `DELETE` | `/api/admin/*` | Admin | 用户管理、统计、歌曲上传/删除、设置、下载、NCM |
+| `WS` | `/ws` | 无 | WebSocket：实时推送 `playback_state` + `queue_update` |
+
+### Redis 频道
+
+| 频道 | 方向 | 负载 |
+|------|------|------|
+| `playback_state` | C++ → Rust | `PlaybackState` JSON（song_id、file_path、position_ms、duration_ms、status、total_bytes_sent、bitrate_kbps、track_start_timestamp_ms） |
+| `command` | Rust → C++ | `AudioCommand` JSON（`type`：skip/prev/play/stop、`file_path`、`song_id`） |
+| `queue_event` | Rust → C++ | `QueueEvent` JSON（队列变更 — 预留） |
+
+### 配置
+
+**C++ 引擎** — 无需配置文件。启动时扫描 `media/` 目录。播放顺序保存在 `playlist_order.json`。
+
+**Rust 后端** — `config.toml`
+
+```toml
+[server]          # host, port（默认 2241）
+[database]        # SQLite URL
+[redis]           # URL、频道名
+[audio_engine]    # C++ 引擎 base_url、media_path
+[jwt]             # secret、expiry_hours
+[queue]           # max_size、rate_limit
+[station]         # name、subtitle、主题色
+[logging]         # level
+```
+
+### 支持格式
+
+MP3、WAV、FLAC、OGG、M4A、AAC
+
+---
+
 ## License
 
 MIT
 
 ## Credits
 
-- **知夏 (Zhixia)** — collaborator
-- [Crow](https://github.com/CrowCpp/Crow) — C++ HTTP framework
-- [hiredis](https://github.com/redis/hiredis) — C Redis client
-- [FFmpeg](https://ffmpeg.org/) — audio decoding
-- [Axum](https://github.com/tokio-rs/axum) — Rust HTTP framework
-- [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL toolkit
-- Inspired by *Bocchi the Rock!* — Nijika Ijichi
+- **知夏 (Zhixia)** — 项目协作者
+- [Crow](https://github.com/CrowCpp/Crow) — C++ HTTP 框架
+- [hiredis](https://github.com/redis/hiredis) — C Redis 客户端
+- [FFmpeg](https://ffmpeg.org/) — 音频解码
+- [Axum](https://github.com/tokio-rs/axum) — Rust HTTP 框架
+- [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL 工具集
+- 灵感来源：《孤独摇滚！》— 伊地知虹夏
