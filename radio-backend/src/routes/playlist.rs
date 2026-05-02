@@ -17,8 +17,8 @@ use std::sync::Arc;
 pub fn playlist_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(list_my_playlists).post(create_playlist))
-        .route("/{id}", get(get_playlist).delete(delete_playlist))
-        .route("/{id}/songs", post(add_song).delete(remove_song))
+        .route("/:id", get(get_playlist).delete(delete_playlist))
+        .route("/:id/songs", post(add_song).delete(remove_song))
 }
 
 /// 从请求头中提取已认证用户的辅助函数（使用共享 auth 模块）。

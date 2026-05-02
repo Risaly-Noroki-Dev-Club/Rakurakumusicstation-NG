@@ -14,13 +14,13 @@ use std::sync::Arc;
 
 pub fn song_routes() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/:id/cover", get(get_song_cover))
+        .route("/:id", get(get_song))
         .route("/", get(search_songs))
-        .route("/{id}", get(get_song))
-        .route("/{id}/cover", get(get_song_cover))
 }
 
 /// GET /api/songs?q=search&limit=20&offset=0
-async fn search_songs(
+pub async fn search_songs(
     State(state): State<Arc<AppState>>,
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<ApiResponse<PaginatedResponse<SongSummary>>>, AppError> {
@@ -78,7 +78,7 @@ async fn search_songs(
 }
 
 /// GET /api/songs/{id}
-async fn get_song(
+pub async fn get_song(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<crate::models::Song>>, AppError> {
@@ -91,8 +91,16 @@ async fn get_song(
     Ok(Json(ApiResponse::ok(song)))
 }
 
-/// GET /api/songs/{id}/cover — 返回封面图片（JPEG/PNG 二进制数据）
-async fn get_song_cover(
+/// 缺省封面占位 SVG — 简约音乐符图标
+const DEFAULT_COVER_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <rect width="120" height="120" rx="8" fill="#e8e8f0"/>
+  <path d="M42 85V42l36-8v43" stroke="#999" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="38" cy="85" r="7" fill="#bbb"/>
+  <circle cx="74" cy="77" r="7" fill="#bbb"/>
+</svg>"##;
+
+/// GET /api/songs/{id}/cover — 返回封面图片（JPEG/PNG/SVG 二进制数据）
+pub async fn get_song_cover(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
@@ -103,23 +111,38 @@ async fn get_song_cover(
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
     if song.cover_path.is_empty() {
-        return Err(AppError::NotFound("No cover art".into()));
+        return Ok(Response::builder()
+            .header(header::CONTENT_TYPE, "image/svg+xml")
+            .header(header::CACHE_CONTROL, "public, max-age=3600")
+            .body(axum::body::Body::from(DEFAULT_COVER_SVG))
+            .unwrap());
     }
 
     let cover_full = std::path::Path::new(&state.config.audio_engine.media_path)
         .join(&song.cover_path);
 
     let data = std::fs::read(&cover_full)
-        .map_err(|_| AppError::NotFound("Cover file not found".into()))?;
+        .map_err(|_| {
+            // 文件丢失时也回退到缺省封面
+            DEFAULT_COVER_SVG.to_string()
+        });
 
-    let mime = match cover_full.extension().and_then(|e| e.to_str()) {
-        Some("png") => "image/png",
-        _ => "image/jpeg",
-    };
-
-    Ok(Response::builder()
-        .header(header::CONTENT_TYPE, mime)
-        .header(header::CACHE_CONTROL, "public, max-age=3600")
-        .body(axum::body::Body::from(data))
-        .unwrap())
+    match data {
+        Ok(bytes) => {
+            let mime = match cover_full.extension().and_then(|e| e.to_str()) {
+                Some("png") => "image/png",
+                _ => "image/jpeg",
+            };
+            Ok(Response::builder()
+                .header(header::CONTENT_TYPE, mime)
+                .header(header::CACHE_CONTROL, "public, max-age=3600")
+                .body(axum::body::Body::from(bytes))
+                .unwrap())
+        }
+        Err(_) => Ok(Response::builder()
+            .header(header::CONTENT_TYPE, "image/svg+xml")
+            .header(header::CACHE_CONTROL, "public, max-age=3600")
+            .body(axum::body::Body::from(DEFAULT_COVER_SVG))
+            .unwrap()),
+    }
 }

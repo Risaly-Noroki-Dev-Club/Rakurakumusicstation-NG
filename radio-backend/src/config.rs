@@ -48,6 +48,31 @@ pub struct AudioEngineConfig {
     pub base_url: String,
     #[serde(default = "default_media_path")]
     pub media_path: String,
+    /// 音频流 URL — 可以是绝对路径 (http://...) 或相对路径 (/stream)。
+    /// 相对路径会与 base_url 拼接。
+    #[serde(default = "default_stream_base")]
+    pub stream_base: String,
+}
+
+impl AudioEngineConfig {
+    /// 将 stream_base 解析为绝对 URL。
+    /// - 如果 stream_base 以 http:// 或 https:// 开头 → 直接使用
+    /// - 否则 → 拼接 base_url + stream_base
+    pub fn resolve_stream_url(&self) -> String {
+        if self.stream_base.starts_with("http://") || self.stream_base.starts_with("https://") {
+            self.stream_base.clone()
+        } else {
+            let base = self.base_url.trim_end_matches('/');
+            let path = self.stream_base.trim_start_matches('/');
+            format!("{}/{}", base, path)
+        }
+    }
+
+    /// 构建当前播放曲目的文件 URL。
+    pub fn resolve_file_url(&self, song_id: i64) -> String {
+        let base = self.base_url.trim_end_matches('/');
+        format!("{}/file/{}", base, song_id)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,6 +124,7 @@ fn default_command_channel() -> String { "command".into() }
 fn default_queue_channel() -> String { "queue_event".into() }
 fn default_engine_base_url() -> String { "http://127.0.0.1:2240".into() }
 fn default_media_path() -> String { "./media".into() }
+fn default_stream_base() -> String { "/stream".into() }
 fn default_jwt_secret() -> String { "radio-backend-dev-secret-change-in-production".into() }
 fn default_expiry_hours() -> u64 { 24 }
 fn default_max_queue_size() -> usize { 100 }
@@ -128,6 +154,7 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("RADIO_LOG_LEVEL") { config.logging.level = v; }
         if let Ok(v) = std::env::var("RADIO_MEDIA_PATH") { config.audio_engine.media_path = v; }
+        if let Ok(v) = std::env::var("RADIO_STREAM_BASE") { config.audio_engine.stream_base = v; }
         if let Ok(v) = std::env::var("RADIO_STATION_NAME") { config.station.name = v; }
 
         Ok(config)

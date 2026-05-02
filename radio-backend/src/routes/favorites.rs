@@ -15,7 +15,7 @@ use std::sync::Arc;
 pub fn favorites_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(list_favorites))
-        .route("/{song_id}", post(add_favorite).delete(remove_favorite))
+        .route("/:song_id", post(add_favorite).delete(remove_favorite))
 }
 
 /// GET /api/favorites — 列出当前用户的收藏歌曲

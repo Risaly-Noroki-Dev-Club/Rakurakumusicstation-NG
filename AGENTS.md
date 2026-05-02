@@ -75,6 +75,8 @@ cd dist
 - **Migrations run automatically** at startup via `sqlx::migrate!`, no manual step needed.
 - **Static files are a fallback** (`ServeDir::new("static")` as `.fallback_service()`) — any unmatched route falls through to the SPA, enabling client-side routing.
 - **`now_playing` HTTP endpoint is DB-only** (no real-time position_ms). Real-time playback data comes via WebSocket only.
+- **`stream_base` config** (`[audio_engine].stream_base`) accepts absolute URLs (`http://...`) or relative paths (`/stream`). Relative paths are resolved against `base_url`. The frontend reads the resolved URL from `/api/station`.
+- **Missing cover art returns a placeholder SVG** — the `/api/songs/{id}/cover` endpoint returns a default music-note icon when no cover exists, rather than a 404 error.
 
 ## No tests / no CI
 

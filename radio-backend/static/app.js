@@ -4,9 +4,9 @@
 
 // ─── CONFIGURATION ─────────────────────────────────────────────────────────
 const BACKEND_URL = window.location.origin;
-const AUDIO_ENGINE_URL = window.location.protocol + '//' + window.location.hostname + ':2240';
 const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws';
-const STREAM_URL = AUDIO_ENGINE_URL + '/stream';
+let STREAM_URL = '/stream';        // populated from /api/station
+let AUDIO_ENGINE_URL = '';         // derived from STREAM_URL for file-mode fallback
 
 // ─── GLOBAL STATE ──────────────────────────────────────────────────────────
 let token = localStorage.getItem('radio_token') || null;
@@ -74,13 +74,22 @@ async function loadStationInfo() {
     try {
         const res = await fetch(BACKEND_URL + '/api/station');
         const data = await res.json();
-        if (data.success && data.data) {
-            document.getElementById('stationName').textContent = data.name;
-            document.title = data.name;
-            document.querySelector('meta[name="theme-color"]').content = data.primary_color;
-            document.documentElement.style.setProperty('--primary', data.primary_color);
-            document.documentElement.style.setProperty('--secondary', data.secondary_color);
-            document.documentElement.style.setProperty('--bg', data.bg_color);
+        if (data) {
+            const info = data.data || data;
+            document.getElementById('stationName').textContent = info.name;
+            document.title = info.name;
+            document.querySelector('meta[name="theme-color"]').content = info.primary_color;
+            document.documentElement.style.setProperty('--primary', info.primary_color);
+            document.documentElement.style.setProperty('--secondary', info.secondary_color);
+            document.documentElement.style.setProperty('--bg', info.bg_color);
+            if (info.stream_url) {
+                STREAM_URL = info.stream_url;
+                const u = new URL(info.stream_url, window.location.origin);
+                AUDIO_ENGINE_URL = u.origin;
+            }
+            if (info.ws_url) {
+                // reconnect WS if URL changed
+            }
         }
     } catch (e) {}
 }

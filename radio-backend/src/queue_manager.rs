@@ -301,9 +301,9 @@ pub async fn mark_playing(
     .execute(db)
     .await?;
 
-    // 将新项目标记为 playing
+    // 将新项目标记为 playing（SQLite 不支持 UPDATE ... ORDER BY LIMIT，用子查询代替）
     sqlx::query(
-        "UPDATE queue_items SET status = 'playing' WHERE song_id = ? AND status = 'pending' ORDER BY position ASC LIMIT 1"
+        "UPDATE queue_items SET status = 'playing' WHERE id = (SELECT id FROM queue_items WHERE song_id = ? AND status = 'pending' ORDER BY position ASC LIMIT 1)"
     )
     .bind(song_id)
     .execute(db)

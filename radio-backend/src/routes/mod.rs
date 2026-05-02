@@ -19,7 +19,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // 认证路由
         .nest("/api/auth", auth::auth_routes())
         // 歌曲库
-        .nest("/api/songs", songs::song_routes())
+        .route("/api/songs", get(songs::search_songs))
+        .route("/api/songs/:id", get(songs::get_song))
+        .route("/api/songs/:id/cover", get(songs::get_song_cover))
         // 用户播放列表
         .nest("/api/playlists", playlist::playlist_routes())
         // 共享电台队列
@@ -43,13 +45,18 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 async fn station_info(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> axum::Json<serde_json::Value> {
+    let ws_host = if state.config.server.host == "0.0.0.0" {
+        "localhost"
+    } else {
+        &state.config.server.host
+    };
     axum::Json(serde_json::json!({
         "name": state.config.station.name,
         "subtitle": state.config.station.subtitle,
         "primary_color": state.config.station.primary_color,
         "secondary_color": state.config.station.secondary_color,
         "bg_color": state.config.station.bg_color,
-        "stream_url": format!("{}:{}/stream", state.config.audio_engine.base_url, 2240),
-        "ws_url": format!("ws://{}:{}/ws", state.config.server.host, state.config.server.port),
+        "stream_url": state.config.audio_engine.resolve_stream_url(),
+        "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
     }))
 }

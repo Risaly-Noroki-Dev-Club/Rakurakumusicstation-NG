@@ -16,8 +16,8 @@ use std::sync::Arc;
 pub fn queue_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(get_queue).post(add_to_queue))
-        .route("/{id}", delete(remove_queue_item))
-        .route("/{id}/move", post(move_queue_item))
+        .route("/:id", delete(remove_queue_item))
+        .route("/:id/move", post(move_queue_item))
         .route("/skip", post(skip_current))
         .route("/history", get(get_history))
 }
@@ -149,7 +149,7 @@ pub async fn now_playing(
     let song_summary = song.as_ref().map(|s| s.clone().into());
     let duration_ms = song.as_ref().map(|s| s.duration_ms).unwrap_or(0);
     let file_url = song.as_ref().map(|s| {
-        format!("{}:{}/file/{}", state.config.audio_engine.base_url, 2240, s.id)
+        state.config.audio_engine.resolve_file_url(s.id)
     });
 
     Ok(Json(ApiResponse::ok(NowPlaying {
@@ -159,7 +159,7 @@ pub async fn now_playing(
         lyrics_line,
         lyrics_text,
         started_at: playing.as_ref().and_then(|p| p.played_at.map(|t| t.to_string())),
-        stream_url: format!("{}:{}/stream", state.config.audio_engine.base_url, 2240),
+        stream_url: state.config.audio_engine.resolve_stream_url(),
         file_url,
     })))
 }

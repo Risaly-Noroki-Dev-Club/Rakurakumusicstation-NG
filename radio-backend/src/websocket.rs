@@ -241,9 +241,9 @@ async fn enrich_playback_state(
         lyrics_line,
         lyrics_text: cached_lrc_text.clone(),
         status: ps.status.clone(),
-        stream_url: format!("{}:{}/stream", state.config.audio_engine.base_url, 2240),
+        stream_url: state.config.audio_engine.resolve_stream_url(),
         file_url: if ps.song_id > 0 {
-            Some(format!("{}:{}/file/{}", state.config.audio_engine.base_url, 2240, ps.song_id))
+            Some(state.config.audio_engine.resolve_file_url(ps.song_id))
         } else {
             None
         },

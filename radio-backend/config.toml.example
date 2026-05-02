@@ -22,10 +22,14 @@ command_channel = "command"
 queue_channel = "queue_event"
 
 [audio_engine]
-# C++ 音频引擎的基础 URL（用于生成文件 URL）
+# C++ 音频引擎的基础 URL（用于拼接相对 stream_base / file URL）
 base_url = "http://127.0.0.1:2240"
 # 媒体文件根目录（与 C++ 引擎共享）
 media_path = "./media"
+# 音频流地址 — 可以是绝对 URL 或相对路径：
+#   相对路径 "/stream" → 拼接为 "http://127.0.0.1:2240/stream"
+#   绝对路径 "http://192.168.1.100:2240/stream" → 直接使用
+stream_base = "/stream"
 
 [jwt]
 # JWT 密钥（至少 32 个字符，生成命令：openssl rand -base64 32）
