@@ -45,6 +45,7 @@ namespace Config {
     constexpr int MAX_EVENTS = 1024;
     constexpr int MAX_CONNECTIONS = 1024;
     constexpr int STATE_PUBLISH_MS = 500;
+    constexpr int CROSSFADE_SECONDS = 3;
     const std::vector<std::string> SUPPORTED_FORMATS = {
         ".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"
     };
@@ -504,6 +505,7 @@ public:
     void stop() {
         if (!running_.exchange(false)) return;
         skip_track_ = true;
+        cleanup_preload();
         {
             std::lock_guard<std::mutex> lock(idle_mutex_);
             idle_cv_.notify_all();
@@ -551,9 +553,144 @@ private:
     int64_t current_duration_ms_{0};
     int64_t track_start_epoch_ms_{0};
 
+    // 平滑过渡（crossfade）预加载
+    pid_t preload_child_pid_ = -1;
+    int preload_pipe_fd_ = -1;
+    std::vector<uint8_t> preload_buffer_;
+    size_t preload_track_idx_ = 0;
+    std::string preload_filename_;
+
     void interruptible_wait(std::chrono::milliseconds dur) {
         std::unique_lock<std::mutex> lock(idle_mutex_);
         idle_cv_.wait_for(lock, dur, [this]() { return !running_.load(); });
+    }
+
+    // 构建 ffmpeg 命令行参数（带 afade 滤镜）
+    void build_ffmpeg_argv(const std::string& filename, int64_t duration_ms,
+                           bool is_preload,
+                           std::vector<std::string>& out_strs,
+                           std::vector<const char*>& out_argv) {
+        out_strs.clear();
+        out_strs = {"ffmpeg", "-nostdin", "-re", "-loglevel", "error"};
+        out_strs.insert(out_strs.end(), {"-i", filename, "-vn",
+                         "-c:a", "libmp3lame", "-b:a", "128k",
+                         "-ar", "44100", "-ac", "2"});
+
+        // 构建 afade 滤镜
+        std::string afade;
+        if (is_preload) {
+            afade = "afade=t=in:d=" + std::to_string(Config::CROSSFADE_SECONDS) +
+                    ":curve=tri";
+        } else if (duration_ms > Config::CROSSFADE_SECONDS * 2 * 1000) {
+            double st = (duration_ms / 1000.0) - Config::CROSSFADE_SECONDS;
+            std::ostringstream oss;
+            oss << "afade=t=out:st=" << std::fixed << std::setprecision(2) << st;
+            oss << ":d=" << Config::CROSSFADE_SECONDS << ":curve=tri";
+            afade = oss.str();
+        }
+
+        if (!afade.empty()) {
+            out_strs.push_back("-af");
+            out_strs.push_back(afade);
+        }
+
+        out_strs.insert(out_strs.end(), {"-f", "mp3", "pipe:1"});
+
+        out_argv.clear();
+        for (const auto& s : out_strs) out_argv.push_back(s.c_str());
+        out_argv.push_back(nullptr);
+    }
+
+    // 启动预加载：fork ffmpeg 解码下一首的前几秒（含 fade-in）
+    void start_preload(const std::string& filename, size_t track_idx) {
+        preload_filename_ = filename;
+        preload_track_idx_ = track_idx;
+        preload_buffer_.clear();
+
+        int fds[2];
+        if (pipe2(fds, O_CLOEXEC) != 0) {
+            std::cerr << "[XFade] preload pipe2 failed: " << strerror(errno) << std::endl;
+            return;
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            std::cerr << "[XFade] preload fork failed: " << strerror(errno) << std::endl;
+            close(fds[0]); close(fds[1]);
+            return;
+        }
+
+        if (pid == 0) {
+            if (dup2(fds[1], STDOUT_FILENO) < 0) _exit(127);
+            close(fds[0]);
+            std::vector<std::string> strs;
+            std::vector<const char*> argv;
+            build_ffmpeg_argv(filename, 0, true, strs, argv);
+            execvp("ffmpeg", const_cast<char* const*>(argv.data()));
+            _exit(127);
+        }
+
+        close(fds[1]);
+        preload_pipe_fd_ = fds[0];
+        preload_child_pid_ = pid;
+
+        // 设为非阻塞模式，在主循环中读取
+        int flags = fcntl(preload_pipe_fd_, F_GETFL, 0);
+        if (flags >= 0) fcntl(preload_pipe_fd_, F_SETFL, flags | O_NONBLOCK);
+
+        std::cout << "[XFade] Preloading next track: " << filename << std::endl;
+    }
+
+    // 从预加载管道读取数据（非阻塞）
+    void read_preload() {
+        if (preload_pipe_fd_ < 0) return;
+        char buf[Config::AUDIO_CHUNK_SIZE];
+        ssize_t n;
+        do {
+            n = read(preload_pipe_fd_, buf, sizeof(buf));
+        } while (n < 0 && errno == EINTR);
+        if (n > 0) {
+            preload_buffer_.insert(preload_buffer_.end(), buf, buf + n);
+        }
+    }
+
+    // 排出预加载缓冲区到 BroadcastBuffer，然后切换为主播放管道
+    void drain_and_switch(int& pipe_fd, pid_t& child_pid,
+                          size_t& track_idx, std::string& filename) {
+        // 排出预加载缓冲（track B 的 fade-in 部分）
+        if (!preload_buffer_.empty()) {
+            buffer_->push(reinterpret_cast<const char*>(preload_buffer_.data()), preload_buffer_.size());
+            total_bytes_sent_ += preload_buffer_.size();
+            std::cout << "[XFade] Drained " << preload_buffer_.size()
+                      << " bytes of preloaded audio" << std::endl;
+            preload_buffer_.clear();
+        }
+
+        // 切换到预加载的管道，继续播放
+        pipe_fd = preload_pipe_fd_;
+        child_pid = preload_child_pid_;
+        track_idx = preload_track_idx_;
+        filename = preload_filename_;
+
+        // 恢复阻塞模式
+        int flags = fcntl(pipe_fd, F_GETFL, 0);
+        if (flags >= 0) fcntl(pipe_fd, F_SETFL, flags & ~O_NONBLOCK);
+
+        preload_pipe_fd_ = -1;
+        preload_child_pid_ = -1;
+
+        std::cout << "[XFade] Switched to next track" << std::endl;
+    }
+
+    // 清理预加载状态（取消/跳过时调用）
+    void cleanup_preload() {
+        if (preload_pipe_fd_ >= 0) { close(preload_pipe_fd_); preload_pipe_fd_ = -1; }
+        if (preload_child_pid_ > 0) {
+            kill(preload_child_pid_, SIGTERM);
+            waitpid(preload_child_pid_, nullptr, 0);
+            preload_child_pid_ = -1;
+        }
+        preload_buffer_.clear();
     }
 
     void worker_loop() {
@@ -578,15 +715,15 @@ private:
 
         std::string filename;
         size_t track_idx = 0;
+
+    track_setup:
         {
             std::lock_guard<std::mutex> lock(*playlist_mutex_);
             playlist_size = playlist_->size();
             if (playlist_size == 0) return;
-            track_idx = playlist_size > 0 ?
-                        current_track_->load() % playlist_size : 0;
+            track_idx = current_track_->load() % playlist_size;
             filename = "./media/" + playlist_->at(track_idx);
 
-            // 获取元数据中的时长
             if (track_idx < playlist_metadata_->size()) {
                 current_duration_ms_ = static_cast<int64_t>(
                     playlist_metadata_->at(track_idx).duration * 1000.0);
@@ -595,7 +732,11 @@ private:
             }
 
             std::cout << "[Audio] Playing: " << playlist_->at(track_idx)
-                      << " (" << track_idx + 1 << "/" << playlist_->size() << ")" << std::endl;
+                      << " (" << track_idx + 1 << "/" << playlist_->size()
+                      << ")" << (current_duration_ms_ > 0
+                          ? " [" + std::to_string(current_duration_ms_ / 1000) + "s]"
+                          : " [duration unknown]")
+                      << std::endl;
         }
 
         if (!fs::exists(filename)) {
@@ -606,7 +747,7 @@ private:
             return;
         }
 
-        // ffmpeg 子进程：编码为 MP3 流
+        // ffmpeg 子进程：编码为 MP3 流（带 afade 滤镜）
         int fds[2];
         if (pipe2(fds, O_CLOEXEC) != 0) {
             std::cerr << "[Audio] pipe2 failed: " << strerror(errno) << std::endl;
@@ -618,8 +759,7 @@ private:
         child_pid = fork();
         if (child_pid < 0) {
             std::cerr << "[Audio] fork failed: " << strerror(errno) << std::endl;
-            close(fds[0]);
-            close(fds[1]);
+            close(fds[0]); close(fds[1]);
             (*current_track_)++;
             interruptible_wait(std::chrono::seconds(1));
             return;
@@ -627,29 +767,28 @@ private:
 
         if (child_pid == 0) {
             if (dup2(fds[1], STDOUT_FILENO) < 0) _exit(127);
-            const char* argv[] = {
-                "ffmpeg", "-nostdin", "-re", "-loglevel", "error",
-                "-i", filename.c_str(),
-                "-vn", "-c:a", "libmp3lame", "-b:a", "128k",
-                "-ar", "44100", "-ac", "2", "-f", "mp3", "pipe:1",
-                nullptr
-            };
-            execvp("ffmpeg", const_cast<char* const*>(argv));
+            close(fds[0]);
+            std::vector<std::string> argv_strs;
+            std::vector<const char*> argv_ptrs;
+            build_ffmpeg_argv(filename, current_duration_ms_, false, argv_strs, argv_ptrs);
+            execvp("ffmpeg", const_cast<char* const*>(argv_ptrs.data()));
             _exit(127);
         }
 
         close(fds[1]);
         pipe_fd = fds[0];
 
+    stream_loop:
         struct pollfd pfd = {pipe_fd, POLLIN, 0};
         char buffer[Config::AUDIO_CHUNK_SIZE];
         skip_track_ = false;
         total_bytes_sent_ = 0;
         track_start_epoch_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+            std::chrono::steady_clock::now().time_since_epoch()).count();
 
         bool error_occurred = false;
         auto last_state_publish = std::chrono::steady_clock::now();
+        bool preload_triggered = false;
 
         while (!skip_track_ && running_ && !error_occurred) {
             int ret = poll(&pfd, 1, Config::POLL_TIMEOUT_MS);
@@ -684,23 +823,53 @@ private:
                 error_occurred = true;
             }
 
+            // 交叉淡入淡出：在曲目结束前 CROSSFADE_SECONDS 秒启动预加载
+            if (!preload_triggered && !skip_track_ && running_
+                && current_duration_ms_ > Config::CROSSFADE_SECONDS * 1000
+                && preload_child_pid_ < 0) {
+                auto now = std::chrono::steady_clock::now();
+                int64_t elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now.time_since_epoch()).count() - track_start_epoch_ms_;
+                if (elapsed_ms >= current_duration_ms_ - (Config::CROSSFADE_SECONDS * 1000)) {
+                    size_t next_idx = 0;
+                    std::string next_fn;
+                    {
+                        std::lock_guard<std::mutex> lock(*playlist_mutex_);
+                        size_t sz = playlist_->size();
+                        if (sz > 0) {
+                            next_idx = (current_track_->load() + 1) % sz;
+                            next_fn = "./media/" + playlist_->at(next_idx);
+                        }
+                    }
+                    if (!next_fn.empty() && fs::exists(next_fn)) {
+                        start_preload(next_fn, next_idx);
+                        preload_triggered = true;
+                    }
+                }
+            }
+
+            // 从预加载管道读取数据（非阻塞）
+            if (preload_pipe_fd_ >= 0) {
+                read_preload();
+            }
+
             // 定期发布播放状态到 Redis
             if (redis_) {
                 auto now = std::chrono::steady_clock::now();
                 if (now - last_state_publish >= std::chrono::milliseconds(Config::STATE_PUBLISH_MS)) {
                     last_state_publish = now;
                     auto position_ms = now.time_since_epoch().count() / 1000000 - track_start_epoch_ms_;
-                    // 限制 position 不超过 duration
                     if (current_duration_ms_ > 0 && position_ms > current_duration_ms_) {
                         position_ms = current_duration_ms_;
                     }
+                    const char* status = preload_triggered ? "crossfading" : "playing";
                     redis_->publish_state(
                         build_playback_state_json(
                             static_cast<int64_t>(track_idx),
                             playlist_->at(track_idx),
                             position_ms,
                             current_duration_ms_,
-                            "playing",
+                            status,
                             total_bytes_sent_.load()));
                 }
             }
@@ -761,6 +930,35 @@ private:
             }
             child_pid = -1;
         }
+
+        // 交叉淡入淡出：如果预加载已完成，排出预加载缓冲并切换到下一首
+        if (!skip_track_ && running_ && preload_child_pid_ > 0) {
+            drain_and_switch(pipe_fd, child_pid, track_idx, filename);
+            {
+                std::lock_guard<std::mutex> lock(*playlist_mutex_);
+                if (track_idx < playlist_metadata_->size()) {
+                    current_duration_ms_ = static_cast<int64_t>(
+                        playlist_metadata_->at(track_idx).duration * 1000.0);
+                }
+                current_track_->store(track_idx);
+                playlist_size = playlist_->size();
+            }
+            {
+                std::string fn;
+                {
+                    std::lock_guard<std::mutex> lock(*playlist_mutex_);
+                    if (track_idx < playlist_->size())
+                        fn = playlist_->at(track_idx);
+                }
+                std::cout << "[Audio] Crossfaded to: " << (fn.empty() ? filename : fn)
+                          << " (" << track_idx + 1 << "/" << playlist_size << ")"
+                          << " [" << (current_duration_ms_ / 1000) << "s]" << std::endl;
+            }
+            goto stream_loop;
+        }
+
+        // 清理任何残留的预加载状态（被 skip/stop 中断时）
+        cleanup_preload();
 
         // 自动切换到下一首
         if (!skip_track_ && running_) {

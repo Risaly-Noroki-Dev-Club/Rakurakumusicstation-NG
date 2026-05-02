@@ -17,8 +17,9 @@ This file provides guidance for OpenCode sessions working in this repository.
 ## Build
 
 ```bash
-# Release (one-shot: builds hiredis, compiles C++ and optional Rust)
-./build_release.sh
+./build_release.sh               # Full build (C++ + Rust, auto-downloads crow_all.h)
+./build_release.sh --no-crow     # Skip crow_all.h download (fail if missing)
+./build_release.sh --skip-rust   # C++ only
 
 # Debug build — C++ audio engine
 g++ radioserver.cpp metadata.cpp -o radioserver -std=c++17 -g -O0 \
@@ -29,7 +30,6 @@ g++ radioserver.cpp metadata.cpp -o radioserver -std=c++17 -g -O0 \
 (cd third_party/hiredis && gcc -c -O2 -I. hiredis.c alloc.c async.c net.c read.c sds.c sockcompat.c dict.c && ar rcs libhiredis.a *.o && rm -f *.o)
 ```
 
-- `crow_all.h` must exist in the repo root before building. `build_release.sh` does **not** download it.
 - Only two C++ source files: `radioserver.cpp` + `metadata.cpp`.
 - Link flags `-lssl -lcrypto` are required (`crow_all.h` uses them).
 - C++17 is required.
@@ -39,25 +39,42 @@ g++ radioserver.cpp metadata.cpp -o radioserver -std=c++17 -g -O0 \
 
 ```bash
 cd dist
-./start.sh       # starts audio engine, logs to server.log
-./stop.sh
+./start.sh         # starts audio engine (nohup), writes .server.pid, logs to server.log
+./stop.sh          # reads .server.pid, pgrep fallback cleanup
+./start-rust.sh    # starts Rust backend (if present), writes .rust-server.pid
+./stop-rust.sh     # stops Rust backend
 ```
 
 - The C++ engine must run from inside `dist/` (or any dir containing `media/`).
 - `build_release.sh` preserves `dist/media/` and `dist/playlist_order.json` across rebuilds.
-- Redis is optional for the C++ engine — if unavailable it runs standalone.
+- `playlist_order.json` is created at runtime on first run; no seed file exists.
+- `.server.pid` and `.rust-server.pid` are the daemon lifecycle mechanism.
 
 ## Key invariants
 
 - `playlist_` (filenames) and `playlist_metadata_` (TrackMetadata) are parallel vectors; any mutation must be mirrored under `playlist_mutex_`.
 - `BroadcastBuffer` capacity must be a power of two (enforced at construction via `throw`).
-- All core classes (`RadioServer`, `BroadcastBuffer`, `StreamServer`, `AudioPlayer`, `WebServer`, `RedisBridge`) live in `radioserver.cpp`.
+- All core classes (`RadioServer`, `BroadcastBuffer`, `StreamServer`, `AudioPlayer`, `WebServer`, `RedisBridge`, `ClientConnection`) live in `radioserver.cpp`.
 
-## Important codebase gotchas
+## Known quirks
 
-- **`Rakurakumusicstation-NG/`** is a nested directory containing its own `.git` repo — likely cruft from a migration.
-- `secrets.json` and `settings.json` contain credentials. Never commit them.
-- `crow_all.h` and `radioserver` (top-level) are build artifacts; delete before committing.
+### C++ engine
+- `crow_all.h` and `radioserver` (compiled binary at repo root) are build artifacts; delete before committing.
+- `dist/settings.json` contains credentials; never commit it.
+- Redis is optional — the engine runs standalone if unavailable.
+
+### Rust backend
+- **Redis is optional** — the backend starts fine without it but loses C++ engine command forwarding.
+- **No Axum auth middleware** — every protected handler calls `require_auth_from_headers()` manually.
+- **JWT secret defaults to a hardcoded dev value** (`radio-backend-dev-secret-change-in-production`). Must override via `config.toml` `[jwt].secret` or `RADIO_JWT_SECRET` env var.
+- **Admin seed password is a placeholder** — the hash in `migrations/002_seed_defaults.sql` is all `A` characters. The admin user cannot log in until a real password hash is inserted or the register endpoint is used.
+- **Settings save but don't hot-reload** — `POST /api/admin/settings` writes `config.toml` but changes take effect only after restart.
+- **Rescan needs `ffprobe`** on PATH to extract audio duration metadata.
+- **Download feature needs `music_dl.py`** at a path configured via `MUSIC_DL_PATH` env var.
+- **SQLite-only** — migrations use `AUTOINCREMENT`, `datetime('now')`, `INSERT OR IGNORE`. PostgreSQL is noted in comments but requires migration rewrite.
+- **Migrations run automatically** at startup via `sqlx::migrate!`, no manual step needed.
+- **Static files are a fallback** (`ServeDir::new("static")` as `.fallback_service()`) — any unmatched route falls through to the SPA, enabling client-side routing.
+- **`now_playing` HTTP endpoint is DB-only** (no real-time position_ms). Real-time playback data comes via WebSocket only.
 
 ## No tests / no CI
 
