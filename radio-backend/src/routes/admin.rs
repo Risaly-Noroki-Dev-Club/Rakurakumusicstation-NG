@@ -4,6 +4,7 @@
 /// - GET  /api/admin/users            列出所有用户
 /// - POST /api/admin/users/{id}/ban   封禁用户
 /// - POST /api/admin/users/{id}/unban 解封用户
+/// - PUT  /api/admin/users/{id}/role  更改用户角色（提权/降权）
 /// - GET  /api/admin/stats            系统统计
 /// - GET  /api/admin/logs             管理日志
 /// - POST /api/admin/rescan-songs     重新扫描媒体目录
@@ -26,13 +27,13 @@ use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{
     ApiResponse, AudioCommand, DownloadRequest, DownloadStatus,
-    SaveSettingsRequest, SettingsResponse,
+    SaveSettingsRequest, SetRoleRequest, SettingsResponse,
 };
 use crate::websocket;
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::HeaderMap,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use std::sync::{Arc, Mutex, OnceLock};
@@ -52,6 +53,7 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         .route("/users", get(list_users))
         .route("/users/{id}/ban", post(ban_user))
         .route("/users/{id}/unban", post(unban_user))
+        .route("/users/{id}/role", put(set_user_role))
         // 统计与日志
         .route("/stats", get(stats))
         .route("/logs", get(get_logs))
@@ -59,8 +61,11 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         .route("/rescan-songs", post(rescan_songs))
         .route("/songs", get(list_all_songs))
         .route("/songs/{id}", delete(delete_song))
-        // 上传
-        .route("/upload", post(upload_song))
+        // 上传 (带 100MB body limit)
+        .nest("/upload", Router::new()
+            .route("/", post(upload_song))
+            .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        )
         // 系统设置
         .route("/settings", get(get_settings).post(save_settings))
         // 播放控制
@@ -152,6 +157,51 @@ pub async fn unban_user(
         .await?;
 
     Ok(Json(ApiResponse::ok("User unbanned".into())))
+}
+
+/// PUT /api/admin/users/{id}/role — 更改用户角色（提权/降权）
+pub async fn set_user_role(
+    State(state): State<Arc<AppState>>,
+    Path(user_id): Path<i64>,
+    headers: HeaderMap,
+    Json(body): Json<SetRoleRequest>,
+) -> Result<Json<ApiResponse<String>>, AppError> {
+    let admin = get_admin(&state, &headers).await?;
+
+    if body.role != "admin" && body.role != "user" {
+        return Err(AppError::BadRequest("Role must be 'admin' or 'user'".into()));
+    }
+
+    if user_id == admin.id {
+        return Err(AppError::BadRequest("Cannot change your own role".into()));
+    }
+
+    let target = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    let old_role = target.role.clone();
+    if old_role == body.role {
+        return Ok(Json(ApiResponse::ok(format!("User '{}' already has role '{}'", target.username, body.role))));
+    }
+
+    sqlx::query("UPDATE users SET role = ? WHERE id = ?")
+        .bind(&body.role)
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
+
+    let action = if body.role == "admin" { "promote_user" } else { "demote_user" };
+    sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, ?, ?)")
+        .bind(admin.id)
+        .bind(action)
+        .bind(format!("Changed user '{}' ({}) role from '{}' to '{}'", target.username, user_id, old_role, body.role))
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(ApiResponse::ok(format!("User '{}' role changed to '{}'", target.username, body.role))))
 }
 
 // ─── 统计 ────────────────────────────────────────────────
@@ -719,18 +769,21 @@ pub async fn start_download(
     let playlist_path = playlist_file.clone();
 
     let dl_path = music_dl_path();
+    let settings_path = ncm_secrets_path();
     // 异步执行下载
     tokio::spawn(async move {
         let result = std::process::Command::new("python3")
             .arg(&dl_path)
-            .arg("--input-file")
             .arg(&playlist_path)
-            .arg("--output-dir")
+            .arg("--output")
             .arg(&media_path)
             .arg("--quality")
             .arg(&quality_clone)
             .arg("--format")
             .arg(&format_clone)
+            .arg("--non-interactive")
+            .arg("--settings")
+            .arg(&settings_path)
             .output();
 
         let mut status = download_state().lock().unwrap_or_else(|e| e.into_inner());
@@ -887,17 +940,26 @@ pub async fn test_ncm_login(
     // 调用 music_dl.py 的测试功能
     let result = std::process::Command::new("python3")
         .arg(music_dl_path())
-        .arg("--test-ncm")
+        .arg("--verify-login")
+        .arg("--settings")
+        .arg(ncm_secrets_path())
         .output();
 
     match result {
         Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let success = output.status.success()
-                && stdout.contains("登录成功");
+            let combined = if stderr.trim().is_empty() {
+                stdout.trim().to_string()
+            } else {
+                format!("{}\n{}", stdout.trim(), stderr.trim())
+            };
+            let success = output.status.success();
             Ok(Json(ApiResponse::ok(serde_json::json!({
                 "success": success,
-                "output": stdout.trim(),
+                "output": if combined.is_empty() {
+                    if success { "登录成功".to_string() } else { "登录失败".to_string() }
+                } else { combined },
             }))))
         }
         Err(e) => Ok(Json(ApiResponse::ok(serde_json::json!({

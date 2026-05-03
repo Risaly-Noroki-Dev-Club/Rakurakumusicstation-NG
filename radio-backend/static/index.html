@@ -12,7 +12,19 @@
 </head>
 <body>
     <div id="app" v-cloak>
-        <div class="app">
+        <!-- 首次设置向导 -->
+        <div v-if="store.needsSetup" class="setup-overlay">
+            <div class="card" style="width:400px;max-width:90vw">
+                <h2>🎵 初次设置 — 创建管理员账户</h2>
+                <p style="color:var(--text-muted);margin-bottom:16px">这是电台的首次运行。请创建管理员账户来管理电台。</p>
+                <div class="form-group"><label>管理员用户名</label><input type="text" v-model="store.setupUsername" autocomplete="off" placeholder="3-32个字符" @keyup.enter="doSetup"></div>
+                <div class="form-group"><label>密码</label><input type="password" v-model="store.setupPassword" autocomplete="new-password" placeholder="至少6个字符" @keyup.enter="doSetup"></div>
+                <button class="btn btn-primary" @click="doSetup" style="width:100%;margin-top:8px">创建管理员账户</button>
+                <div v-if="store.setupError" style="color:var(--danger);margin-top:8px;font-size:0.85em">{{ store.setupError }}</div>
+            </div>
+        </div>
+
+        <div v-if="!store.needsSetup" class="app">
             <header>
                 <h1><span>🎵</span><span>{{ store.stationName }}</span></h1>
                 <div>
@@ -120,7 +132,13 @@
                 </div>
                 <div v-if="store.currentUser" class="card">
                     <h2>📁 我的歌单</h2>
-                    <div id="myPlaylists" style="max-height:200px;overflow-y:auto"></div>
+                    <div v-if="store.myPlaylists.length === 0" style="text-align:center;color:var(--text-muted);padding:10px">还没有歌单</div>
+                    <div v-for="pl in store.myPlaylists" :key="pl.id" class="queue-item" style="cursor:default">
+                        <div class="info">
+                            <span>{{ pl.name }}</span>
+                            <span style="color:var(--text-muted);font-size:0.85em"> ({{ pl.song_count }}首)</span>
+                        </div>
+                    </div>
                     <div style="margin-top:10px;display:flex;gap:8px">
                         <input type="text" v-model="store.newPlaylistName" placeholder="新建歌单名称" style="flex-grow:1;padding:8px;border:2px solid var(--border);border-radius:8px;background:var(--card);color:var(--text)">
                         <button class="btn btn-primary btn-small" @click="createPlaylist">创建</button>
@@ -147,9 +165,14 @@
                         <table class="users-table"><thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
                             <tbody>
                                 <tr v-for="u in store.users" :key="u.id">
-                                    <td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.role }}</td>
+                                    <td>{{ u.id }}</td><td>{{ u.username }}</td>
+                                    <td>
+                                        <span :class="['role-badge', u.role === 'admin' ? 'role-admin' : 'role-user']">{{ u.role === 'admin' ? '管理员' : '用户' }}</span>
+                                    </td>
                                     <td>{{ u.is_banned ? '🔴已封禁' : '🟢正常' }}</td>
                                     <td>
+                                        <button v-if="u.role !== 'admin'" class="btn btn-primary btn-small" @click="adminPromote(u.id)" title="提权为管理员">⭐ 提权</button>
+                                        <button v-if="u.role === 'admin'" class="btn btn-warning btn-small" @click="adminDemote(u.id)" title="降权为普通用户">⬇ 降权</button>
                                         <button v-if="u.is_banned" class="btn btn-secondary btn-small" @click="adminUnban(u.id)">解封</button>
                                         <button v-else class="btn btn-danger btn-small" @click="adminBan(u.id)">封禁</button>
                                     </td>
@@ -200,7 +223,7 @@
                     <div class="card">
                         <h2>📤 上传新音乐</h2>
                         <div class="upload-section">
-                            <input type="file" ref="uploadFileInput" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac" @change="handleFileSelect">
+                            <input type="file" class="upload-file-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac" @change="handleFileSelect">
                             <button class="btn btn-primary" @click="uploadSong" :disabled="!store.uploadFile">上传文件</button>
                         </div>
                         <div :class="['upload-status', store.uploadStatusType]" v-if="store.uploadStatus" v-text="store.uploadStatus"></div>

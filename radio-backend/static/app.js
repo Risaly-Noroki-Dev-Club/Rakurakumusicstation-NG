@@ -27,6 +27,10 @@ const store = reactive({
     token: localStorage.getItem('radio_token') || null,
     currentUser: null,
     stationName: '电台',
+    needsSetup: false,
+    setupUsername: '',
+    setupPassword: '',
+    setupError: '',
     activeTab: 'player',
     activeAdminTab: 'users',
     showAuth: false,
@@ -53,6 +57,7 @@ const store = reactive({
 
     searchQuery: '',
     searchResults: [],
+    myPlaylists: [],
     newPlaylistName: '',
 
     users: [],
@@ -161,11 +166,14 @@ async function loadStationInfo() {
         if (data) {
             const info = data.data || data;
             store.stationName = info.name;
+            store.needsSetup = info.needs_setup === true;
             document.title = info.name;
-            document.querySelector('meta[name="theme-color"]').content = info.primary_color;
-            document.documentElement.style.setProperty('--primary', info.primary_color);
-            document.documentElement.style.setProperty('--secondary', info.secondary_color);
-            document.documentElement.style.setProperty('--bg', info.bg_color);
+            if (info.primary_color) {
+                document.querySelector('meta[name="theme-color"]').content = info.primary_color;
+                document.documentElement.style.setProperty('--primary', info.primary_color);
+            }
+            if (info.secondary_color) document.documentElement.style.setProperty('--secondary', info.secondary_color);
+            if (info.bg_color) document.documentElement.style.setProperty('--bg', info.bg_color);
             if (info.stream_url) {
                 STREAM_URL = info.stream_url;
                 const u = new URL(info.stream_url, window.location.origin);
@@ -361,6 +369,7 @@ async function doAuthFn(username, password) {
             store.authError = '';
             store.authUsername = '';
             store.authPassword = '';
+            loadMyPlaylists();
             toast(store.authMode === 'login' ? '登录成功' : '注册成功', 'success');
         } else {
             store.authError = (data && data.error) || '操作失败';
@@ -373,6 +382,40 @@ async function doAuthFn(username, password) {
 function toggleAuthMode() {
     store.authMode = store.authMode === 'login' ? 'register' : 'login';
     store.authError = '';
+}
+
+async function doSetup() {
+    const username = (store.setupUsername || '').trim();
+    const password = store.setupPassword || '';
+
+    if (username.length < 3 || password.length < 6) {
+        store.setupError = '用户名3-32字符，密码至少6字符';
+        return;
+    }
+
+    store.setupError = '';
+    try {
+        const res = await fetch(BACKEND_URL + '/api/setup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (data.success && data.data) {
+            store.token = data.data.token;
+            store.currentUser = data.data.user;
+            localStorage.setItem('radio_token', store.token);
+            store.needsSetup = false;
+            store.setupUsername = '';
+            store.setupPassword = '';
+            toast('管理员账户创建成功！', 'success');
+            loadMyPlaylists();
+        } else {
+            store.setupError = (data && data.error) || '创建失败';
+        }
+    } catch (e) {
+        store.setupError = '无法连接到服务器';
+    }
 }
 
 async function loadCurrentUser() {
@@ -500,6 +543,19 @@ function addToMyPlaylist(songId) {
 }
 
 // ─── PLAYLISTS ─────────────────────────────────────────────────────────────
+async function loadMyPlaylists() {
+    if (!store.token) return;
+    try {
+        const res = await fetch(BACKEND_URL + '/api/playlists', {
+            headers: { 'Authorization': 'Bearer ' + store.token }
+        });
+        const data = await res.json();
+        if (data.success) {
+            store.myPlaylists = data.data || [];
+        }
+    } catch (e) { /* ignore */ }
+}
+
 async function createPlaylist() {
     if (!store.token || !store.newPlaylistName.trim()) return;
     try {
@@ -509,11 +565,14 @@ async function createPlaylist() {
             body: JSON.stringify({ name: store.newPlaylistName.trim() })
         });
         const data = await res.json();
-        if (data.success) {
+        if (data && data.success) {
             toast('歌单创建成功', 'success');
             store.newPlaylistName = '';
+            await loadMyPlaylists();
+        } else {
+            toast((data && data.error) || '创建失败', 'error');
         }
-    } catch (e) { /* ignore */ }
+    } catch (e) { toast('请求失败', 'error'); }
 }
 
 // ─── ADMIN: USERS ──────────────────────────────────────────────────────────
@@ -547,6 +606,41 @@ async function adminUnban(userId) {
         });
         loadAdminUsersAndLogs();
     } catch (e) { /* ignore */ }
+}
+
+async function adminPromote(userId) {
+    try {
+        const res = await fetch(BACKEND_URL + '/api/admin/users/' + userId + '/role', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + store.token },
+            body: JSON.stringify({ role: 'admin' })
+        });
+        const data = await res.json();
+        if (data.success) {
+            toast(data.data, 'success');
+            loadAdminUsersAndLogs();
+        } else {
+            toast(data.error || '提权失败', 'error');
+        }
+    } catch (e) { toast('操作失败', 'error'); }
+}
+
+async function adminDemote(userId) {
+    if (!confirm('确定要撤销该用户的管理员权限吗？')) return;
+    try {
+        const res = await fetch(BACKEND_URL + '/api/admin/users/' + userId + '/role', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + store.token },
+            body: JSON.stringify({ role: 'user' })
+        });
+        const data = await res.json();
+        if (data.success) {
+            toast(data.data, 'success');
+            loadAdminUsersAndLogs();
+        } else {
+            toast(data.error || '降权失败', 'error');
+        }
+    } catch (e) { toast('操作失败', 'error'); }
 }
 
 // ─── ADMIN: SONGS ──────────────────────────────────────────────────────────
@@ -667,6 +761,9 @@ async function uploadSong() {
             store.uploadStatusType = 'success';
             store.uploadFile = null;
             store.uploadFileName = '';
+            // 重置文件 input 以便能再次选择同一文件
+            const fileInput = document.querySelector('.upload-file-input');
+            if (fileInput) fileInput.value = '';
         } else {
             store.uploadStatus = '❌ ' + (data.error || '上传失败');
             store.uploadStatusType = 'error';
@@ -907,6 +1004,7 @@ async function saveSettings() {
 function switchTab(name) {
     store.activeTab = name;
     if (name === 'queue') refreshQueue();
+    if (name === 'library') loadMyPlaylists();
     if (name === 'admin') {
         loadAdminUsersAndLogs();
         loadAdminStats();
@@ -1036,6 +1134,7 @@ const app = createApp({
             closeAuth,
             doAuth,
             toggleAuthMode,
+            doSetup,
             logout,
             onSearchInput,
             addToQueue,
@@ -1046,6 +1145,8 @@ const app = createApp({
             // Admin methods
             adminBan,
             adminUnban,
+            adminPromote,
+            adminDemote,
             adminDeleteSong,
             adminRescanSongs,
             adminPlayNext,
@@ -1064,7 +1165,9 @@ const app = createApp({
         loadStationInfo();
         connectWebSocket();
         if (store.token) {
-            loadCurrentUser();
+            loadCurrentUser().then(() => {
+                if (store.currentUser) loadMyPlaylists();
+            });
         }
         queuePoller = setInterval(refreshQueue, 5000);
         playbackPoller = setInterval(refreshPlaybackPoll, 2000);

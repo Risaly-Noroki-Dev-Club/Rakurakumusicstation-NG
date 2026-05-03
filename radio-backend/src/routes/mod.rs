@@ -7,7 +7,7 @@ pub mod queue;
 pub mod admin;
 pub mod favorites;
 
-use axum::{Router, routing::get};
+use axum::{Router, routing::{get, post}};
 use crate::db::AppState;
 use std::sync::Arc;
 
@@ -18,6 +18,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/ws", get(crate::websocket::ws_handler))
         // 认证路由
         .nest("/api/auth", auth::auth_routes())
+        // 初始化设置（首次运行）
+        .route("/api/setup", post(setup))
         // 歌曲库
         .route("/api/songs", get(songs::search_songs))
         .route("/api/songs/:id", get(songs::get_song))
@@ -50,6 +52,15 @@ async fn station_info(
     } else {
         &state.config.server.host
     };
+
+    let has_admin = sqlx::query_as::<_, (i64,)>(
+        "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+    )
+    .fetch_one(&state.db)
+    .await
+    .map(|r| r.0 > 0)
+    .unwrap_or(false);
+
     axum::Json(serde_json::json!({
         "name": state.config.station.name,
         "subtitle": state.config.station.subtitle,
@@ -58,5 +69,78 @@ async fn station_info(
         "bg_color": state.config.station.bg_color,
         "stream_url": state.config.audio_engine.resolve_stream_url(),
         "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
+        "needs_setup": !has_admin,
     }))
+}
+
+/// POST /api/setup — 首次运行创建管理员账户
+async fn setup(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::Json(req): axum::Json<crate::models::RegisterRequest>,
+) -> Result<axum::Json<crate::models::ApiResponse<crate::models::AuthResponse>>, crate::error::AppError> {
+    use crate::auth;
+    use crate::error::AppError;
+
+    // 检查是否已有管理员
+    let has_admin: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    if has_admin.0 > 0 {
+        return Err(AppError::Forbidden("Setup has already been completed".into()));
+    }
+
+    // 验证输入
+    if req.username.len() < 3 || req.username.len() > 32 {
+        return Err(AppError::BadRequest("Username must be 3-32 characters".into()));
+    }
+    if req.password.len() < 6 {
+        return Err(AppError::BadRequest("Password must be at least 6 characters".into()));
+    }
+
+    // 删除种子数据中的占位管理员
+    sqlx::query("DELETE FROM users WHERE username = 'admin'")
+        .execute(&state.db)
+        .await?;
+
+    // 检查用户名冲突
+    let existing = sqlx::query_as::<_, (i64,)>("SELECT id FROM users WHERE username = ?")
+        .bind(&req.username)
+        .fetch_optional(&state.db)
+        .await?;
+    if existing.is_some() {
+        return Err(AppError::Conflict("Username already taken".into()));
+    }
+
+    let password_hash = auth::hash_password(&req.password)?;
+
+    let result = sqlx::query(
+        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')"
+    )
+    .bind(&req.username)
+    .bind(&password_hash)
+    .execute(&state.db)
+    .await?;
+
+    let user_id = result.last_insert_rowid();
+
+    let user = crate::models::User {
+        id: user_id,
+        username: req.username.clone(),
+        password_hash,
+        role: "admin".into(),
+        banned_until: None,
+        created_at: chrono::Utc::now().naive_utc(),
+    };
+
+    let token = auth::generate_token(&user, &state.jwt_secret, state.config.jwt.expiry_hours)?;
+
+    tracing::info!("Initial setup completed: admin user '{}' created", user.username);
+
+    Ok(axum::Json(crate::models::ApiResponse::ok(crate::models::AuthResponse {
+        token,
+        user: user.into(),
+    })))
 }

@@ -250,6 +250,11 @@ pub struct AdminActionRequest {
     pub user_id: i64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SetRoleRequest {
+    pub role: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct NowPlaying {
     pub song: Option<SongSummary>,
