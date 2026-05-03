@@ -19,6 +19,7 @@ export interface Store {
   needsSetup: boolean
   setupUsername: string
   setupPassword: string
+  setupStreamUrl: string
   setupError: string
   showAuth: boolean
   authMode: 'login' | 'register'
@@ -85,6 +86,7 @@ export const store: Store = reactive({
   needsSetup: false,
   setupUsername: '',
   setupPassword: '',
+  setupStreamUrl: '/stream',
   setupError: '',
   showAuth: false,
   authMode: 'login' as 'login' | 'register',

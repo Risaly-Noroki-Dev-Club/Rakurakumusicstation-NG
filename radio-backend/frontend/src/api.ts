@@ -48,7 +48,11 @@ export async function doSetup(username: string, password: string): Promise<void>
     const res = await fetch(apiBase + '/api/setup', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({
+        username,
+        password,
+        stream_base: store.setupStreamUrl.trim() || undefined
+      })
     })
     const data = await res.json()
     if (data.success && data.data) {
