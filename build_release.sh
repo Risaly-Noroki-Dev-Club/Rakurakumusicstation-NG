@@ -368,11 +368,24 @@ if [ "$SKIP_RUST" = true ]; then
 elif [ -d "radio-backend" ] && [ -f "radio-backend/Cargo.toml" ]; then
     if command -v cargo > /dev/null 2>&1; then
         print_status "编译 Rust 后端（radio-backend）..."
+
+        # 检测迁移文件变更，强制清理 Cargo 缓存防止增量编译跳过 .sql 文件更新
+        MIGRATION_HASH_FILE="radio-backend/.migration_hash"
+        CURRENT_MIGRATION_HASH=$(find radio-backend/migrations -name '*.sql' -exec sha256sum {} \; | sort | sha256sum | awk '{print $1}' 2>/dev/null || echo "")
+        STORED_MIGRATION_HASH=$(cat "$MIGRATION_HASH_FILE" 2>/dev/null || echo "")
+        if [ -n "$CURRENT_MIGRATION_HASH" ] && [ "$CURRENT_MIGRATION_HASH" != "$STORED_MIGRATION_HASH" ]; then
+            if [ -n "$STORED_MIGRATION_HASH" ]; then
+                print_warning "迁移文件已变更，清理 Rust 编译缓存..."
+            fi
+            (cd radio-backend && cargo clean 2>&1 | tail -1)
+        fi
+
         (cd radio-backend && cargo build --release 2>&1 | while IFS= read -r line; do
             case "$line" in
                 *"Compiling"*|*"Finished"*) echo "  $line" ;;
             esac
         done)
+        echo "$CURRENT_MIGRATION_HASH" > "$MIGRATION_HASH_FILE"
         if [ -f "radio-backend/target/release/radio-backend" ]; then
             cp radio-backend/target/release/radio-backend "$RELEASE_DIR/"
             # 复制静态资源和配置模板
