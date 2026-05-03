@@ -247,16 +247,21 @@ cd radio-backend
 # 1. 配置
 cp config.toml.example config.toml
 
-# 2. 启动 Rust 后端（需 SQLite + 可选 Redis）
-cargo run
-# → http://localhost:2241
+# 2. 构建全部（C++ 引擎 + Rust 后端）
+cd .. && ./build_release.sh
 
-# 3. 启动 C++ 音频引擎（在另一个终端）
-cd ../dist && ./start.sh
+# 3. 统一启动
+cd dist && ./start.sh
+# → C++ 音频引擎: http://localhost:2240
+# → Rust 后端 + Web 界面: http://localhost:2241
 
 # 4. （可选）启动 Redis
 redis-server
 ```
+
+开发时也可分别启动进行调试：
+- Rust 后端：`cd radio-backend && cargo run`
+- C++ 引擎：`cd dist && ./radioserver`
 
 前端使用 Vue 3 CDN，无构建工具。修改 `index.html`、`app.js` 或 `style.css` 后刷新浏览器即生效（Axum 从磁盘读取，无需重启）。
 
