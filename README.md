@@ -66,6 +66,29 @@ cd dist && ./start.sh
 
 Stop: `./stop.sh`
 
+## User Guide
+
+Once the server is running, open your browser and go to `http://localhost:2241`.
+
+### Getting Started
+1. **Register** — Create an account on the login page
+2. **Log in** — Sign in with your credentials to unlock all features
+
+### Main Features
+- **Now Playing** — See the current track, cover art, and lyrics on the home page
+- **Song Library** — Browse and search all available songs
+- **Request a Song** — Click "Add to Queue" to request your favorite tracks
+- **Queue** — View the upcoming playlist and your queued songs
+- **Favorites** — Heart songs to save them to your personal collection
+- **Playlists** — Create and manage your own playlists
+- **Player Controls** — Play, pause, volume, and seek in the built-in audio player
+
+### Audio Stream
+For external players (VLC, mpv, etc.), use the direct stream URL:
+`http://localhost:2240/stream`
+
+> **Tip:** The admin can upload new songs, manage users, and control playback via the Admin Panel.
+
 ## Build (Manual)
 
 ```bash
@@ -194,6 +217,29 @@ cd dist && ./start.sh
 - Web 界面（Rust）：`http://localhost:2241`
 
 停止：`./stop.sh`
+
+## 使用指南
+
+服务启动后，在浏览器中打开 `http://localhost:2241` 即可访问。
+
+### 快速上手
+1. **注册账号** — 在登录页面点击「注册」创建账户
+2. **登录** — 使用账号密码登录，解锁全部功能
+
+### 主要功能
+- **正在播放** — 首页显示当前曲目、封面图、歌词
+- **曲库浏览** — 浏览和搜索所有可用歌曲
+- **点歌** — 点击「加入队列」点播喜欢的歌曲
+- **播放队列** — 查看即将播放的歌曲和你的点歌位置
+- **收藏** — 点击心形图标收藏歌曲到个人收藏
+- **歌单** — 创建和管理个人歌单
+- **播放控制** — 使用内置播放器控制播放、暂停、音量、进度
+
+### 外部播放器
+如需使用外部播放器（VLC、mpv 等），直接流地址为：
+`http://localhost:2240/stream`
+
+> **提示：** 管理员可以通过管理面板上传歌曲、管理用户、控制播放。
 
 ### C++ 音频引擎 — API
 
