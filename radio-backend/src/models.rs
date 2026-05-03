@@ -209,8 +209,6 @@ pub struct Claims {
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
-    #[serde(default)]
-    pub stream_base: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

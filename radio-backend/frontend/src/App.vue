@@ -49,7 +49,7 @@ if ('serviceWorker' in navigator) {
 
 <template>
   <div v-if="store.needsSetup" class="setup-overlay">
-    <div class="card" style="width:440px;max-width:95vw">
+    <div class="card" style="width:400px;max-width:90vw">
       <h2>🎵 初次设置 — 创建管理员账户</h2>
       <p style="color:var(--text-muted);margin-bottom:16px">这是电台的首次运行。请创建管理员账户来管理电台。</p>
       <div class="form-group">
@@ -59,13 +59,6 @@ if ('serviceWorker' in navigator) {
       <div class="form-group">
         <label>密码</label>
         <input type="password" v-model="store.setupPassword" autocomplete="new-password" placeholder="至少6个字符" @keyup.enter="handleSetup">
-      </div>
-      <div class="form-group">
-        <label>音频流地址（可选）</label>
-        <input type="text" v-model="store.setupStreamUrl" placeholder="/stream">
-        <small style="color:var(--text-muted);font-size:0.78em">
-          相对路径 <code>/stream</code> 适用于同机访问；如需外网访问，填入完整地址如 <code>http://你的IP:2240/stream</code>
-        </small>
       </div>
       <button class="btn btn-primary" @click="handleSetup" style="width:100%;margin-top:8px">创建管理员账户</button>
       <div v-if="store.setupError" style="color:var(--danger);margin-top:8px;font-size:0.85em">{{ store.setupError }}</div>

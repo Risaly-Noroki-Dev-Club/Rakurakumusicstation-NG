@@ -431,4 +431,52 @@ else
     echo "如需 Web/API 功能，安装 cargo 后重新运行: ./build_release.sh"
 fi
 echo ""
+
+# ── 流地址配置 ──────────────────────────────────────────
+if [ -f "$RELEASE_DIR/config.toml" ]; then
+    CURRENT_STREAM=$(grep 'stream_base' "$RELEASE_DIR/config.toml" 2>/dev/null | head -1)
+    if [ -z "$CURRENT_STREAM" ] || echo "$CURRENT_STREAM" | grep -q 'stream_base = "/stream"'; then
+        echo -e "${BLUE}══════════════════════════════════════════════
+  音频流地址配置
+══════════════════════════════════════════════${NC}"
+        echo ""
+        echo "音频流地址决定了浏览器如何加载电台音频。"
+        echo "  [1] 相对路径 /stream  — 适用于同机访问或反向代理"
+        echo "  [2] 绝对地址          — 适用于外网直接访问（需指定 IP/域名）"
+        echo ""
+        read -p "请选择 [1/2] (默认 1): " STREAM_CHOICE
+        STREAM_CHOICE=${STREAM_CHOICE:-1}
+
+        if [ "$STREAM_CHOICE" = "2" ]; then
+            read -p "请输入音频流完整地址 (例如 http://192.168.1.100:2240/stream): " ABS_URL
+            if [ -n "$ABS_URL" ]; then
+                if command -v python3 > /dev/null 2>&1; then
+                    python3 -c "
+import sys
+path = '$RELEASE_DIR/config.toml'
+content = open(path).read()
+if \"stream_base\" in content:
+    import re
+    content = re.sub(r'stream_base\s*=\s*\"[^\"]*\"', 'stream_base = \"$ABS_URL\"', content)
+else:
+    content = content.replace('[audio_engine]', '[audio_engine]\nstream_base = \"$ABS_URL\"')
+open(path, 'w').write(content)
+" 2>/dev/null
+                    print_success "流地址已设置为: $ABS_URL"
+                else
+                    sed -i "s|stream_base = \"/stream\"|stream_base = \"$ABS_URL\"|" "$RELEASE_DIR/config.toml" 2>/dev/null
+                    if grep -q 'stream_base' "$RELEASE_DIR/config.toml"; then
+                        print_success "流地址已设置为: $ABS_URL"
+                    else
+                        print_warning "自动配置失败，请手动编辑 config.toml 的 stream_base"
+                    fi
+                fi
+            fi
+        else
+            print_success "使用默认相对路径: /stream"
+        fi
+        echo ""
+    fi
+fi
+
 echo -e "${GREEN}🎵 享受音乐时光！${NC}"

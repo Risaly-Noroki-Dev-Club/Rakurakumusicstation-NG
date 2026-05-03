@@ -128,31 +128,6 @@ async fn setup(
 
     let user_id = result.last_insert_rowid();
 
-    // 如果提供了 stream_base，写入 config.toml 并热更新内存
-    if let Some(ref stream_base) = req.stream_base {
-        if !stream_base.is_empty() {
-            let config_path = std::env::var("RADIO_CONFIG")
-                .unwrap_or_else(|_| "config.toml".to_string());
-
-            let mut toml_value: toml::Value = std::fs::read_to_string(&config_path)
-                .ok()
-                .and_then(|c| toml::from_str(&c).ok())
-                .unwrap_or(toml::Value::Table(toml::value::Table::new()));
-
-            if let toml::Value::Table(ref mut root) = toml_value {
-                let ae = root.entry("audio_engine")
-                    .or_insert(toml::Value::Table(toml::value::Table::new()));
-                if let toml::Value::Table(ref mut t) = ae {
-                    t.insert("stream_base".into(), toml::Value::String(stream_base.clone()));
-                }
-            }
-
-            if let Ok(content) = toml::to_string_pretty(&toml_value) {
-                std::fs::write(&config_path, content).ok();
-            }
-        }
-    }
-
     let user = crate::models::User {
         id: user_id,
         username: req.username.clone(),
