@@ -36,9 +36,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/station", get(station_info))
         // 正在播放（公开）
         .route("/api/now-playing", get(queue::now_playing))
-        // 静态文件服务（作为回退，在其他路由之后）
+        // 静态文件服务 + SPA 回退（unknown paths → index.html）
         .fallback_service(
             tower_http::services::ServeDir::new("static")
+                .not_found_service(tower_http::services::ServeFile::new("static/index.html"))
         )
         .with_state(state)
 }
@@ -81,17 +82,6 @@ async fn setup(
     use crate::auth;
     use crate::error::AppError;
 
-    // 检查是否已有管理员
-    let has_admin: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM users WHERE role = 'admin'"
-    )
-    .fetch_one(&state.db)
-    .await?;
-
-    if has_admin.0 > 0 {
-        return Err(AppError::Forbidden("Setup has already been completed".into()));
-    }
-
     // 验证输入
     if req.username.len() < 3 || req.username.len() > 32 {
         return Err(AppError::BadRequest("Username must be 3-32 characters".into()));
@@ -100,15 +90,22 @@ async fn setup(
         return Err(AppError::BadRequest("Password must be at least 6 characters".into()));
     }
 
-    // 删除种子数据中的占位管理员
-    sqlx::query("DELETE FROM users WHERE username = 'admin'")
-        .execute(&state.db)
-        .await?;
+    // 在事务中检查管理员、检查用户名冲突并插入，避免 TOCTOU 竞态条件
+    let mut tx = state.db.begin().await?;
 
-    // 检查用户名冲突
+    let has_admin: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if has_admin.0 > 0 {
+        return Err(AppError::Forbidden("Setup has already been completed".into()));
+    }
+
     let existing = sqlx::query_as::<_, (i64,)>("SELECT id FROM users WHERE username = ?")
         .bind(&req.username)
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await?;
     if existing.is_some() {
         return Err(AppError::Conflict("Username already taken".into()));
@@ -121,8 +118,10 @@ async fn setup(
     )
     .bind(&req.username)
     .bind(&password_hash)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     let user_id = result.last_insert_rowid();
 

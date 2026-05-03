@@ -1,0 +1,37 @@
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import { resolve } from 'path'
+
+export default defineConfig({
+  plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+    },
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:2241',
+        changeOrigin: true,
+      },
+      '/ws': {
+        target: 'ws://localhost:2241',
+        ws: true,
+      },
+      '/stream': {
+        target: 'http://localhost:2240',
+        changeOrigin: true,
+      },
+      '/file': {
+        target: 'http://localhost:2240',
+        changeOrigin: true,
+      },
+    },
+  },
+  build: {
+    outDir: '../static',
+    emptyOutDir: false,
+  },
+})

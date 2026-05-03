@@ -34,27 +34,30 @@ async fn register(
         return Err(AppError::BadRequest("Password must be at least 6 characters".into()));
     }
 
-    // 检查重复用户名
+    // 哈希密码
+    let password_hash = auth::hash_password(&req.password)?;
+
+    // 在事务中检查重复用户名并插入，避免 TOCTOU 竞态条件
+    let mut tx = state.db.begin().await?;
+
     let existing = sqlx::query_as::<_, (i64,)>("SELECT id FROM users WHERE username = ?")
         .bind(&req.username)
-        .fetch_optional(&state.db)
+        .fetch_optional(&mut *tx)
         .await?;
 
     if existing.is_some() {
         return Err(AppError::Conflict("Username already taken".into()));
     }
 
-    // 哈希密码
-    let password_hash = auth::hash_password(&req.password)?;
-
-    // 插入用户
     let result = sqlx::query(
         "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')"
     )
     .bind(&req.username)
     .bind(&password_hash)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     let user_id = result.last_insert_rowid();
 

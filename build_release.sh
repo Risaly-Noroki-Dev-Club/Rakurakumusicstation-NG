@@ -380,8 +380,12 @@ elif [ -d "radio-backend" ] && [ -f "radio-backend/Cargo.toml" ]; then
                 cp -r radio-backend/static "$RELEASE_DIR/"
             fi
             if [ -f "radio-backend/config.toml.example" ]; then
-                cp radio-backend/config.toml.example "$RELEASE_DIR/config.toml"
-                print_warning "已生成 config.toml，请检查并修改配置"
+                if [ ! -f "$RELEASE_DIR/config.toml" ]; then
+                    cp radio-backend/config.toml.example "$RELEASE_DIR/config.toml"
+                    print_warning "已生成 config.toml，请检查并修改配置"
+                else
+                    print_success "保留现有 config.toml"
+                fi
             fi
             print_success "Rust 后端编译完成"
         else

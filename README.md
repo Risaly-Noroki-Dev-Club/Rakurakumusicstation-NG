@@ -253,7 +253,7 @@ media/  ──FFmpeg──▶  BroadcastBuffer  ──epoll──▶  N listener
          Rust Backend (port 2241) ◀──────────┘
          Axum + SQLite + JWT + WebSocket
                   │
-         static/ (Web UI)
+          static/ (Vite-built Vue 3 SPA)
 ```
 
 Two services, one Redis:
@@ -692,6 +692,8 @@ MIT
 - [hiredis](https://github.com/redis/hiredis) — C Redis 客户端
 - [FFmpeg](https://ffmpeg.org/) — 音频解码
 - [Axum](https://github.com/tokio-rs/axum) — Rust HTTP 框架
-- [Vue 3](https://vuejs.org/) — 前端框架 (CDN, 无构建)
+- [Vue 3](https://vuejs.org/) — 前端框架 (SFC + TypeScript + `vue-router`)
+- [Vite](https://vitejs.dev/) — 前端构建工具与开发服务器
+- [TypeScript](https://www.typescriptlang.org/) — 前端类型系统
 - [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL 工具集
 - 灵感来源：《孤独摇滚！》— 伊地知虹夏

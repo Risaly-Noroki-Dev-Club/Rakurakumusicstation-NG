@@ -1,0 +1,18 @@
+{
+    "name": "Rakuraku Music Station",
+    "short_name": "RakurakuRadio",
+    "description": "Community Radio - Low Latency Audio Streaming",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#f4f4f9",
+    "theme_color": "#764ba2",
+    "icons": [
+        {
+            "src": "/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ]
+}

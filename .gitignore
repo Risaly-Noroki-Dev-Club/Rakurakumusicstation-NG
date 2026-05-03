@@ -49,6 +49,9 @@ media_backup/
 # Python缓存
 __pycache__/
 
+# Node.js / Vite 前端
+radio-backend/frontend/node_modules/
+
 # 会话和临时文件
 *.tmp
 *.temp
@@ -61,3 +64,4 @@ __pycache__/
 
 # 迁移遗留产物
 Rakurakumusicstation-NG/
+radio-backend/frontend/tsconfig.tsbuildinfo

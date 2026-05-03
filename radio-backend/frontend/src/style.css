@@ -1,9 +1,3 @@
-/* =========================================================================
-   Rakuraku Music Station NG — Stylesheet
-   All colors use CSS custom properties defined in :root.
-   No bare color codes (e.g. #fff, #333) anywhere.
-   ========================================================================= */
-
 :root {
     --primary: #764ba2;
     --secondary: #667eea;
@@ -44,32 +38,32 @@
     --border: #e9ecef;
 }
 
-/* ─── Base ─────────────────────────────────────────────── */
-.theme-toggle { cursor: pointer; font-size: 1.2em; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); transition: 0.2s; }
-.theme-toggle:hover { opacity: 0.7; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 .app { max-width: 900px; margin: 0 auto; padding: 16px; }
+
 header { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; margin-bottom: 16px; }
 header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+header > div { display: flex; align-items: center; gap: 8px; }
 
-/* ─── Buttons ──────────────────────────────────────────── */
+.theme-toggle { cursor: pointer; font-size: 1.2em; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); transition: 0.2s; }
+.theme-toggle:hover { opacity: 0.7; }
+
 .btn { padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9em; font-weight: 600; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px; }
 .btn-primary { background: var(--primary); color: var(--text-inverse); }
 .btn-secondary { background: var(--secondary); color: var(--text-inverse); }
 .btn-danger { background: var(--danger); color: var(--text-inverse); }
 .btn-success { background: var(--success); color: var(--text-inverse); }
 .btn-warning { background: var(--warning); color: var(--text); }
+.btn-info { background: var(--info); color: var(--text-inverse); }
 .btn-small { padding: 4px 12px; font-size: 0.8em; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
 
-/* ─── Cards ────────────────────────────────────────────── */
 .card { background: var(--card); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
 .card h2 { display: flex; align-items: center; gap: 8px; font-size: 1.1em; margin-bottom: 12px; color: var(--text); }
 .card h3 { display: flex; align-items: center; gap: 6px; font-size: 1em; margin-bottom: 8px; color: var(--text); }
 
-/* ─── Now Playing ──────────────────────────────────────── */
 .now-playing { text-align: center; }
 .player-layout { display: flex; gap: 16px; align-items: center; }
 .cover-container { flex-shrink: 0; width: 120px; height: 120px; border-radius: 8px; overflow: hidden; background: var(--border); display: none; }
@@ -83,19 +77,16 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
     .cover-container { width: 180px; height: 180px; margin: 0 auto 8px; }
 }
 
-/* ─── Progress Bar ─────────────────────────────────────── */
 .progress-bar { width: 100%; height: 6px; background: var(--border); border-radius: 3px; margin: 12px 0; overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--primary); transition: width 0.3s linear; width: 0%; }
 .time-row { display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-muted); }
 .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
 
-/* ─── Lyrics ───────────────────────────────────────────── */
 .lyrics-box { max-height: 300px; overflow-y: auto; padding: 10px; font-size: 0.95em; line-height: 1.8; text-align: center; scroll-behavior: smooth; }
 .lyrics-box .line { padding: 4px 0; transition: 0.3s; border-radius: 4px; }
 .lyrics-box .line.active { color: var(--primary); font-weight: 700; font-size: 1.05em; background: rgba(118,75,162,0.08); }
 .lyrics-box .line.inactive { color: var(--text-muted); }
 
-/* ─── Queue ────────────────────────────────────────────── */
 .queue-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,0.05); transition: 0.2s; }
 .queue-item:hover { background: rgba(118,75,162,0.05); }
 .queue-item .info { flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -104,19 +95,14 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
 .badge-playing { background: var(--success); color: var(--text-inverse); }
 .badge-pending { background: var(--border); color: var(--text); }
 
-/* ─── Tabs ─────────────────────────────────────────────── */
 .tab-bar { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
-.tab { padding: 8px 18px; cursor: pointer; font-size: 0.9em; border: none; background: none; color: var(--text-muted); transition: 0.2s; white-space: nowrap; }
+.tab { padding: 8px 18px; cursor: pointer; font-size: 0.9em; border: none; background: none; color: var(--text-muted); transition: 0.2s; white-space: nowrap; text-decoration: none; }
 .tab.active { color: var(--primary); border-bottom: 2px solid var(--primary); margin-bottom: -2px; font-weight: 600; }
 
-/* ─── Admin sub-tabs ───────────────────────────────────── */
 .admin-subtabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; border-bottom: 2px solid var(--border); }
-.subtab { padding: 6px 14px; cursor: pointer; font-size: 0.85em; border: none; background: none; color: var(--text-muted); transition: 0.2s; }
+.subtab { padding: 6px 14px; cursor: pointer; font-size: 0.85em; border: none; background: none; color: var(--text-muted); transition: 0.2s; text-decoration: none; }
 .subtab.active { color: var(--secondary); border-bottom: 2px solid var(--secondary); margin-bottom: -2px; font-weight: 600; }
-.admin-subpanel { display: none; }
-.admin-subpanel.active { display: block; }
 
-/* ─── Forms ────────────────────────────────────────────── */
 .form-group { margin-bottom: 12px; }
 .form-group label { display: block; font-size: 0.85em; color: var(--text-muted); margin-bottom: 4px; }
 .form-group input { width: 100%; padding: 10px 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 0.9em; transition: 0.2s; background: var(--card); color: var(--text); }
@@ -124,24 +110,19 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
 .form-group textarea { width: 100%; padding: 10px 12px; border: 2px solid var(--border); border-radius: 8px; font-size: 0.9em; transition: 0.2s; background: var(--card); color: var(--text); font-family: inherit; resize: vertical; }
 .form-group textarea:focus { border-color: var(--primary); outline: none; }
 .form-group select { padding: 8px 12px; border: 2px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font-size: 0.9em; }
-.form-group.checkbox { display: flex; align-items: center; gap: 8px; }
-.form-group.checkbox label { margin-bottom: 0; }
-.form-group.checkbox input[type="checkbox"] { width: auto; }
 
-/* ─── Search / Song list ───────────────────────────────── */
 .search-box { width: 100%; padding: 10px 14px; border: 2px solid var(--border); border-radius: 8px; font-size: 0.9em; margin-bottom: 12px; background: var(--card); color: var(--text); }
 .song-list { max-height: 400px; overflow-y: auto; }
 .song-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(0,0,0,0.05); }
 .song-item:hover { background: rgba(118,75,162,0.05); }
 
-/* ─── Toast ────────────────────────────────────────────── */
-.toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: var(--text-inverse); font-weight: 600; z-index: 1000; animation: slideIn 0.3s ease; }
+.toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { padding: 12px 20px; border-radius: 8px; color: var(--text-inverse); font-weight: 600; animation: slideIn 0.3s ease; pointer-events: auto; }
 .toast-info { background: var(--info); }
 .toast-success { background: var(--success); }
 .toast-error { background: var(--danger); }
 @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-/* ─── Misc ─────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 500; }
 .setup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 999; }
@@ -154,20 +135,14 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
 .role-admin { background: rgba(102, 126, 234, 0.15); color: var(--secondary); }
 .role-user { background: var(--border); color: var(--text-muted); }
 
-/* ─── Admin Panel ──────────────────────────────────────── */
 .admin-panel .users-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
 .admin-panel .users-table th, .admin-panel .users-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid rgba(0,0,0,0.05); }
 
-/* ─── Upload Section ───────────────────────────────────── */
 .upload-section input[type="file"] { width: 100%; padding: 12px; border: 2px solid var(--border); border-radius: 8px; margin-bottom: 12px; background: var(--card); color: var(--text); }
-.upload-status { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 0.88em; display: none; }
 
-/* ─── Download Section ─────────────────────────────────── */
-#downloadPlaylistInput { width: 100%; padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-family: monospace; font-size: 0.9em; resize: vertical; box-sizing: border-box; margin-bottom: 8px; background: var(--card); color: var(--text); }
+.download-input { width: 100%; padding: 12px; border: 2px solid var(--border); border-radius: 8px; font-family: monospace; font-size: 0.9em; resize: vertical; box-sizing: border-box; margin-bottom: 8px; background: var(--card); color: var(--text); }
 .download-options { display: flex; gap: 15px; flex-wrap: wrap; align-items: center; margin-top: 8px; margin-bottom: 12px; }
-.download-log { background: var(--card); color: var(--text); padding: 14px; border-radius: 8px; font-size: 0.82em; max-height: 280px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-family: monospace; display: none; }
 
-/* ─── NCM Section ──────────────────────────────────────── */
 .ncm-badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 0.82em; font-weight: 600; margin-bottom: 10px; }
 .ncm-badge.ok { background: rgba(40, 167, 69, 0.15); color: var(--success); }
 .ncm-badge.none { background: var(--border); color: var(--text-muted); }
@@ -184,24 +159,17 @@ header h1 { font-size: 1.4em; color: var(--primary); display: flex; align-items:
 .ncm-panel small { display: block; color: var(--text-muted); font-size: 0.78em; margin-top: -6px; margin-bottom: 10px; }
 .ncm-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
-/* ─── Settings ─────────────────────────────────────────── */
 .form-actions { display: flex; gap: 15px; margin-top: 20px; flex-wrap: wrap; }
 .color-group { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
 .color-group input[type="color"] { width: 40px; height: 40px; border: 2px solid var(--border); border-radius: 6px; cursor: pointer; padding: 2px; }
 .color-group span { font-size: 0.85em; color: var(--text-muted); }
-.result-message { margin-top: 15px; padding: 10px 14px; border-radius: 6px; font-size: 0.88em; display: none; }
-.result-message.success { background: rgba(40, 167, 69, 0.15); color: var(--success); display: block; }
-.result-message.error { background: rgba(220, 53, 69, 0.15); color: var(--danger); display: block; }
-.result-message.info { background: rgba(23, 162, 184, 0.15); color: var(--info); display: block; }
 
-/* ─── Song Management Table ────────────────────────────── */
 .song-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
 .song-table th, .song-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(0,0,0,0.05); }
 .song-table th { font-weight: 600; color: var(--text-muted); font-size: 0.8em; text-transform: uppercase; }
 .song-table .song-title { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .song-table .actions { display: flex; gap: 4px; flex-wrap: wrap; }
 
-/* ─── Responsive ───────────────────────────────────────── */
 @media (max-width: 600px) {
     .app { padding: 8px; }
     .btn { padding: 6px 14px; font-size: 0.85em; }
