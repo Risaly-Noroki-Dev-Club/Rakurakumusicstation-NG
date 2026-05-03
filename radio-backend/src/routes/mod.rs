@@ -6,6 +6,7 @@ pub mod playlist;
 pub mod queue;
 pub mod admin;
 pub mod favorites;
+pub mod ncm;
 
 use axum::{Router, routing::{get, post}};
 use crate::db::AppState;
@@ -21,15 +22,15 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // 初始化设置（首次运行）
         .route("/api/setup", post(setup))
         // 歌曲库
-        .route("/api/songs", get(songs::search_songs))
-        .route("/api/songs/:id", get(songs::get_song))
-        .route("/api/songs/:id/cover", get(songs::get_song_cover))
+        .nest("/api/songs", songs::song_routes())
         // 用户播放列表
         .nest("/api/playlists", playlist::playlist_routes())
         // 共享电台队列
         .nest("/api/queue", queue::queue_routes())
         // 管理端点
         .nest("/api/admin", admin::admin_routes())
+        // 用户个人网易云账号
+        .nest("/api/ncm", ncm::ncm_routes())
         // 收藏夹
         .nest("/api/favorites", favorites::favorites_routes())
         // 电台信息（公开）

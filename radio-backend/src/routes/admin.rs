@@ -51,16 +51,16 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
     Router::new()
         // 用户管理
         .route("/users", get(list_users))
-        .route("/users/{id}/ban", post(ban_user))
-        .route("/users/{id}/unban", post(unban_user))
-        .route("/users/{id}/role", put(set_user_role))
+        .route("/users/:id/ban", post(ban_user))
+        .route("/users/:id/unban", post(unban_user))
+        .route("/users/:id/role", put(set_user_role))
         // 统计与日志
         .route("/stats", get(stats))
         .route("/logs", get(get_logs))
         // 歌曲管理
         .route("/rescan-songs", post(rescan_songs))
         .route("/songs", get(list_all_songs))
-        .route("/songs/{id}", delete(delete_song))
+        .route("/songs/:id", delete(delete_song))
         // 上传 (带 100MB body limit)
         .nest("/upload", Router::new()
             .route("/", post(upload_song))
@@ -273,7 +273,7 @@ pub async fn get_logs(
 // ─── 重新扫描歌曲 ────────────────────────────────────────
 
 /// 查找音频文件旁的封面图片
-fn find_cover(audio_path: &std::path::Path, media_root: &std::path::Path) -> String {
+pub(crate) fn find_cover(audio_path: &std::path::Path, media_root: &std::path::Path) -> String {
     let cover_names = ["cover.jpg", "cover.png", "cover.jpeg",
                        "folder.jpg", "folder.png",
                        "album.jpg", "album.png",
@@ -307,7 +307,7 @@ fn find_cover(audio_path: &std::path::Path, media_root: &std::path::Path) -> Str
 }
 
 /// 通过 ffprobe 获取音频时长（fork+exec）。
-fn get_duration(path: &std::path::Path) -> Option<i64> {
+pub(crate) fn get_duration(path: &std::path::Path) -> Option<i64> {
     let output = std::process::Command::new("ffprobe")
         .args([
             "-v", "error",
@@ -619,9 +619,9 @@ pub async fn delete_song(
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
-    // 删除文件
+    // 删除文件（占位歌曲或元数据歌曲可能没有实际文件）
     let file_path = std::path::Path::new(&state.config.audio_engine.media_path).join(&song.file_path);
-    if file_path.exists() {
+    if !song.file_path.is_empty() && file_path.exists() {
         std::fs::remove_file(&file_path).ok();
     }
 

@@ -1,11 +1,13 @@
-/// 歌曲库路由：搜索和获取歌曲详情。
+/// 歌曲库路由：搜索、获取歌曲详情、上传、下载。
 
+use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
+use crate::routes::admin::{find_cover, get_duration};
 use axum::{
-    extract::{Path, Query, State},
-    http::header,
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
     response::Response,
     routing::get,
     Json, Router,
@@ -15,8 +17,14 @@ use std::sync::Arc;
 pub fn song_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/:id/cover", get(get_song_cover))
+        .route("/:id/download", get(download_song))
         .route("/:id", get(get_song))
         .route("/", get(search_songs))
+        // 上传（带 100MB body limit，需要登录但不限管理员）
+        .nest("/upload", Router::new()
+            .route("/", axum::routing::post(upload_song))
+            .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        )
 }
 
 /// GET /api/songs?q=search&limit=20&offset=0
@@ -145,4 +153,136 @@ pub async fn get_song_cover(
             .body(axum::body::Body::from(DEFAULT_COVER_SVG))
             .unwrap()),
     }
+}
+
+/// POST /api/songs/upload — 上传音乐文件到媒体目录（需要登录）
+pub async fn upload_song(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> Result<Json<ApiResponse<String>>, AppError> {
+    let _user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+
+    let media_path = std::path::PathBuf::from(&state.config.audio_engine.media_path);
+    std::fs::create_dir_all(&media_path)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Create media dir error: {}", e)))?;
+
+    let mut uploaded_filename = String::new();
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("file").to_string();
+        if name != "file" {
+            continue;
+        }
+
+        let filename = field.file_name()
+            .unwrap_or("unknown.mp3")
+            .to_string();
+
+        let safe_name = filename
+            .replace('/', "_")
+            .replace('\\', "_")
+            .replace("..", "_");
+
+        let data = field.bytes().await
+            .map_err(|e| AppError::BadRequest(format!("读取上传数据失败: {}", e)))?;
+
+        if data.is_empty() {
+            return Err(AppError::BadRequest("文件为空".into()));
+        }
+
+        let max_size = 100 * 1024 * 1024;
+        if data.len() > max_size {
+            return Err(AppError::BadRequest("文件大小超过 100MB 限制".into()));
+        }
+
+        let dest_path = media_path.join(&safe_name);
+        std::fs::write(&dest_path, &data)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("写入文件失败: {}", e)))?;
+
+        uploaded_filename = safe_name.clone();
+
+        let stem = dest_path.file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or(safe_name.clone());
+        let mut title = stem.clone();
+        let mut artist = String::new();
+        if let Some(pos) = stem.find(" - ") {
+            artist = stem[..pos].to_string();
+            title = stem[pos + 3..].to_string();
+        }
+
+        let rel_str = safe_name.clone();
+        let duration_ms = get_duration(&dest_path).unwrap_or(0);
+        let cover_path = find_cover(&dest_path, &media_path);
+        let lrc_path = dest_path.with_extension("lrc");
+        let lyrics_path = if lrc_path.exists() {
+            lrc_path.strip_prefix(&media_path)
+                .unwrap_or(&lrc_path)
+                .to_string_lossy()
+                .to_string()
+        } else {
+            String::new()
+        };
+
+        sqlx::query(
+            "INSERT INTO songs (title, artist, file_path, lyrics_path, cover_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&title)
+        .bind(&artist)
+        .bind(&rel_str)
+        .bind(&lyrics_path)
+        .bind(&cover_path)
+        .bind(duration_ms)
+        .bind(data.len() as i64)
+        .execute(&state.db)
+        .await?;
+    }
+
+    if uploaded_filename.is_empty() {
+        return Err(AppError::BadRequest("未找到上传文件字段".into()));
+    }
+
+    Ok(Json(ApiResponse::ok(format!("上传成功: {}", uploaded_filename))))
+}
+
+/// GET /api/songs/{id}/download — 下载歌曲文件（需要登录）
+pub async fn download_song(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let _user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+
+    let song = sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
+
+    if song.file_path.is_empty() {
+        return Err(AppError::NotFound("Song file not available".into()));
+    }
+
+    let file_full = std::path::Path::new(&state.config.audio_engine.media_path)
+        .join(&song.file_path);
+
+    if !file_full.exists() {
+        return Err(AppError::NotFound("Song file not found on disk".into()));
+    }
+
+    let data = std::fs::read(&file_full)
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to read file")))?;
+
+    let filename = song.file_path.rsplit('/').next()
+        .unwrap_or(&song.file_path)
+        .to_string();
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "audio/mpeg")
+        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .header(header::CONTENT_LENGTH, data.len().to_string())
+        .body(axum::body::Body::from(data))
+        .unwrap())
 }

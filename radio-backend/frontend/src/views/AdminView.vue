@@ -24,7 +24,9 @@ function switchSubtab(name: string) {
 }
 
 function authHeaders(): Record<string, string> {
-  return { 'Authorization': 'Bearer ' + (store.token || '') }
+  const h: Record<string, string> = {}
+  if (store.token) h['Authorization'] = 'Bearer ' + store.token
+  return h
 }
 
 async function loadData() {

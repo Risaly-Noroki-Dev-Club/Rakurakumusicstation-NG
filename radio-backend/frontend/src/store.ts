@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 import type {
   User, Song, QueueItem, PlaybackState, LyricsLine,
-  Toast, Playlist, AdminStats, ThemeName
+  Toast, Playlist, AdminStats, ThemeName, NcmStatus
 } from './types'
 
 export const THEMES: ThemeName[] = ['auto', 'light', 'dark']
@@ -67,6 +67,14 @@ export interface Store {
   settingsAdminPassword: string
   settingsResult: string
   settingsResultType: string
+  userNcmBadge: string
+  userNcmBadgeClass: string
+  userNcmActiveTab: 'cookie' | 'phone'
+  userNcmCookie: string
+  userNcmPhone: string
+  userNcmPassword: string
+  userNcmResult: string
+  userNcmResultType: string
   toasts: Toast[]
 }
 
@@ -128,6 +136,14 @@ export const store: Store = reactive({
   settingsAdminPassword: '',
   settingsResult: '',
   settingsResultType: '',
+  userNcmBadge: '未配置',
+  userNcmBadgeClass: 'none',
+  userNcmActiveTab: 'cookie' as 'cookie' | 'phone',
+  userNcmCookie: '',
+  userNcmPhone: '',
+  userNcmPassword: '',
+  userNcmResult: '',
+  userNcmResultType: '',
   toasts: [] as Toast[],
 })
 

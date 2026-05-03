@@ -211,6 +211,143 @@ export async function addToQueue(songId: number): Promise<void> {
   } catch { toast('请求失败', 'error') }
 }
 
+export async function downloadSong(songId: number): Promise<void> {
+  if (!store.token) { toast('请先登录再下载', 'error'); openAuth(); return }
+  try {
+    const res = await fetch(apiBase + '/api/songs/' + songId + '/download', {
+      headers: authHeaders()
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: '下载失败' }))
+      toast(data.error || '下载失败', 'error')
+      return
+    }
+    const blob = await res.blob()
+    const disposition = res.headers.get('Content-Disposition') || ''
+    const match = disposition.match(/filename="(.+)"/)
+    const filename = match ? match[1] : 'song_' + songId + '.mp3'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast('下载完成', 'success')
+  } catch { toast('下载失败', 'error') }
+}
+
+async function uploadFile(formData: FormData): Promise<boolean> {
+  if (!store.token) { toast('请先登录再上传', 'error'); openAuth(); return false }
+  try {
+    const res = await fetch(apiBase + '/api/songs/upload', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + store.token },
+      body: formData
+    })
+    const data = await res.json()
+    if (data.success) {
+      toast(data.data || '上传成功', 'success')
+      return true
+    } else {
+      toast(data.error || '上传失败', 'error')
+      return false
+    }
+  } catch {
+    toast('上传失败', 'error')
+    return false
+  }
+}
+
+export async function uploadSong(file: File): Promise<boolean> {
+  if (file.size > 100 * 1024 * 1024) {
+    toast('文件大小超过 100MB 限制', 'error')
+    return false
+  }
+  const formData = new FormData()
+  formData.append('file', file)
+  return uploadFile(formData)
+}
+
+export async function loadUserNcmStatus(): Promise<void> {
+  if (!store.token) return
+  try {
+    const res = await fetch(apiBase + '/api/ncm', { headers: authHeaders() })
+    if (!res.ok) return
+    const d = await res.json()
+    if (!d.success) return
+    const data = d.data
+    if (data.configured) {
+      const label = data.method === 'cookie' ? 'Cookie 已配置' : '手机号 ' + (data.phone_hint || '') + ' 已配置'
+      store.userNcmBadge = '✓ ' + label
+      store.userNcmBadgeClass = 'ok'
+    } else {
+      store.userNcmBadge = '未配置（游客模式）'
+      store.userNcmBadgeClass = 'none'
+    }
+  } catch { /* ignore */ }
+}
+
+export async function saveUserNcmSettings(): Promise<void> {
+  if (!store.token) return
+  const payload = store.userNcmActiveTab === 'cookie'
+    ? { cookie: store.userNcmCookie.trim(), phone: '', password: '' }
+    : { phone: store.userNcmPhone.trim(), password: store.userNcmPassword, cookie: '' }
+  if (store.userNcmActiveTab === 'cookie' && !payload.cookie) {
+    store.userNcmResult = '请填写 Cookie'
+    store.userNcmResultType = 'error'
+    return
+  }
+  if (store.userNcmActiveTab === 'phone' && (!payload.phone || !payload.password)) {
+    store.userNcmResult = '请填写手机号和密码'
+    store.userNcmResultType = 'error'
+    return
+  }
+  try {
+    const res = await fetch(apiBase + '/api/ncm', {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const data = await res.json()
+    if (data.success) {
+      store.userNcmResult = '✅ 保存成功'
+      store.userNcmResultType = 'success'
+      loadUserNcmStatus()
+    } else {
+      store.userNcmResult = '❌ ' + (data.error || '保存失败')
+      store.userNcmResultType = 'error'
+    }
+  } catch {
+    store.userNcmResult = '❌ 请求失败'
+    store.userNcmResultType = 'error'
+  }
+}
+
+export async function testUserNcmLogin(): Promise<void> {
+  if (!store.token) return
+  store.userNcmResult = '测试中...'
+  store.userNcmResultType = 'info'
+  try {
+    const res = await fetch(apiBase + '/api/ncm/test', {
+      method: 'POST', headers: authHeaders()
+    })
+    const data = await res.json()
+    if (data.success) {
+      const d = data.data
+      store.userNcmResult = (d.success ? '✅ ' : '❌ ') + (d.output || (d.success ? '登录成功' : '登录失败'))
+      store.userNcmResultType = d.success ? 'success' : 'error'
+    } else {
+      store.userNcmResult = '❌ 请求失败'
+      store.userNcmResultType = 'error'
+    }
+  } catch {
+    store.userNcmResult = '❌ 请求失败'
+    store.userNcmResultType = 'error'
+  }
+}
+
 export async function loadMyPlaylists(): Promise<void> {
   if (!store.token) return
   try {

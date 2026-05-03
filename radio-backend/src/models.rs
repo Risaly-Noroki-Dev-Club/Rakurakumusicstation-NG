@@ -410,3 +410,30 @@ pub struct DownloadStatus {
     pub running: bool,
     pub log: String,
 }
+
+// ─── 用户网易云账号 ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct UserNcm {
+    pub id: i64,
+    pub user_id: i64,
+    pub ncm_cookie: String,
+    pub ncm_phone: String,
+    pub ncm_password: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaveNcmRequest {
+    pub cookie: Option<String>,
+    pub phone: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NcmStatus {
+    pub configured: bool,
+    pub method: String,
+    pub phone_hint: String,
+}
