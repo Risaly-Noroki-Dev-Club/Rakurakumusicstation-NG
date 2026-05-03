@@ -2,7 +2,7 @@
 import { onMounted } from 'vue'
 import { store, formatTime } from '../store'
 import { debouncedSearch, addToQueue, downloadSong, uploadSong, loadMyPlaylists, createPlaylist,
-         loadUserNcmStatus, saveUserNcmSettings, testUserNcmLogin } from '../api'
+         loadUserNcmStatus, saveUserNcmSettings, testUserNcmLogin, onSearchInput } from '../api'
 
 onMounted(() => {
   if (store.token) {
@@ -38,6 +38,7 @@ async function handleUpload() {
     store.uploadFileName = ''
     const fileInput = document.querySelector('.upload-file-input') as HTMLInputElement | null
     if (fileInput) fileInput.value = ''
+    onSearchInput()
   } else {
     store.uploadStatus = '上传失败'
     store.uploadStatusType = 'error'

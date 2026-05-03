@@ -1,15 +1,18 @@
 /// 数据库初始化、连接池和迁移。
 
 use crate::config::DatabaseConfig;
+use crate::config::StationConfig;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
+use std::sync::RwLock;
 
 /// 所有请求处理器共享的应用状态。
 pub struct AppState {
     pub db: SqlitePool,
     pub redis_conn: Option<redis::aio::ConnectionManager>,
     pub config: crate::config::AppConfig,
+    pub station: RwLock<StationConfig>,
     pub jwt_secret: String,
     pub ws_tx: tokio::sync::broadcast::Sender<String>,
 }
@@ -27,11 +30,13 @@ impl AppState {
         let (ws_tx, _) = tokio::sync::broadcast::channel(1024);
 
         let jwt_secret = config.jwt.secret.clone();
+        let station = RwLock::new(config.station.clone());
 
         Ok(Self {
             db,
             redis_conn,
             config,
+            station,
             jwt_secret,
             ws_tx,
         })

@@ -178,12 +178,7 @@ export async function removeQueueItem(id: number): Promise<void> {
 }
 
 export async function onSearchInput(): Promise<void> {
-  // Debounced externally
   const q = store.searchQuery.trim()
-  if (!q) {
-    store.searchResults = []
-    return
-  }
   try {
     const res = await fetch(apiBase + '/api/songs?q=' + encodeURIComponent(q) + '&limit=50')
     const data = await res.json()

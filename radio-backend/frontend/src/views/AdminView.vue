@@ -220,6 +220,7 @@ async function uploadSong() {
       store.uploadFileName = ''
       const fileInput = document.querySelector('.upload-file-input') as HTMLInputElement | null
       if (fileInput) fileInput.value = ''
+      loadAdminSongs()
     } else {
       store.uploadStatus = '❌ ' + (data.error || '上传失败')
       store.uploadStatusType = 'error'

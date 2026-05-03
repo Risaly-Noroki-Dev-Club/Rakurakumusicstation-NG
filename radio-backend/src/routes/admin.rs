@@ -434,12 +434,13 @@ pub async fn get_settings(
 ) -> Result<Json<ApiResponse<SettingsResponse>>, AppError> {
     let _admin = get_admin(&state, &headers).await?;
 
+    let station = state.station.read().unwrap_or_else(|e| e.into_inner());
     Ok(Json(ApiResponse::ok(SettingsResponse {
-        station_name: state.config.station.name.clone(),
-        subtitle: state.config.station.subtitle.clone(),
-        primary_color: state.config.station.primary_color.clone(),
-        secondary_color: state.config.station.secondary_color.clone(),
-        bg_color: state.config.station.bg_color.clone(),
+        station_name: station.name.clone(),
+        subtitle: station.subtitle.clone(),
+        primary_color: station.primary_color.clone(),
+        secondary_color: station.secondary_color.clone(),
+        bg_color: station.bg_color.clone(),
     })))
 }
 
@@ -493,13 +494,23 @@ pub async fn save_settings(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
 
+    // 热更新内存中的 station 配置，无需重启
+    {
+        let mut station = state.station.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(ref v) = body.station_name { station.name = v.clone(); }
+        if let Some(ref v) = body.subtitle { station.subtitle = v.clone(); }
+        if let Some(ref v) = body.primary_color { station.primary_color = v.clone(); }
+        if let Some(ref v) = body.secondary_color { station.secondary_color = v.clone(); }
+        if let Some(ref v) = body.bg_color { station.bg_color = v.clone(); }
+    }
+
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'update_settings', ?)")
         .bind(admin.id)
         .bind("Updated system settings")
         .execute(&state.db)
         .await?;
 
-    Ok(Json(ApiResponse::ok("设置已保存，重启后生效".into())))
+    Ok(Json(ApiResponse::ok("设置已保存，立即生效".into())))
 }
 
 // ─── 上传歌曲 ─────────────────────────────────────────────

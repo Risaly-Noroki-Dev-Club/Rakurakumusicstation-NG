@@ -63,12 +63,14 @@ async fn station_info(
     .map(|r| r.0 > 0)
     .unwrap_or(false);
 
+    let station = state.station.read().unwrap_or_else(|e| e.into_inner());
+
     axum::Json(serde_json::json!({
-        "name": state.config.station.name,
-        "subtitle": state.config.station.subtitle,
-        "primary_color": state.config.station.primary_color,
-        "secondary_color": state.config.station.secondary_color,
-        "bg_color": state.config.station.bg_color,
+        "name": station.name,
+        "subtitle": station.subtitle,
+        "primary_color": station.primary_color,
+        "secondary_color": station.secondary_color,
+        "bg_color": station.bg_color,
         "stream_url": state.config.audio_engine.resolve_stream_url(),
         "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
         "needs_setup": !has_admin,
