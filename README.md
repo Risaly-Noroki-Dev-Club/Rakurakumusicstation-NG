@@ -1,4 +1,4 @@
-# Rakuraku Music Station NG — *The Long Last Goodbye*
+# Rakuraku Music Station NG
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![C++](https://img.shields.io/badge/C++-17-orange.svg)
