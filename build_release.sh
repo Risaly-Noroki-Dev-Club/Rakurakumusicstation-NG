@@ -233,21 +233,36 @@ fi
 # 确保媒体目录存在
 mkdir -p media
 
-echo "🎵 Rakuraku Audio Engine 启动中..."
+echo "🎵 Rakuraku Music Station 启动中..."
 echo "========================================"
-echo "音频流: http://localhost:2240/stream"
-echo "健康检查: http://localhost:2240/health"
+echo "C++ 音频引擎: http://localhost:2240"
+echo "Rust 后端服务: http://localhost:2241"
+echo "流媒体: http://localhost:2240/stream"
+echo "Web 界面: http://localhost:2241"
 echo "========================================"
-echo "Web 界面请启动 Rust 后端 (radio-backend)"
 echo "音乐文件请放置在 media/ 目录"
 echo ""
 
-# 后台运行服务器
+# 启动 C++ 音频引擎
+echo "🔧 启动 C++ 音频引擎 (端口 2240)..."
 nohup ./radioserver > server.log 2>&1 &
 echo $! > .server.pid
+echo "✅ C++ 音频引擎已启动 (PID: $(cat .server.pid))"
 
-echo "✅ 服务器已启动 (PID: $(cat .server.pid))"
-echo "📄 查看日志: tail -f server.log"
+# 启动 Rust 后端
+if [ -f "./radio-backend" ]; then
+    echo "🦀 启动 Rust 后端服务 (端口 2241)..."
+    nohup ./radio-backend > rust-server.log 2>&1 &
+    echo $! > .rust-server.pid
+    echo "✅ Rust 后端服务已启动 (PID: $(cat .rust-server.pid))"
+else
+    echo "⚠️  未找到 radio-backend，跳过 Rust 后端启动"
+    echo "   运行 ./build_release.sh 编译 Rust 后端以启用 Web 界面"
+fi
+
+echo ""
+echo "📄 C++ 日志: tail -f server.log"
+echo "📄 Rust 日志: tail -f rust-server.log"
 echo "🛑 停止服务: ./stop.sh"
 EOF
 
@@ -258,64 +273,86 @@ cat > $RELEASE_DIR/stop.sh << 'EOF'
 echo "🎵 Rakuraku Music Station 停止脚本"
 echo "========================================"
 
-# 首先尝试使用PID文件
-if [ -f .server.pid ]; then
-    PID=$(cat .server.pid)
-    if ps -p $PID > /dev/null 2>&1; then
-        echo "🔴 正在停止服务器 (PID: $PID)..."
+# 通用停止函数：SIGTERM → 等待最多10s → SIGKILL
+stop_process() {
+    local name="$1"
+    local pid_file="$2"
 
-        # 先发送SIGTERM，优雅关闭
-        kill $PID
+    if [ -f "$pid_file" ]; then
+        PID=$(cat "$pid_file")
+        if ps -p "$PID" > /dev/null 2>&1; then
+            echo "🔴 正在停止 $name (PID: $PID)..."
 
-        # 等待进程退出，最多等待10秒
-        for i in {1..10}; do
-            if ! ps -p $PID > /dev/null 2>&1; then
-                break
+            # 先发送SIGTERM，优雅关闭
+            kill "$PID"
+
+            # 等待进程退出，最多等待10秒
+            for i in {1..10}; do
+                if ! ps -p "$PID" > /dev/null 2>&1; then
+                    break
+                fi
+                echo "⏳ 等待 $name 退出... ($i/10)"
+                sleep 1
+            done
+
+            if ! ps -p "$PID" > /dev/null 2>&1; then
+                rm -f "$pid_file"
+                echo "✅ $name 已正常停止 (PID: $PID)"
+            else
+                echo "⚠️ $name 仍在运行，强制终止..."
+                kill -9 "$PID"
+                sleep 1
+                rm -f "$pid_file"
+                echo "✅ $name 已强制停止 (PID: $PID)"
             fi
-            echo "⏳ 等待进程中... ($i/10)"
-            sleep 1
-        done
-
-        if ! ps -p $PID > /dev/null 2>&1; then
-            rm .server.pid
-            echo "✅ 服务器已正常停止 (PID: $PID)"
         else
-            echo "⚠️ 进程仍在运行，强制终止..."
-            kill -9 $PID
-            sleep 1
-            rm .server.pid
-            echo "✅ 服务器已强制停止 (PID: $PID)"
+            rm -f "$pid_file"
+            echo "⚠️ $name PID 文件存在但进程 $PID 已终止，已清理PID文件"
         fi
     else
-        rm .server.pid
-        echo "⚠️  PID 文件存在但进程 $PID 已终止，已清理PID文件"
+        echo "ℹ️  未找到 $name PID 文件 ($pid_file)"
     fi
-else
-    echo "ℹ️  未找到 .server.pid 文件"
-fi
+}
 
-# 二次清理：确保没有残留的radioserver进程
-RADIO_PROCESSES=$(pgrep radioserver 2>/dev/null)
-if [ -n "$RADIO_PROCESSES" ]; then
-    echo "🔄 发现残留的 radioserver 进程，正在清理..."
-    echo "📋 进程ID: $RADIO_PROCESSES"
+# 二次清理函数：pgrep/pkill 扫尾
+cleanup_residual() {
+    local name="$1"
+    local pattern="$2"
 
-    # 先尝试优雅终止
-    pkill radioserver 2>/dev/null
-    sleep 2
+    RESIDUAL=$(pgrep -f "$pattern" 2>/dev/null)
+    if [ -n "$RESIDUAL" ]; then
+        echo "🔄 发现残留的 $name 进程，正在清理..."
+        echo "📋 进程ID: $RESIDUAL"
 
-    # 再次检查并强制终止任何残留进程
-    REMAINING=$(pgrep radioserver 2>/dev/null)
-    if [ -n "$REMAINING" ]; then
-        echo "⚠️  仍有进程残留，强制清理中..."
-        kill -9 $REMAINING 2>/dev/null
-        sleep 1
+        # 先尝试优雅终止
+        pkill -f "$pattern" 2>/dev/null
+        sleep 2
+
+        # 再次检查并强制终止任何残留进程
+        REMAINING=$(pgrep -f "$pattern" 2>/dev/null)
+        if [ -n "$REMAINING" ]; then
+            echo "⚠️  仍有 $name 进程残留，强制清理中..."
+            kill -9 $REMAINING 2>/dev/null
+            sleep 1
+        fi
+
+        echo "✅ 已清理所有 $name 进程"
+    else
+        echo "ℹ️  没有发现残留的 $name 进程"
     fi
+}
 
-    echo "✅ 已清理所有 radioserver 进程"
-else
-    echo "ℹ️  没有发现残留的 radioserver 进程"
-fi
+# 停止 C++ 音频引擎
+stop_process "C++ 音频引擎" ".server.pid"
+
+# 停止 Rust 后端
+stop_process "Rust 后端服务" ".rust-server.pid"
+
+echo ""
+
+# 二次清理：确保没有残留进程
+cleanup_residual "radioserver" "radioserver"
+cleanup_residual "radio-backend" "radio-backend"
 
 echo "========================================"
 echo "🛑 停止脚本执行完成"
@@ -346,32 +383,6 @@ elif [ -d "radio-backend" ] && [ -f "radio-backend/Cargo.toml" ]; then
                 cp radio-backend/config.toml.example "$RELEASE_DIR/config.toml"
                 print_warning "已生成 config.toml，请检查并修改配置"
             fi
-            # 创建 Rust 后端启动/停止脚本
-            cat > "$RELEASE_DIR/start-rust.sh" << 'EOF'
-#!/bin/bash
-echo "🎵 Rakuraku Music Station (Rust 后端) 启动中..."
-export LANG=zh_CN.UTF-8
-export LC_ALL=zh_CN.UTF-8
-nohup ./radio-backend > rust-server.log 2>&1 &
-echo $! > .rust-server.pid
-echo "✅ Rust 后端已启动 (PID: $(cat .rust-server.pid))"
-echo "📄 查看日志: tail -f rust-server.log"
-echo "🛑 停止服务: ./stop-rust.sh"
-EOF
-            cat > "$RELEASE_DIR/stop-rust.sh" << 'EOF'
-#!/bin/bash
-if [ -f .rust-server.pid ]; then
-    PID=$(cat .rust-server.pid)
-    if ps -p $PID > /dev/null 2>&1; then
-        kill $PID 2>/dev/null
-        sleep 2
-        kill -9 $PID 2>/dev/null || true
-        echo "✅ Rust 后端已停止 (PID: $PID)"
-    fi
-    rm -f .rust-server.pid
-fi
-EOF
-            chmod +x "$RELEASE_DIR/start-rust.sh" "$RELEASE_DIR/stop-rust.sh"
             print_success "Rust 后端编译完成"
         else
             print_warning "Rust 编译未生成二进制，请检查 radio-backend/"
@@ -391,17 +402,14 @@ echo -e "${BLUE}
 ══════════════════════════════════════════════${NC}"
 echo "1. 进入目录: cd $RELEASE_DIR"
 echo "2. 添加音乐: 将音频文件放入 media/ 目录"
-echo "3. 启动音频引擎: ./start.sh"
-echo "4. 音频流地址: http://localhost:2240/stream"
-echo "5. 如需 Web 界面，启动 Rust 后端 (radio-backend)"
+echo "3. 启动服务: ./start.sh（同时启动 C++ 引擎和 Rust 后端）"
+echo "4. 音频流: http://localhost:2240/stream"
+echo "5. Web 界面: http://localhost:2241"
 echo ""
 echo "支持格式: MP3, WAV, FLAC, OGG, M4A, AAC"
 echo ""
 if [ "$SKIP_RUST" = false ] && [ -f "$RELEASE_DIR/radio-backend" ]; then
-    echo -e "${BLUE}Rust 后端已编译到 dist/${NC}"
-    echo "  音频引擎: ./start.sh       (端口 2240)"
-    echo "  Rust 后端: ./start-rust.sh  (端口 2241)"
-    echo "  两者需同时运行，通过 Redis 通信"
+    echo -e "${BLUE}Rust 后端已编译，./start.sh 将同时启动两个服务${NC}"
 else
     echo "如需 Web/API 功能，安装 cargo 后重新运行: ./build_release.sh"
 fi

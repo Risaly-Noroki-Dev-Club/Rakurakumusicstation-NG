@@ -53,21 +53,18 @@ wget $(curl -sf https://api.github.com/repos/CrowCpp/Crow/releases/latest \
 # 3. Add audio files
 cp /path/to/music/*.mp3 dist/media/
 
-# 4. Start audio engine
+# 4. Start both services (C++ engine + Rust backend)
 cd dist && ./start.sh
 
-# 5. Start Rust backend (optional — for Web UI and API)
-cd radio-backend
-cp config.toml.example config.toml
-cargo run --release
-# Or: ./target/release/radio-backend
+# Stop both services
+./stop.sh
 ```
 
 - Audio stream: `http://localhost:2240/stream`
 - Health check: `http://localhost:2240/health`
 - Web UI (Rust): `http://localhost:2241`
 
-Stop: `./stop.sh` (C++) / `Ctrl+C` (Rust)
+Stop: `./stop.sh`
 
 ## Build (Manual)
 
@@ -185,20 +182,18 @@ wget $(curl -sf https://api.github.com/repos/CrowCpp/Crow/releases/latest \
 # 3. 放入音频文件
 cp /path/to/music/*.mp3 dist/media/
 
-# 4. 启动音频引擎
+# 4. 启动服务（C++ 引擎 + Rust 后端）
 cd dist && ./start.sh
 
-# 5. 启动 Rust 后端（可选 — 提供 Web UI 和 API）
-cd radio-backend
-cp config.toml.example config.toml
-cargo run --release
+# 停止服务
+./stop.sh
 ```
 
 - 音频流：`http://localhost:2240/stream`
 - 健康检查：`http://localhost:2240/health`
 - Web 界面（Rust）：`http://localhost:2241`
 
-停止：C++ 用 `./stop.sh`，Rust 用 `Ctrl+C`。
+停止：`./stop.sh`
 
 ### C++ 音频引擎 — API
 

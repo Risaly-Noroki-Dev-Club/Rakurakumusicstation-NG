@@ -39,10 +39,8 @@ g++ radioserver.cpp metadata.cpp -o radioserver -std=c++17 -g -O0 \
 
 ```bash
 cd dist
-./start.sh         # starts audio engine (nohup), writes .server.pid, logs to server.log
-./stop.sh          # reads .server.pid, pgrep fallback cleanup
-./start-rust.sh    # starts Rust backend (if present), writes .rust-server.pid
-./stop-rust.sh     # stops Rust backend
+./start.sh         # starts both C++ engine + Rust backend (nohup), writes .server.pid and .rust-server.pid
+./stop.sh          # stops both services, reads PID files, pgrep fallback cleanup
 ```
 
 - The C++ engine must run from inside `dist/` (or any dir containing `media/`).
