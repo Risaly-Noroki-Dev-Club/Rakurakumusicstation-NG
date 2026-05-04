@@ -124,7 +124,7 @@ print_status "编译服务器程序..."
 RELEASE_DIR="dist"
 # Remove build artifacts but preserve media/ and settings.json and playlist_order.json
 if [ -d "$RELEASE_DIR" ]; then
-    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'playlist_order.json' -exec rm -rf {} +
+    find "$RELEASE_DIR" -mindepth 1 -maxdepth 1 ! -name 'media' ! -name 'playlist_order.json' ! -name 'config.toml' ! -name 'data' -exec rm -rf {} +
 fi
 mkdir -p $RELEASE_DIR/media
 mkdir -p $RELEASE_DIR/templates
@@ -226,6 +226,7 @@ echo "Rust 后端服务: http://localhost:2241"
 echo "流媒体:     http://localhost:2240/stream"
 echo "状态查询:   http://localhost:2240/state"
 echo "命令接口:   http://localhost:2240/command"
+echo "文件服务:   http://localhost:2240/file/<id>"
 echo "Web 界面:   http://localhost:2241"
 echo "========================================"
 echo "音乐文件请放置在 media/ 目录"
@@ -237,8 +238,18 @@ nohup ./radioserver > server.log 2>&1 &
 echo $! > .server.pid
 echo "✅ C++ 音频引擎已启动 (PID: $(cat .server.pid))"
 
-# 等待 C++ 引擎就绪再启动 Rust 后端
-sleep 1
+# 等待 C++ 引擎就绪（轮询 /health 最多 30 次）
+echo "⏳ 等待 C++ 引擎就绪..."
+for i in $(seq 1 30); do
+    if curl -sf http://127.0.0.1:2240/health > /dev/null 2>&1; then
+        echo "✅ C++ 引擎就绪 (尝试 $i)"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "⚠️  C++ 引擎未在 30 秒内就绪，继续启动 Rust 后端..."
+    fi
+    sleep 1
+done
 
 # 启动 Rust 后端
 if [ -f "./radio-backend" ]; then

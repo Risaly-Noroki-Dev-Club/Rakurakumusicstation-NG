@@ -6,13 +6,19 @@
 
 #include <crow_all.h>
 #include <iostream>
+#include <fstream>
 #include <unistd.h>
 #include <cstring>
 #include <sstream>
+#include <algorithm>
+#include <cctype>
 
 WebServer::WebServer(StreamServer* stream_server, CommandQueue* cmd_queue,
-                     PlaybackState* state)
-    : stream_server_(stream_server), cmd_queue_(cmd_queue), state_(state) {}
+                     PlaybackState* state,
+                     std::vector<std::string>* playlist,
+                     std::mutex* playlist_mutex)
+    : stream_server_(stream_server), cmd_queue_(cmd_queue), state_(state),
+      playlist_(playlist), playlist_mutex_(playlist_mutex) {}
 
 WebServer::~WebServer() { stop(); }
 
@@ -94,6 +100,109 @@ void WebServer::setup_routes_and_run() {
             result["status"] = "unavailable";
         }
         return crow::response(result);
+    });
+
+    // 文件端点（支持 Range 请求，用于前端推文件模式）
+    CROW_ROUTE(app, "/file/<int>")([playlist=playlist_, playlist_mutex=playlist_mutex_](const crow::request& req, crow::response& res, int song_id) {
+        // 查找文件路径
+        std::string file_path;
+        {
+            std::lock_guard<std::mutex> lock(*playlist_mutex);
+            if (song_id < 0 || song_id >= static_cast<int>(playlist->size())) {
+                res.code = 404;
+                res.end("song not found");
+                return;
+            }
+            file_path = "./media/" + playlist->at(song_id);
+        }
+
+        // 打开文件
+        std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            res.code = 404;
+            res.end("file not found");
+            return;
+        }
+
+        std::streamsize file_size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        // 检测文件扩展名设置 Content-Type
+        std::string ext;
+        auto dot_pos = file_path.rfind('.');
+        if (dot_pos != std::string::npos) {
+            ext = file_path.substr(dot_pos);
+            for (char& c : ext) c = std::tolower(c);
+        }
+
+        std::string content_type = "application/octet-stream";
+        if (ext == ".mp3")  content_type = "audio/mpeg";
+        else if (ext == ".flac") content_type = "audio/flac";
+        else if (ext == ".ogg")  content_type = "audio/ogg";
+        else if (ext == ".wav")  content_type = "audio/wav";
+        else if (ext == ".m4a")  content_type = "audio/mp4";
+        else if (ext == ".aac")  content_type = "audio/aac";
+
+        // 处理 Range 请求
+        std::string range_header = req.get_header_value("Range");
+        if (!range_header.empty() && range_header.find("bytes=") == 0) {
+            std::string range_val = range_header.substr(6);
+            size_t dash = range_val.find('-');
+            int64_t start = 0, end = file_size - 1;
+
+            try {
+                if (dash == 0) {
+                    // bytes=-N → 最后 N 字节
+                    int64_t suffix = std::stoll(range_val.substr(1));
+                    start = std::max(int64_t(0), file_size - suffix);
+                } else if (dash == range_val.length() - 1) {
+                    // bytes=N-
+                    start = std::stoll(range_val.substr(0, dash));
+                } else {
+                    // bytes=N-M
+                    start = std::stoll(range_val.substr(0, dash));
+                    end = std::stoll(range_val.substr(dash + 1));
+                    if (end >= file_size) end = file_size - 1;
+                }
+            } catch (...) {
+                res.code = 416;
+                res.end("invalid range");
+                return;
+            }
+
+            if (start >= file_size) {
+                res.code = 416;
+                res.end("range not satisfiable");
+                return;
+            }
+
+            int64_t content_length = end - start + 1;
+            std::vector<char> buffer(content_length);
+            file.seekg(start);
+            file.read(buffer.data(), content_length);
+
+            res.code = 206;
+            res.add_header("Content-Range",
+                "bytes " + std::to_string(start) + "-" + std::to_string(end) +
+                "/" + std::to_string(file_size));
+            res.add_header("Content-Length", std::to_string(content_length));
+            res.add_header("Content-Type", content_type);
+            res.add_header("Accept-Ranges", "bytes");
+            res.add_header("Access-Control-Allow-Origin", "*");
+            res.write(std::string(buffer.data(), buffer.size()));
+            res.end();
+        } else {
+            // 完整文件响应
+            std::vector<char> buffer(file_size);
+            file.read(buffer.data(), file_size);
+
+            res.add_header("Content-Length", std::to_string(file_size));
+            res.add_header("Content-Type", content_type);
+            res.add_header("Accept-Ranges", "bytes");
+            res.add_header("Access-Control-Allow-Origin", "*");
+            res.write(std::string(buffer.data(), buffer.size()));
+            res.end();
+        }
     });
 
     try {

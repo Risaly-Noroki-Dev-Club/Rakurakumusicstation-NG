@@ -35,7 +35,8 @@ bool RadioServer::start() {
         &buffer_, &playlist_, &current_track_, &playlist_mutex_,
         &playlist_metadata_, &command_queue_, &playback_state_);
     web_server_ = std::make_unique<WebServer>(
-        stream_server_.get(), &command_queue_, &playback_state_);
+        stream_server_.get(), &command_queue_, &playback_state_,
+        &playlist_, &playlist_mutex_);
 
     bool success = true;
     success &= stream_server_->start();
