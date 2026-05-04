@@ -13,14 +13,6 @@ url = "sqlite://data/radio.db?mode=rwc"
 # 若使用 PostgreSQL：
 # url = "postgres://user:pass@localhost/radio"
 
-[redis]
-# Redis 连接，用于与 C++ 音频引擎进行跨服务发布/订阅通信
-url = "redis://127.0.0.1:6379"
-# 频道名称
-playback_channel = "playback_state"
-command_channel = "command"
-queue_channel = "queue_event"
-
 [audio_engine]
 # C++ 音频引擎的基础 URL（用于拼接相对 stream_base / file URL）
 base_url = "http://127.0.0.1:2240"

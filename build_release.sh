@@ -129,31 +129,17 @@ fi
 mkdir -p $RELEASE_DIR/media
 mkdir -p $RELEASE_DIR/templates
 
-# 编译 hiredis 静态库（如果不存在）
-print_status "检查 hiredis 依赖..."
-HIREDIS_DIR="third_party/hiredis"
-if [ ! -f "$HIREDIS_DIR/libhiredis.a" ]; then
-    if [ -d "$HIREDIS_DIR" ]; then
-        print_warning "正在编译 hiredis..."
-        (cd "$HIREDIS_DIR" && gcc -c -O2 -I. hiredis.c alloc.c async.c net.c read.c sds.c sockcompat.c dict.c && ar rcs libhiredis.a *.o && rm -f *.o) || {
-            print_error "hiredis 编译失败，请检查 third_party/hiredis/"
-            exit 1
-        }
-        print_success "hiredis 编译完成"
-    else
-        print_error "未找到 third_party/hiredis/ 目录"
-        print_error "请从 https://github.com/redis/hiredis 获取源文件"
-        exit 1
-    fi
-else
-    print_success "hiredis 已就绪"
-fi
-
 # 编译参数
-CXXFLAGS="-std=c++17 -O3 -flto -march=native -lpthread -lssl -lcrypto -I. -I$HIREDIS_DIR -w"
-LDFLAGS="$HIREDIS_DIR/libhiredis.a"
+CXXFLAGS="-std=c++17 -O3 -flto -march=native -I. -Isrc -w"
+LDFLAGS="-lpthread -lssl -lcrypto"
 
-g++ radioserver.cpp metadata.cpp -o $RELEASE_DIR/radioserver $CXXFLAGS $LDFLAGS
+# 使用 Makefile 编译所有模块
+make CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS" -j$(nproc)
+if [ ! -f "radioserver" ]; then
+    print_error "编译失败"
+    exit 1
+fi
+cp radioserver $RELEASE_DIR/radioserver
 
 if [ -f "$RELEASE_DIR/radioserver" ]; then
     # 可选：移除调试符号减小体积
@@ -237,8 +223,10 @@ echo "🎵 Rakuraku Music Station 启动中..."
 echo "========================================"
 echo "C++ 音频引擎: http://localhost:2240"
 echo "Rust 后端服务: http://localhost:2241"
-echo "流媒体: http://localhost:2240/stream"
-echo "Web 界面: http://localhost:2241"
+echo "流媒体:     http://localhost:2240/stream"
+echo "状态查询:   http://localhost:2240/state"
+echo "命令接口:   http://localhost:2240/command"
+echo "Web 界面:   http://localhost:2241"
 echo "========================================"
 echo "音乐文件请放置在 media/ 目录"
 echo ""
@@ -248,6 +236,9 @@ echo "🔧 启动 C++ 音频引擎 (端口 2240)..."
 nohup ./radioserver > server.log 2>&1 &
 echo $! > .server.pid
 echo "✅ C++ 音频引擎已启动 (PID: $(cat .server.pid))"
+
+# 等待 C++ 引擎就绪再启动 Rust 后端
+sleep 1
 
 # 启动 Rust 后端
 if [ -f "./radio-backend" ]; then

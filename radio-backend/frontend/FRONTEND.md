@@ -17,7 +17,8 @@
 | `radio-backend/frontend/src/types.ts` | TypeScript 类型定义 | 活跃 |
 | `radio-backend/frontend/src/style.css` | 全局 CSS 样式 + CSS 变量主题 | 活跃 |
 | `radio-backend/frontend/src/views/` | 页面级组件 | 活跃 |
-| `radio-backend/frontend/src/components/` | 共享组件 | 活跃 |
+| `radio-backend/frontend/src/components/` | 共享组件 + admin 子组件 | 活跃 |
+| `radio-backend/frontend/src/components/admin/` | 管理面板 7 个子组件 | 活跃 |
 | `radio-backend/frontend/public/` | 直接复制的静态文件（manifest.json, sw.js） | 活跃 |
 | `radio-backend/static/` | **构建产物**目录（Vite 输出 + ServeDir 目标） | 构建生成 |
 | `radio-backend/static/assets/` | 带哈希的 JS/CSS 产物 | 构建生成 |
@@ -94,22 +95,31 @@ reactive({
 
 ```
 App.vue
-├── HeaderBar.vue          # 站名、主题切换、用户信息、登录/退出
-├── NavTabs.vue            # 导航标签栏（router-link）
+├── HeaderBar.vue              # 站名、主题切换、用户信息、登录/退出
+├── NavTabs.vue                # 导航标签栏（router-link）
 ├── <router-view>
-│   ├── PlayerView.vue     # 播放页面（封面、进度条、audio、歌词）
-│   ├── QueueView.vue      # 队列 + 播放历史
-│   ├── LibraryView.vue    # 曲库搜索 + 我的歌单
-│   └── AdminView.vue      # 管理页面（7 个子标签页）
-├── AuthModal.vue          # 登录/注册弹窗
-└── ToastContainer.vue     # 通知提示
+│   ├── PlayerView.vue         # 播放页面（封面、进度条、audio、歌词）
+│   ├── QueueView.vue          # 队列 + 播放历史
+│   ├── LibraryView.vue        # 曲库搜索 + 我的歌单 + NCM 用户配置
+│   └── AdminView.vue          # 管理页面壳（router-view 分配子标签）
+│       ├── AdminUsers.vue     # 👥 用户管理（提权/降权/封禁/日志）
+│       ├── AdminSongs.vue     # 🎵 歌曲管理（删除/重新扫描/切歌）
+│       ├── AdminUpload.vue    # 📤 上传
+│       ├── AdminDownload.vue  # ⬇️ 批量下载
+│       ├── AdminNcm.vue       # 🎵 网易云（复用 NcmSettings 组件）
+│       ├── AdminSettings.vue  # ⚙️ 系统设置
+│       └── AdminStats.vue     # 📊 统计
+├── AuthModal.vue              # 登录/注册弹窗
+├── ToastContainer.vue         # 通知提示
+├── StatusMessage.vue          # 通用状态提示（替换内联样式）
+└── NcmSettings.vue            # 网易云配置（管理员 + 用户复用）
 ```
 
 ---
 
 ## 色彩系统 / Color System
 
-与之前相同，所有颜色通过 CSS 自定义属性（变量）引用。
+所有颜色通过 CSS 自定义属性（变量）引用。
 
 ```css
 :root {
@@ -141,7 +151,7 @@ App.vue
 | 服务 | 端口 | 说明 |
 |------|------|------|
 | Rust 后端（API + WebSocket + 静态文件） | **2241** | 前端从此端口加载 |
-| C++ 音频引擎（音频流） | **2240** | 无头模式 |
+| C++ 音频引擎（音频流 + 命令 + 状态） | **2240** | 无头模式 |
 | Vite 开发服务器 | **5173** | 仅开发时使用，代理 API 到 2241 |
 
 ### 开发代理
@@ -159,7 +169,7 @@ proxy: {
 
 JSON，用 `type` 字段区分：`playback_state`, `queue_update`, `notice`, `ping`
 
-### HTTP API（同之前）
+### HTTP API
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
@@ -197,8 +207,8 @@ cd .. && cargo build
 
 `vite.config.ts` 配置：
 - `build.outDir: '../static'` — 输出到 `radio-backend/static/`
-- `build.emptyOutDir: false` — 不清空目录（保留 manifest.json 等非构建产物）
-- `publicDir: 'public'` — `public/` 下的文件原样复制到输出
+- `build.emptyOutDir: true` — 每次构建清空旧产物
+- `publicDir: 'public'` — `public/` 下的文件（sw.js, manifest.json）原样复制到输出
 
 ### 开发规范 / Conventions
 
@@ -208,5 +218,6 @@ cd .. && cargo build
 - **API 封装** — 新增接口调用到 `api.ts`
 - **不硬编码端口** — 用 `window.location.origin` 计算
 - **CSS 变量** — 所有颜色通过 CSS 自定义属性
-- **组件拆分** — 按功能视图拆分，提取可复用共享组件
+- **组件拆分** — 按功能视图拆分，提取可复用共享组件；管理面板每个子标签独立组件
+- **状态提示** — 使用 `<StatusMessage>` 组件，不重复内联样式
 - **路由守卫** — 需要认证的管理页面通过 `router.beforeEach` 保护

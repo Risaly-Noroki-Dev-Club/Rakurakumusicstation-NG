@@ -33,8 +33,8 @@ pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
-    #[error("Redis error: {0}")]
-    Redis(#[from] redis::RedisError),
+    #[error("Audio engine error: {0}")]
+    Engine(#[from] reqwest::Error),
 
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
@@ -54,9 +54,9 @@ impl IntoResponse for AppError {
                 tracing::error!("Database error: {:?}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal database error".into())
             }
-            AppError::Redis(e) => {
-                tracing::error!("Redis error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal messaging error".into())
+            AppError::Engine(e) => {
+                tracing::error!("Audio engine error: {:?}", e);
+                (StatusCode::INTERNAL_SERVER_ERROR, "Audio engine communication error".into())
             }
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {:?}", e);

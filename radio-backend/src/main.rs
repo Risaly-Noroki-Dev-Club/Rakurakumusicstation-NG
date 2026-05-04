@@ -1,8 +1,7 @@
 /// Rakuraku Music Station NG - Rust 业务后端
 ///
 /// 处理 HTTP API、WebSocket 广播、用户认证、队列管理、
-/// 歌词解析，以及通过 Redis pub/sub 与 C++ 音频引擎
-/// 进行服务间通信。
+/// 歌词解析，以及通过 HTTP 与 C++ 音频引擎进行服务间通信。
 
 mod auth;
 mod config;
@@ -36,11 +35,11 @@ async fn main() -> anyhow::Result<()> {
         config.server.port
     );
 
-    // 初始化应用状态（数据库、Redis、WebSocket 通道）
+    // 初始化应用状态（数据库、HTTP 客户端、WebSocket 通道）
     let state = Arc::new(AppState::new(config).await?);
 
-    // 启动 Redis 订阅者，将 playback_state 转发给 WebSocket 客户端
-    websocket::start_redis_subscriber(state.clone()).await;
+    // 启动 HTTP 状态轮询器，将播放状态转发给 WebSocket 客户端
+    websocket::start_state_poller(state.clone()).await;
 
     // 构建路由
     let app = routes::build_router(state.clone())

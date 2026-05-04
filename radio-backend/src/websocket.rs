@@ -1,11 +1,9 @@
 /// WebSocket 处理：升级 HTTP 连接并向所有已连接客户端广播播放状态。
 ///
 /// 架构：
-/// - 在 WebSocket 连接时，处理器订阅 Tokio 广播频道并将消息
-///   转发给客户端。
-/// - 一个后台任务订阅 Redis `playback_state` 频道，并将消息
-///   重新发布到 Tokio 广播，供所有 WebSocket 客户端接收。
-/// - 每 30 秒发送一次心跳 ping，以检测断开的连接。
+/// - WebSocket 连接订阅 Tokio 广播频道，将消息转发给客户端。
+/// - 一个后台任务 HTTP 轮询 C++ 引擎的 GET /state，解析后广播。
+/// - 每 30 秒发送一次心跳 ping，检测断开的连接。
 
 use crate::db::AppState;
 use crate::error::AppError;
@@ -50,7 +48,6 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 
     loop {
         tokio::select! {
-            // 接收广播消息
             msg = rx.recv() => {
                 match msg {
                     Ok(msg) => {
@@ -65,7 +62,6 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
-            // 接收客户端消息
             msg = receiver.next() => {
                 match msg {
                     Some(Ok(Message::Text(t))) if t.trim() == "pong" => {
@@ -78,7 +74,6 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                     _ => {}
                 }
             }
-            // 心跳
             _ = heartbeat.tick() => {
                 let ping = serde_json::to_string(&WsMessage::Ping {
                     timestamp: chrono::Utc::now().timestamp_millis(),
@@ -97,85 +92,50 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
 /// 通过广播频道向所有 WebSocket 客户端发布消息。
 pub fn broadcast(state: &Arc<AppState>, msg: WsMessage) {
     let json = serde_json::to_string(&msg).unwrap_or_default();
-    // 仅在无接收者时 Send 返回 Err，这是可接受的。
     let _ = state.ws_tx.send(json);
 }
 
-/// 启动后台任务，订阅 Redis `playback_state` 并广播到 WebSocket 客户端。
-/// 反序列化 C++ 引擎的 PlaybackState JSON，检测曲目切换触发
-/// mark_playing，计算当前歌词行，查询 DB 补充 title/artist。
-pub async fn start_redis_subscriber(state: Arc<AppState>) {
-    let channel = state.config.redis.playback_channel.clone();
-    let channel_for_log = channel.clone();
+/// 启动后台任务，HTTP 轮询 C++ 引擎的 /state 端点并广播到 WebSocket。
+pub async fn start_state_poller(state: Arc<AppState>) {
+    let state_url = state.config.audio_engine.state_url();
 
     tokio::spawn(async move {
         let mut last_song_id: i64 = 0;
         let mut cached_lyrics: Option<crate::lyrics::Lyrics> = None;
         let mut cached_lrc_text: Option<String> = None;
 
+        tracing::info!("State poller started, polling {}", state_url);
+
         loop {
-            match redis::Client::open(state.config.redis.url.as_str()) {
-                Ok(client) => {
-                    #[allow(deprecated)]
-                    match client.get_async_connection().await {
-                        Ok(conn) => {
-                            let mut pubsub = conn.into_pubsub();
-                            if pubsub.subscribe(&channel).await.is_ok() {
-                                tracing::info!("Subscribed to Redis channel: {}", channel);
+            match state.http_client.get(&state_url).send().await {
+                Ok(resp) => {
+                    match resp.json::<PlaybackState>().await {
+                        Ok(ps) => {
+                            let enrich = enrich_playback_state(
+                                &state, &ps,
+                                &mut last_song_id,
+                                &mut cached_lyrics,
+                                &mut cached_lrc_text,
+                            ).await;
 
-                                loop {
-                                    match pubsub.on_message().next().await {
-                                        Some(msg) => {
-                                            let payload: String = msg.get_payload().unwrap_or_default();
-
-                                            // 尝试解析为 PlaybackState
-                                            match serde_json::from_str::<PlaybackState>(&payload) {
-                                                Ok(ps) => {
-                                                    let enrich = enrich_playback_state(
-                                                        &state, &ps,
-                                                        &mut last_song_id,
-                                                        &mut cached_lyrics,
-                                                        &mut cached_lrc_text,
-                                                    ).await;
-
-                                                    let _ = state.ws_tx.send(enrich);
-                                                }
-                                                Err(_) => {
-                                                    // 无法解析则原样转发
-                                                    let _ = state.ws_tx.send(payload);
-                                                }
-                                            }
-                                        }
-                                        None => {
-                                            tracing::warn!("Redis pubsub stream ended, reconnecting...");
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
+                            let _ = state.ws_tx.send(enrich);
                         }
                         Err(e) => {
-                            tracing::error!("Redis connection error: {}, retrying in 5s...", e);
+                            tracing::warn!("Failed to parse state from engine: {}", e);
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Redis client error: {}, retrying in 5s...", e);
+                    tracing::warn!("Failed to poll engine state at {}: {}", state_url, e);
                 }
             }
 
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
     });
-
-    tracing::info!("Redis subscriber task started for channel: {}", channel_for_log);
 }
 
-/// 用 DB 数据丰富 C++ 引擎的原始播放状态消息：
-/// - 检测曲目切换 → 调用 mark_playing
-/// - 用当前 position_ms 计算歌词行 (lyrics_line)
-/// - 查询歌曲的 title / artist / lyrics_text
-/// 返回序列化为 JSON 的、可供前端直接使用的 WsMessage。
+/// 用 DB 数据丰富 C++ 引擎的原始播放状态消息。
 async fn enrich_playback_state(
     state: &Arc<AppState>,
     ps: &PlaybackState,
@@ -183,7 +143,6 @@ async fn enrich_playback_state(
     cached_lyrics: &mut Option<crate::lyrics::Lyrics>,
     cached_lrc_text: &mut Option<String>,
 ) -> String {
-    // 曲目切换
     if ps.song_id != *last_song_id && ps.song_id > 0 {
         *last_song_id = ps.song_id;
 
@@ -191,7 +150,6 @@ async fn enrich_playback_state(
             tracing::error!("mark_playing failed for song {}: {}", ps.song_id, e);
         }
 
-        // 加载新的 LRC
         *cached_lyrics = None;
         *cached_lrc_text = None;
         if let Ok(Some(song)) = sqlx::query_as::<_, crate::models::Song>(
@@ -212,12 +170,10 @@ async fn enrich_playback_state(
         }
     }
 
-    // 计算当前歌词行
     let lyrics_line = cached_lyrics
         .as_ref()
         .and_then(|l| l.line_at(ps.position_ms));
 
-    // 查询 DB 补充 title / artist
     let (title, artist) = if ps.song_id > 0 {
         sqlx::query_as::<_, (String, String)>(
             "SELECT title, artist FROM songs WHERE id = ?"
@@ -252,31 +208,24 @@ async fn enrich_playback_state(
     serde_json::to_string(&enriched).unwrap_or_default()
 }
 
-/// 通过 Redis 向 C++ 音频引擎发布命令。
+/// 通过 HTTP POST 向 C++ 音频引擎发送命令。
 pub async fn publish_command(
     state: &Arc<AppState>,
     command: &crate::models::AudioCommand,
 ) -> Result<(), AppError> {
-    let redis_conn = match &state.redis_conn {
-        Some(conn) => conn,
-        None => {
-            tracing::warn!("Cannot publish command: Redis not available");
-            return Err(AppError::Internal(anyhow::anyhow!("Redis not available")));
-        }
-    };
+    let url = state.config.audio_engine.command_url();
 
-    let json = serde_json::to_string(command)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Serialize error: {}", e)))?;
+    let resp = state.http_client
+        .post(&url)
+        .json(command)
+        .send()
+        .await?;
 
-    let channel = &state.config.redis.command_channel;
-
-    redis::cmd("PUBLISH")
-        .arg(channel)
-        .arg(&json)
-        .query_async::<_, ()>(&mut redis_conn.clone())
-        .await
-        .map_err(|e| AppError::Redis(e))?;
-
-    tracing::info!("Published command to '{}': {}", channel, json);
-    Ok(())
+    if resp.status().is_success() {
+        tracing::info!("Published command to {}: {:?}", url, command);
+        Ok(())
+    } else {
+        tracing::warn!("Engine command returned status {} for {}", resp.status(), url);
+        Ok(())
+    }
 }

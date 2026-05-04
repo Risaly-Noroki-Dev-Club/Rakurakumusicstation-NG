@@ -267,7 +267,7 @@ pub struct NowPlaying {
     pub file_url: Option<String>,
 }
 
-/// 从 C++ 引擎通过 Redis 发送的播放状态消息。
+/// 从 C++ 引擎通过 HTTP 发送的播放状态消息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackState {
     pub song_id: i64,
@@ -281,21 +281,12 @@ pub struct PlaybackState {
     pub track_start_timestamp_ms: i64,
 }
 
-/// 通过 Redis 发送给 C++ 音频引擎的命令。
+/// 通过 HTTP 发送给 C++ 音频引擎的命令。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioCommand {
     /// 命令类型：跳过、播放、停止、音量
     #[serde(rename = "type")]
     pub cmd_type: String,
-    pub song_id: Option<i64>,
-    pub file_path: Option<String>,
-}
-
-/// 从 Rust 发送的队列事件，用于通知 C++ 引擎队列变更。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QueueEvent {
-    #[serde(rename = "type")]
-    pub event_type: String,   // 下一首、跳过、清空
     pub song_id: Option<i64>,
     pub file_path: Option<String>,
 }

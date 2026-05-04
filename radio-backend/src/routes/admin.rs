@@ -697,7 +697,7 @@ pub async fn list_all_songs(
     Ok(Json(ApiResponse::ok(songs)))
 }
 
-// ─── 播放控制（通过 Redis 向 C++ 引擎发送指令）───────────
+// ─── 播放控制（通过 HTTP 向 C++ 引擎发送指令）───────────
 
 /// POST /api/admin/playlist/next — 切到下一首
 pub async fn skip_next(

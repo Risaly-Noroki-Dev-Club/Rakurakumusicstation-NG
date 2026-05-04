@@ -18,8 +18,8 @@ sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "migr
 # 如需 PostgreSQL 支持，切换 features:
 # sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "migrate"] }
 
-# 用于服务间通信的 Redis 发布/订阅
-redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+# HTTP 客户端（替代 Redis 用于与 C++ 音频引擎通信）
+reqwest = { version = "0.12", features = ["json"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }

@@ -4,14 +4,15 @@ This file provides guidance for OpenCode sessions working in this repository.
 
 ## Architecture
 
-- **C++ Audio Engine** (`radioserver.cpp` + `metadata.cpp`) — port 2240
+- **C++ Audio Engine** (`src/` directory, 7 modules) — port 2240
   - Audio pipeline: ffmpeg → `BroadcastBuffer` → `StreamServer` (TCP clients)
-  - Endpoints: `/stream` (audio), `/health` (status)
-  - Redis pub/sub: publishes `PlaybackState` to `playback_state` channel, subscribes to `command` channel
+  - Endpoints: `/stream` (audio), `/health` (status), `POST /command` (receive commands), `GET /state` (playback state)
+  - Communication: HTTP between C++ engine and Rust backend (no Redis needed)
   - Self-contained playlist scanner from `./media/`
+  - Key files: `src/main.cpp`, `src/radio_server.cpp`, `src/audio_player.cpp`
 - **Rust Backend** (`radio-backend/`) — port 2241
   - JWT auth, multi-user, SQLite, playlist/queue management, WebSocket
-  - Drives C++ engine via Redis `command` channel; receives state via Redis `playback_state` channel
+  - Drives C++ engine via HTTP `POST /command`; polls state via HTTP `GET /state`
   - Static web UI in `radio-backend/static/` (Vue 3 CDN SPA — no build tools)
 
 ## Build
@@ -22,15 +23,16 @@ This file provides guidance for OpenCode sessions working in this repository.
 ./build_release.sh --skip-rust   # C++ only
 
 # Debug build — C++ audio engine
-g++ radioserver.cpp metadata.cpp -o radioserver -std=c++17 -g -O0 \
-  -lpthread -lssl -lcrypto -I. -Ithird_party/hiredis \
-  third_party/hiredis/libhiredis.a
+make debug
+
+# Release build — C++ audio engine
+make
 
 # Build hiredis (one-time)
-(cd third_party/hiredis && gcc -c -O2 -I. hiredis.c alloc.c async.c net.c read.c sds.c sockcompat.c dict.c && ar rcs libhiredis.a *.o && rm -f *.o)
+make hiredis
 ```
 
-- Only two C++ source files: `radioserver.cpp` + `metadata.cpp`.
+- Source files: `src/*.cpp` + `src/*.hpp` (8 compilation units, header-only where simple).
 - Link flags `-lssl -lcrypto` are required (`crow_all.h` uses them).
 - C++17 is required.
 - Release build adds `-O3 -flto -march=native -w`; debug build omits `-w`.
@@ -52,17 +54,17 @@ cd dist
 
 - `playlist_` (filenames) and `playlist_metadata_` (TrackMetadata) are parallel vectors; any mutation must be mirrored under `playlist_mutex_`.
 - `BroadcastBuffer` capacity must be a power of two (enforced at construction via `throw`).
-- All core classes (`RadioServer`, `BroadcastBuffer`, `StreamServer`, `AudioPlayer`, `WebServer`, `RedisBridge`, `ClientConnection`) live in `radioserver.cpp`.
+- All core classes (`RadioServer`, `BroadcastBuffer`, `StreamServer`, `AudioPlayer`, `WebServer`, `ClientConnection`) live in `src/*.hpp` + `src/*.cpp`.
 
 ## Known quirks
 
 ### C++ engine
 - `crow_all.h` and `radioserver` (compiled binary at repo root) are build artifacts; delete before committing.
 - `dist/settings.json` contains credentials; never commit it.
-- Redis is optional — the engine runs standalone if unavailable.
+- HTTP-based command/state API replaces Redis — the engine runs standalone.
 
 ### Rust backend
-- **Redis is optional** — the backend starts fine without it but loses C++ engine command forwarding.
+- **No Redis dependency** — C++ engine communication uses HTTP (`POST /command`, `GET /state`).
 - **No Axum auth middleware** — every protected handler calls `require_auth_from_headers()` manually.
 - **JWT secret defaults to a hardcoded dev value** (`radio-backend-dev-secret-change-in-production`). Must override via `config.toml` `[jwt].secret` or `RADIO_JWT_SECRET` env var.
 - **Admin seed password is a placeholder** — the hash in `migrations/002_seed_defaults.sql` is all `A` characters. The admin user cannot log in until a real password hash is inserted or the register endpoint is used.

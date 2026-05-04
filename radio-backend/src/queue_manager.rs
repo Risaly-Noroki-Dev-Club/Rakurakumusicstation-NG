@@ -5,11 +5,11 @@
 /// - 管理员可以移动、删除、跳过任意项目。
 /// - 队列有大小上限和每用户速率限制。
 /// - 出队时（歌曲被选中播放），状态变为 pending→playing→played。
-/// - 通过 WebSocket 广播和 Redis pub/sub 发送通知。
+/// - 通过 WebSocket 广播发送通知。
 
 use crate::db::AppState;
 use crate::error::AppError;
-use crate::models::{QueueEvent, QueueItem, QueueItemDisplay, SongSummary};
+use crate::models::{QueueItem, QueueItemDisplay, SongSummary};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
@@ -103,22 +103,6 @@ pub async fn add_to_queue(
         requested_by: Some(username.to_string()),
         queue_size: current_size + 1,
     });
-
-    // 通过 Redis 发布队列事件，以便 C++ 引擎感知
-    if let Some(ref mut conn) = state.redis_conn.clone() {
-        let queue_json = serde_json::to_string(&QueueEvent {
-            event_type: "added".into(),
-            song_id: Some(song_id),
-            file_path: Some(song.file_path.clone()),
-        })
-        .unwrap_or_default();
-
-        let _ = redis::cmd("PUBLISH")
-            .arg(&state.config.redis.queue_channel)
-            .arg(&queue_json)
-            .query_async::<_, ()>(conn)
-            .await;
-    }
 
     tracing::info!(
         "User '{}' added song '{}' to queue (item #{})",
@@ -251,7 +235,7 @@ pub async fn remove_queue_item(db: &SqlitePool, item_id: i64) -> Result<(), AppE
 }
 
 /// 跳过当前正在播放的歌曲（仅限管理员）。
-/// 通过 Redis 向 C++ 音频引擎发送 skip 命令。
+/// 通过 HTTP 向 C++ 音频引擎发送 skip 命令。
 pub async fn skip_current(
     state: &Arc<AppState>,
 ) -> Result<(), AppError> {
@@ -271,7 +255,7 @@ pub async fn skip_current(
             .await?;
     }
 
-    // 通过 Redis 向 C++ 音频引擎发送 skip 命令
+    // 通过 HTTP 向 C++ 音频引擎发送 skip 命令
     let command = crate::models::AudioCommand {
         cmd_type: "skip".into(),
         song_id: None,
