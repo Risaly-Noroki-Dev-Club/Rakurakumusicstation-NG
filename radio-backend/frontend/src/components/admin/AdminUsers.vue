@@ -2,20 +2,14 @@
 import { store, toast } from '../../store'
 import { getBackendUrl } from '../../api'
 
-const ah = (): Record<string, string> => {
-  const h: Record<string, string> = {}
-  if (store.token) h['Authorization'] = 'Bearer ' + store.token
-  return h
-}
-
 async function loadUsers() {
   try {
-    const r = await fetch(getBackendUrl() + '/api/admin/users', { headers: ah() })
+    const r = await fetch(getBackendUrl() + '/api/admin/users')
     const d = await r.json()
     if (d.success) store.users = d.data || []
   } catch { /* ignore */ }
   try {
-    const r = await fetch(getBackendUrl() + '/api/admin/logs', { headers: ah() })
+    const r = await fetch(getBackendUrl() + '/api/admin/logs')
     const d = await r.json()
     if (d.success) store.adminLogs = d.data || []
   } catch { /* ignore */ }
@@ -24,7 +18,7 @@ async function loadUsers() {
 async function adminPromote(id: number) {
   try {
     const r = await fetch(getBackendUrl() + '/api/admin/users/' + id + '/role', {
-      method: 'PUT', headers: { ...ah(), 'Content-Type': 'application/json' },
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'admin' })
     })
     const data = await r.json()
@@ -36,7 +30,7 @@ async function adminPromote(id: number) {
 async function adminDemote(id: number) {
   try {
     const r = await fetch(getBackendUrl() + '/api/admin/users/' + id + '/role', {
-      method: 'PUT', headers: { ...ah(), 'Content-Type': 'application/json' },
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'user' })
     })
     const data = await r.json()
@@ -47,7 +41,7 @@ async function adminDemote(id: number) {
 
 async function adminBan(id: number) {
   try {
-    const r = await fetch(getBackendUrl() + '/api/admin/users/' + id + '/ban', { method: 'POST', headers: ah() })
+    const r = await fetch(getBackendUrl() + '/api/admin/users/' + id + '/ban', { method: 'POST' })
     const d = await r.json()
     if (d.success) { loadUsers(); toast('用户已封禁', 'success') }
     else toast('操作失败: ' + d.error, 'error')
@@ -56,7 +50,7 @@ async function adminBan(id: number) {
 
 async function adminUnban(id: number) {
   try {
-    const r = await fetch(getBackendUrl() + '/api/admin/users/' + id + '/unban', { method: 'POST', headers: ah() })
+    const r = await fetch(getBackendUrl() + '/api/admin/users/' + id + '/unban', { method: 'POST' })
     const d = await r.json()
     if (d.success) { loadUsers(); toast('用户已解封', 'success') }
     else toast('操作失败: ' + d.error, 'error')
@@ -75,7 +69,7 @@ loadUsers()
         <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>
           <tr v-for="u in store.users" :key="u.id">
-            <td>{{ u.id }}</td><td>{{ u.username }}</td>
+            <td>{{ u.id }}</td><td>{{ u.display_name }}</td>
             <td>
               <span :class="['role-badge', u.role === 'admin' ? 'role-admin' : 'role-user']">
                 {{ u.role === 'admin' ? '管理员' : '用户' }}

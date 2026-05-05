@@ -18,22 +18,22 @@ pub fn favorites_routes() -> Router<Arc<AppState>> {
         .route("/:song_id", post(add_favorite).delete(remove_favorite))
 }
 
-/// GET /api/favorites — 列出当前用户的收藏歌曲
+/// GET /api/favorites — 列出当前设备的收藏歌曲
 async fn list_favorites(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<SongSummary>>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
 
     let songs = sqlx::query_as::<_, crate::models::Song>(
         r#"
         SELECT s.* FROM songs s
         JOIN favorites f ON f.song_id = s.id
-        WHERE f.user_id = ?
+        WHERE f.device_user_id = ?
         ORDER BY f.created_at DESC
         "#
     )
-    .bind(user.id)
+    .bind(device.id)
     .fetch_all(&state.db)
     .await?;
 
@@ -47,20 +47,18 @@ async fn add_favorite(
     Path(song_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
 
-    // 验证歌曲存在
     sqlx::query_as::<_, (i64,)>("SELECT id FROM songs WHERE id = ?")
         .bind(song_id)
         .fetch_optional(&state.db)
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
-    // 忽略重复 (INSERT OR IGNORE)
     let result = sqlx::query(
-        "INSERT OR IGNORE INTO favorites (user_id, song_id) VALUES (?, ?)"
+        "INSERT OR IGNORE INTO favorites (device_user_id, song_id) VALUES (?, ?)"
     )
-    .bind(user.id)
+    .bind(device.id)
     .bind(song_id)
     .execute(&state.db)
     .await?;
@@ -78,10 +76,10 @@ async fn remove_favorite(
     Path(song_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
 
-    sqlx::query("DELETE FROM favorites WHERE user_id = ? AND song_id = ?")
-        .bind(user.id)
+    sqlx::query("DELETE FROM favorites WHERE device_user_id = ? AND song_id = ?")
+        .bind(device.id)
         .bind(song_id)
         .execute(&state.db)
         .await?;

@@ -2,13 +2,9 @@
 import { store } from '../../store'
 import { getBackendUrl } from '../../api'
 
-function authHeaders() {
-  const h: Record<string, string> = {}; if (store.token) h.Authorization = "Bearer " + store.token; return h
-}
-
 async function loadStats() {
   try {
-    const r = await fetch(getBackendUrl() + '/api/admin/stats', { headers: authHeaders() })
+    const r = await fetch(getBackendUrl() + '/api/admin/stats')
     const d = await r.json()
     if (d.success) store.adminStats = d.data
   } catch { /* ignore */ }

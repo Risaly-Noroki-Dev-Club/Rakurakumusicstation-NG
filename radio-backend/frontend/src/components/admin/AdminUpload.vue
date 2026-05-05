@@ -32,7 +32,6 @@ async function uploadSong() {
   try {
     const res = await fetch(getBackendUrl() + '/api/admin/upload', {
       method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + (store.token || '') },
       body: formData
     })
     const data = await res.json()

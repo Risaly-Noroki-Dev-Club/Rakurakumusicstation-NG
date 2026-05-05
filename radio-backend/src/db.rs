@@ -2,42 +2,45 @@
 
 use crate::config::DatabaseConfig;
 use crate::config::StationConfig;
+use radio_engine::ring_buffer::RingBuffer;
+use radio_engine::player::PlayerHandle;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 /// 所有请求处理器共享的应用状态。
 pub struct AppState {
     pub db: SqlitePool,
-    pub http_client: reqwest::Client,
     pub config: crate::config::AppConfig,
     pub station: RwLock<StationConfig>,
-    pub jwt_secret: String,
     pub ws_tx: tokio::sync::broadcast::Sender<String>,
+    /// 音频引擎的环形缓冲区（用于流式传输）
+    pub ring_buffer: Arc<RingBuffer>,
+    /// 音频引擎的播放器句柄（用于发送命令、获取状态）
+    pub player_handle: PlayerHandle,
 }
 
 impl AppState {
     /// 创建包含所有已初始化组件的新 AppState。
-    pub async fn new(config: crate::config::AppConfig) -> anyhow::Result<Self> {
+    pub async fn new(
+        config: crate::config::AppConfig,
+        ring_buffer: Arc<RingBuffer>,
+        player_handle: PlayerHandle,
+    ) -> anyhow::Result<Self> {
         let db = init_database(&config.database).await?;
-
-        let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(5))
-            .build()?;
 
         let (ws_tx, _) = tokio::sync::broadcast::channel(1024);
 
-        let jwt_secret = config.jwt.secret.clone();
         let station = RwLock::new(config.station.clone());
 
         Ok(Self {
             db,
-            http_client,
             config,
             station,
-            jwt_secret,
             ws_tx,
+            ring_buffer,
+            player_handle,
         })
     }
 }

@@ -1,26 +1,4 @@
-/// 管理员专用路由：用户管理、系统统计、歌曲管理、设置、上传、下载。
-///
-/// 本模块包含以下端点：
-/// - GET  /api/admin/users            列出所有用户
-/// - POST /api/admin/users/{id}/ban   封禁用户
-/// - POST /api/admin/users/{id}/unban 解封用户
-/// - PUT  /api/admin/users/{id}/role  更改用户角色（提权/降权）
-/// - GET  /api/admin/stats            系统统计
-/// - GET  /api/admin/logs             管理日志
-/// - POST /api/admin/rescan-songs     重新扫描媒体目录
-/// - GET  /api/admin/settings         获取系统设置
-/// - POST /api/admin/settings         保存系统设置
-/// - POST /api/admin/upload           上传音乐文件
-/// - DELETE /api/admin/songs/{id}     删除歌曲
-/// - POST /api/admin/playlist/next    下一首（向 C++ 引擎发送 skip 命令）
-/// - POST /api/admin/playlist/prev    上一首（通过 Redis queue_event）
-/// - POST /api/admin/download         批量下载歌单
-/// - GET  /api/admin/download/status  获取下载状态
-/// - POST /api/admin/ncm              保存网易云账号设置
-/// - GET  /api/admin/ncm              获取网易云账号状态
-/// - POST /api/admin/ncm/test         测试网易云登录
-/// - POST /api/admin/ncm/logout       退出登录（管理会话）
-/// - GET  /api/admin/songs            获取所有歌曲（管理用完整列表）
+/// 管理员专用路由：设备用户管理、系统统计、歌曲管理、设置、上传、下载。
 
 use crate::auth;
 use crate::db::AppState;
@@ -49,7 +27,7 @@ fn download_state() -> &'static Mutex<DownloadStatus> {
 
 pub fn admin_routes() -> Router<Arc<AppState>> {
     Router::new()
-        // 用户管理
+        // 设备用户管理
         .route("/users", get(list_users))
         .route("/users/:id/ban", post(ban_user))
         .route("/users/:id/unban", post(unban_user))
@@ -77,38 +55,36 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         // 网易云账号
         .route("/ncm", get(get_ncm_settings).post(save_ncm_settings))
         .route("/ncm/test", post(test_ncm_login))
-        // 管理登录（退出）
+        // 管理退出
         .route("/logout", post(logout))
 }
 
 // ─── 身份验证辅助函数 ─────────────────────────────────────
 
-/// 从请求头中提取已认证管理员用户。
+/// 从请求头中提取已认证管理员设备用户。
 pub async fn get_admin(state: &AppState, headers: &HeaderMap) -> Result<crate::auth::AuthUser, AppError> {
-    auth::require_admin_from_headers(headers, &state.db, &state.jwt_secret).await
+    auth::require_admin_from_headers(headers, &state.db).await
 }
 
-// ─── 用户管理 ─────────────────────────────────────────────
+// ─── 设备用户管理 ─────────────────────────────────────────
 
-/// GET /api/admin/users — 列出所有用户
+/// GET /api/admin/users — 列出所有设备用户
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<ApiResponse<Vec<crate::models::UserPublic>>>, AppError> {
+) -> Result<Json<ApiResponse<Vec<crate::models::DeviceUser>>>, AppError> {
     let _admin = get_admin(&state, &headers).await?;
 
-    let users = sqlx::query_as::<_, crate::models::User>(
-        "SELECT * FROM users ORDER BY created_at DESC"
+    let users = sqlx::query_as::<_, crate::models::DeviceUser>(
+        "SELECT * FROM device_users ORDER BY created_at DESC"
     )
     .fetch_all(&state.db)
     .await?;
 
-    let public: Vec<crate::models::UserPublic> = users.into_iter().map(|u| u.into()).collect();
-
-    Ok(Json(ApiResponse::ok(public)))
+    Ok(Json(ApiResponse::ok(users)))
 }
 
-/// POST /api/admin/users/{id}/ban — 封禁用户（禁用队列提交）
+/// POST /api/admin/users/{id}/ban — 封禁设备用户
 pub async fn ban_user(
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<i64>,
@@ -116,25 +92,22 @@ pub async fn ban_user(
 ) -> Result<Json<ApiResponse<String>>, AppError> {
     let admin = get_admin(&state, &headers).await?;
 
-    // 防止封禁自己
     if user_id == admin.id {
         return Err(AppError::BadRequest("Cannot ban yourself".into()));
     }
 
-    // 将 banned_until 设置为遥远的未来（100 年）
-    sqlx::query("UPDATE users SET banned_until = datetime('now', '+100 years') WHERE id = ?")
+    sqlx::query("UPDATE device_users SET banned_until = datetime('now', '+100 years') WHERE id = ?")
         .bind(user_id)
         .execute(&state.db)
         .await?;
 
-    // 记录
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'ban_user', ?)")
         .bind(admin.id)
-        .bind(format!("Banned user {}", user_id))
+        .bind(format!("Banned device user {}", user_id))
         .execute(&state.db)
         .await?;
 
-    Ok(Json(ApiResponse::ok("User banned".into())))
+    Ok(Json(ApiResponse::ok("Device user banned".into())))
 }
 
 /// POST /api/admin/users/{id}/unban
@@ -145,21 +118,21 @@ pub async fn unban_user(
 ) -> Result<Json<ApiResponse<String>>, AppError> {
     let admin = get_admin(&state, &headers).await?;
 
-    sqlx::query("UPDATE users SET banned_until = NULL WHERE id = ?")
+    sqlx::query("UPDATE device_users SET banned_until = NULL WHERE id = ?")
         .bind(user_id)
         .execute(&state.db)
         .await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'unban_user', ?)")
         .bind(admin.id)
-        .bind(format!("Unbanned user {}", user_id))
+        .bind(format!("Unbanned device user {}", user_id))
         .execute(&state.db)
         .await?;
 
-    Ok(Json(ApiResponse::ok("User unbanned".into())))
+    Ok(Json(ApiResponse::ok("Device user unbanned".into())))
 }
 
-/// PUT /api/admin/users/{id}/role — 更改用户角色（提权/降权）
+/// PUT /api/admin/users/{id}/role — 更改设备用户角色
 pub async fn set_user_role(
     State(state): State<Arc<AppState>>,
     Path(user_id): Path<i64>,
@@ -176,18 +149,20 @@ pub async fn set_user_role(
         return Err(AppError::BadRequest("Cannot change your own role".into()));
     }
 
-    let target = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(user_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+    let target = sqlx::query_as::<_, crate::models::DeviceUser>(
+        "SELECT * FROM device_users WHERE id = ?"
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Device user not found".into()))?;
 
     let old_role = target.role.clone();
     if old_role == body.role {
-        return Ok(Json(ApiResponse::ok(format!("User '{}' already has role '{}'", target.username, body.role))));
+        return Ok(Json(ApiResponse::ok(format!("Device '{}' already has role '{}'", target.display_name, body.role))));
     }
 
-    sqlx::query("UPDATE users SET role = ? WHERE id = ?")
+    sqlx::query("UPDATE device_users SET role = ? WHERE id = ?")
         .bind(&body.role)
         .bind(user_id)
         .execute(&state.db)
@@ -197,11 +172,11 @@ pub async fn set_user_role(
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, ?, ?)")
         .bind(admin.id)
         .bind(action)
-        .bind(format!("Changed user '{}' ({}) role from '{}' to '{}'", target.username, user_id, old_role, body.role))
+        .bind(format!("Changed device '{}' ({}) role from '{}' to '{}'", target.display_name, user_id, old_role, body.role))
         .execute(&state.db)
         .await?;
 
-    Ok(Json(ApiResponse::ok(format!("User '{}' role changed to '{}'", target.username, body.role))))
+    Ok(Json(ApiResponse::ok(format!("Device '{}' role changed to '{}'", target.display_name, body.role))))
 }
 
 // ─── 统计 ────────────────────────────────────────────────
@@ -213,7 +188,7 @@ pub async fn stats(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let _admin = get_admin(&state, &headers).await?;
 
-    let user_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+    let user_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM device_users")
         .fetch_one(&state.db)
         .await?;
 
@@ -452,22 +427,6 @@ pub async fn save_settings(
 ) -> Result<Json<ApiResponse<String>>, AppError> {
     let admin = get_admin(&state, &headers).await?;
 
-    // 如果提供了管理员密码，更新自己的密码
-    if let Some(ref pw) = body.admin_password {
-        if !pw.is_empty() {
-            if pw.len() < 6 {
-                return Err(AppError::BadRequest("密码至少需要6个字符".into()));
-            }
-            let hash = crate::auth::hash_password(pw)?;
-
-            sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
-                .bind(&hash)
-                .bind(admin.id)
-                .execute(&state.db)
-                .await?;
-        }
-    }
-
     // 更新内存中的配置并写入文件
     let config_path = std::env::var("RADIO_CONFIG")
         .unwrap_or_else(|_| "config.toml".to_string());
@@ -494,7 +453,7 @@ pub async fn save_settings(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
 
-    // 热更新内存中的 station 配置，无需重启
+    // 热更新内存中的 station 配置
     {
         let mut station = state.station.write().unwrap_or_else(|e| e.into_inner());
         if let Some(ref v) = body.station_name { station.name = v.clone(); }
@@ -539,7 +498,6 @@ pub async fn upload_song(
             .unwrap_or("unknown.mp3")
             .to_string();
 
-        // 清理文件名：移除路径分隔符
         let safe_name = filename
             .replace('/', "_")
             .replace('\\', "_")
@@ -552,7 +510,7 @@ pub async fn upload_song(
             return Err(AppError::BadRequest("文件为空".into()));
         }
 
-        let max_size = 100 * 1024 * 1024; // 100 MB
+        let max_size = 100 * 1024 * 1024;
         if data.len() > max_size {
             return Err(AppError::BadRequest("文件大小超过 100MB 限制".into()));
         }
@@ -563,7 +521,6 @@ pub async fn upload_song(
 
         uploaded_filename = safe_name.clone();
 
-        // 从文件名提取标题/艺术家
         let stem = dest_path.file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or(safe_name.clone());
@@ -616,7 +573,7 @@ pub async fn upload_song(
 
 // ─── 删除歌曲 ─────────────────────────────────────────────
 
-/// DELETE /api/admin/songs/{id} — 删除歌曲（从文件系统和数据库）
+/// DELETE /api/admin/songs/{id} — 删除歌曲
 pub async fn delete_song(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
@@ -630,13 +587,11 @@ pub async fn delete_song(
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
-    // 删除文件（占位歌曲或元数据歌曲可能没有实际文件）
     let file_path = std::path::Path::new(&state.config.audio_engine.media_path).join(&song.file_path);
     if !song.file_path.is_empty() && file_path.exists() {
         std::fs::remove_file(&file_path).ok();
     }
 
-    // 删除歌词文件
     if !song.lyrics_path.is_empty() {
         let lrc_path = std::path::Path::new(&state.config.audio_engine.media_path).join(&song.lyrics_path);
         if lrc_path.exists() {
@@ -644,7 +599,6 @@ pub async fn delete_song(
         }
     }
 
-    // 删除封面文件
     if !song.cover_path.is_empty() {
         let cover_path = std::path::Path::new(&state.config.audio_engine.media_path).join(&song.cover_path);
         if cover_path.exists() && cover_path != file_path {
@@ -652,7 +606,6 @@ pub async fn delete_song(
         }
     }
 
-    // 从数据库中删除
     sqlx::query("DELETE FROM playlist_songs WHERE song_id = ?")
         .bind(id)
         .execute(&state.db)
@@ -679,9 +632,9 @@ pub async fn delete_song(
     Ok(Json(ApiResponse::ok(format!("已删除: {}", song.title))))
 }
 
-// ─── 歌曲列表（管理用，包含文件路径）─────────────────────
+// ─── 歌曲列表（管理用）─────────────────────────────────
 
-/// GET /api/admin/songs — 获取所有歌曲（包含完整信息供管理）
+/// GET /api/admin/songs — 获取所有歌曲
 pub async fn list_all_songs(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -697,7 +650,7 @@ pub async fn list_all_songs(
     Ok(Json(ApiResponse::ok(songs)))
 }
 
-// ─── 播放控制（通过 HTTP 向 C++ 引擎发送指令）───────────
+// ─── 播放控制 ──────────────────────────────────────────
 
 /// POST /api/admin/playlist/next — 切到下一首
 pub async fn skip_next(
@@ -735,7 +688,7 @@ pub async fn skip_prev(
     Ok(Json(ApiResponse::ok("已切到上一首".into())))
 }
 
-// ─── 批量下载（调用 music_dl.py）─────────────────────────
+// ─── 批量下载 ──────────────────────────────────────────
 
 /// POST /api/admin/download — 开始批量下载
 pub async fn start_download(
@@ -750,7 +703,6 @@ pub async fn start_download(
         return Err(AppError::BadRequest("歌单内容不能为空".into()));
     }
 
-    // 检查是否已有下载任务在运行
     {
         let status = download_state().lock().unwrap_or_else(|e| e.into_inner());
         if status.running {
@@ -761,13 +713,11 @@ pub async fn start_download(
     let quality = body.quality.unwrap_or_else(|| "exhigh".into());
     let format = body.format.unwrap_or_else(|| "mp3".into());
 
-    // 将歌单写入临时文件
     let tmpdir = std::env::temp_dir();
     let playlist_file = tmpdir.join("radio_download_playlist.txt");
     std::fs::write(&playlist_file, &playlist)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("写入临时文件失败: {}", e)))?;
 
-    // 更新下载状态
     {
         let mut status = download_state().lock().unwrap_or_else(|e| e.into_inner());
         status.running = true;
@@ -781,7 +731,7 @@ pub async fn start_download(
 
     let dl_path = music_dl_path();
     let settings_path = ncm_secrets_path();
-    // 异步执行下载
+
     tokio::spawn(async move {
         let result = std::process::Command::new("python3")
             .arg(&dl_path)
@@ -804,8 +754,6 @@ pub async fn start_download(
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 status.log = format!("{}\n{}", stdout, stderr);
                 status.running = false;
-
-                // 清理临时文件
                 std::fs::remove_file(&playlist_path).ok();
             }
             Err(e) => {
@@ -831,16 +779,12 @@ pub async fn download_status(
 
 // ─── 网易云账号设置 ───────────────────────────────────────
 
-/// 网易云设置文件路径（与 C++ 引擎共用）
-/// 默认查找工作目录下的 secrets.json
 fn ncm_secrets_path() -> std::path::PathBuf {
     std::env::var("NCM_SECRETS_PATH")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("secrets.json"))
 }
 
-/// music_dl.py 脚本路径
-/// 默认查找工作目录下的 music_dl.py
 fn music_dl_path() -> std::path::PathBuf {
     std::env::var("MUSIC_DL_PATH")
         .map(std::path::PathBuf::from)
@@ -948,7 +892,6 @@ pub async fn test_ncm_login(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let _admin = get_admin(&_state, &headers).await?;
 
-    // 调用 music_dl.py 的测试功能
     let result = std::process::Command::new("python3")
         .arg(music_dl_path())
         .arg("--verify-login")
@@ -980,9 +923,9 @@ pub async fn test_ncm_login(
     }
 }
 
-// ─── 退出登录（管理面板）─────────────────────────────────
+// ─── 退出登录 ──────────────────────────────────────────
 
-/// POST /api/admin/logout — 退出登录（前端清除 JWT token 即可，此为预留端点）
+/// POST /api/admin/logout — 退出登录（前端清除 token 即可）
 pub async fn logout(
     State(_state): State<Arc<AppState>>,
     _headers: HeaderMap,

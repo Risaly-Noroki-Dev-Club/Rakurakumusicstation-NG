@@ -1,14 +1,12 @@
-/// 认证路由：注册、登录、获取当前用户。
+/// 设备认证路由：获取当前设备信息、设置显示名称、申请管理员。
 
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
-use crate::models::{
-    ApiResponse, AuthResponse, LoginRequest, RegisterRequest,
-};
+use crate::models::{ApiResponse, ClaimAdminRequest, SetDisplayNameRequest};
 use axum::{
     extract::State,
-    http::{header, HeaderMap},
+    http::HeaderMap,
     routing::{get, post},
     Json, Router,
 };
@@ -16,121 +14,66 @@ use std::sync::Arc;
 
 pub fn auth_routes() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/register", post(register))
-        .route("/login", post(login))
         .route("/me", get(get_me))
+        .route("/name", post(set_display_name))
+        .route("/claim-admin", post(claim_admin))
 }
 
-/// POST /api/auth/register
-async fn register(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<RegisterRequest>,
-) -> Result<Json<ApiResponse<AuthResponse>>, AppError> {
-    // 验证输入
-    if req.username.len() < 3 || req.username.len() > 32 {
-        return Err(AppError::BadRequest("Username must be 3-32 characters".into()));
-    }
-    if req.password.len() < 6 {
-        return Err(AppError::BadRequest("Password must be at least 6 characters".into()));
-    }
-
-    // 哈希密码
-    let password_hash = auth::hash_password(&req.password)?;
-
-    // 在事务中检查重复用户名并插入，避免 TOCTOU 竞态条件
-    let mut tx = state.db.begin().await?;
-
-    let existing = sqlx::query_as::<_, (i64,)>("SELECT id FROM users WHERE username = ?")
-        .bind(&req.username)
-        .fetch_optional(&mut *tx)
-        .await?;
-
-    if existing.is_some() {
-        return Err(AppError::Conflict("Username already taken".into()));
-    }
-
-    let result = sqlx::query(
-        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'user')"
-    )
-    .bind(&req.username)
-    .bind(&password_hash)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-
-    let user_id = result.last_insert_rowid();
-
-    // 生成 JWT
-    let user = crate::models::User {
-        id: user_id,
-        username: req.username.clone(),
-        password_hash,
-        role: "user".into(),
-        banned_until: None,
-        created_at: chrono::Utc::now().naive_utc(),
-    };
-
-    let token = auth::generate_token(&user, &state.jwt_secret, state.config.jwt.expiry_hours)?;
-
-    Ok(Json(ApiResponse::ok(AuthResponse {
-        token,
-        user: user.into(),
-    })))
-}
-
-/// POST /api/auth/login
-async fn login(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<LoginRequest>,
-) -> Result<Json<ApiResponse<AuthResponse>>, AppError> {
-    let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE username = ?")
-        .bind(&req.username)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized)?;
-
-    // 验证密码
-    if !auth::verify_password(&req.password, &user.password_hash)? {
-        return Err(AppError::Unauthorized);
-    }
-
-    // 检查是否被封禁
-    if user.is_banned() {
-        return Err(AppError::Banned);
-    }
-
-    let token = auth::generate_token(&user, &state.jwt_secret, state.config.jwt.expiry_hours)?;
-
-    tracing::info!("User '{}' logged in", user.username);
-
-    Ok(Json(ApiResponse::ok(AuthResponse {
-        token,
-        user: user.into(),
-    })))
-}
-
-/// GET /api/auth/me — 从 JWT 获取当前用户信息
+/// GET /api/auth/me — 获取当前设备信息
 async fn get_me(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<ApiResponse<crate::models::UserPublic>>, AppError> {
-    let secret = &state.jwt_secret;
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    let user = auth::require_device_auth(&headers, &state.db).await?;
 
-    // 从 Authorization 头提取 JWT
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
+    Ok(Json(ApiResponse::ok(serde_json::json!({
+        "id": user.id,
+        "display_name": user.display_name,
+        "role": user.role,
+        "device_token": user.device_token,
+    }))))
+}
+
+/// POST /api/auth/name — 设置当前设备的显示名称
+async fn set_display_name(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<SetDisplayNameRequest>,
+) -> Result<Json<ApiResponse<String>>, AppError> {
+    let user = auth::require_device_auth(&headers, &state.db).await?;
+
+    let name = req.display_name.trim();
+    if name.is_empty() {
+        return Err(AppError::BadRequest("Display name cannot be empty".into()));
+    }
+    if name.len() > 32 {
+        return Err(AppError::BadRequest("Display name must be 32 characters or less".into()));
+    }
+
+    sqlx::query("UPDATE device_users SET display_name = ? WHERE id = ?")
+        .bind(name)
+        .bind(user.id)
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(ApiResponse::ok(format!("Display name set to '{}'", name))))
+}
+
+/// POST /api/auth/claim-admin — 使用管理员设置令牌升级为管理员
+async fn claim_admin(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<ClaimAdminRequest>,
+) -> Result<Json<ApiResponse<String>>, AppError> {
+    let device_token = auth::extract_device_token(&headers)
         .ok_or(AppError::Unauthorized)?;
 
-    let claims = auth::validate_token(token, secret)?;
+    auth::claim_admin(
+        &state.db,
+        &device_token,
+        &req.admin_setup_token,
+        &state.config.device.admin_setup_token,
+    ).await?;
 
-    let user = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = ?")
-        .bind(claims.sub.parse::<i64>().map_err(|_| AppError::Unauthorized)?)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-
-    Ok(Json(ApiResponse::ok(user.into())))
+    Ok(Json(ApiResponse::ok("Admin privileges granted".into())))
 }

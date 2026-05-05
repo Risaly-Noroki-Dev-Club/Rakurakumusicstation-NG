@@ -8,7 +8,7 @@ pub mod admin;
 pub mod favorites;
 pub mod ncm;
 
-use axum::{Router, routing::{get, post}};
+use axum::{Router, routing::get};
 use crate::db::AppState;
 use std::sync::Arc;
 
@@ -17,10 +17,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         // WebSocket 端点
         .route("/ws", get(crate::websocket::ws_handler))
-        // 认证路由
+        // 音频流端点
+        .route("/stream", get(stream_handler))
+        // 设备认证路由
         .nest("/api/auth", auth::auth_routes())
-        // 初始化设置（首次运行）
-        .route("/api/setup", post(setup))
         // 歌曲库
         .nest("/api/songs", songs::song_routes())
         // 用户播放列表
@@ -29,7 +29,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/api/queue", queue::queue_routes())
         // 管理端点
         .nest("/api/admin", admin::admin_routes())
-        // 用户个人网易云账号
+        // 设备个人网易云账号
         .nest("/api/ncm", ncm::ncm_routes())
         // 收藏夹
         .nest("/api/favorites", favorites::favorites_routes())
@@ -37,12 +37,45 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/station", get(station_info))
         // 正在播放（公开）
         .route("/api/now-playing", get(queue::now_playing))
-        // 静态文件服务 + SPA 回退（unknown paths → index.html）
+        // 静态文件服务 + SPA 回退
         .fallback_service(
             tower_http::services::ServeDir::new("static")
                 .not_found_service(tower_http::services::ServeFile::new("static/index.html"))
         )
         .with_state(state)
+}
+
+/// GET /stream — 音频流端点，从环形缓冲区广播音频数据
+async fn stream_handler(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::response::Response {
+    use radio_engine::config::AUDIO_CHUNK_SIZE;
+
+    let (tx, response) = radio_engine::stream::create_stream_response();
+    let buffer = state.ring_buffer.clone();
+
+    tokio::spawn(async move {
+        let reader = buffer.create_reader();
+
+        let mut buf = vec![0u8; AUDIO_CHUNK_SIZE];
+        loop {
+            let available = reader.wait_for_data(100);
+            if available == 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                continue;
+            }
+
+            let to_read = std::cmp::min(buf.len(), available);
+            let n = reader.read(&mut buf[..to_read]);
+            if n > 0 {
+                if tx.send(bytes::Bytes::copy_from_slice(&buf[..n])).is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
+    response
 }
 
 /// GET /api/station — 公开的电台信息
@@ -56,7 +89,7 @@ async fn station_info(
     };
 
     let has_admin = sqlx::query_as::<_, (i64,)>(
-        "SELECT COUNT(*) FROM users WHERE role = 'admin'"
+        "SELECT COUNT(*) FROM device_users WHERE role = 'admin'"
     )
     .fetch_one(&state.db)
     .await
@@ -75,74 +108,4 @@ async fn station_info(
         "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
         "needs_setup": !has_admin,
     }))
-}
-
-/// POST /api/setup — 首次运行创建管理员账户
-async fn setup(
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    axum::Json(req): axum::Json<crate::models::RegisterRequest>,
-) -> Result<axum::Json<crate::models::ApiResponse<crate::models::AuthResponse>>, crate::error::AppError> {
-    use crate::auth;
-    use crate::error::AppError;
-
-    // 验证输入
-    if req.username.len() < 3 || req.username.len() > 32 {
-        return Err(AppError::BadRequest("Username must be 3-32 characters".into()));
-    }
-    if req.password.len() < 6 {
-        return Err(AppError::BadRequest("Password must be at least 6 characters".into()));
-    }
-
-    // 在事务中检查管理员、检查用户名冲突并插入，避免 TOCTOU 竞态条件
-    let mut tx = state.db.begin().await?;
-
-    let has_admin: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM users WHERE role = 'admin'"
-    )
-    .fetch_one(&mut *tx)
-    .await?;
-
-    if has_admin.0 > 0 {
-        return Err(AppError::Forbidden("Setup has already been completed".into()));
-    }
-
-    let existing = sqlx::query_as::<_, (i64,)>("SELECT id FROM users WHERE username = ?")
-        .bind(&req.username)
-        .fetch_optional(&mut *tx)
-        .await?;
-    if existing.is_some() {
-        return Err(AppError::Conflict("Username already taken".into()));
-    }
-
-    let password_hash = auth::hash_password(&req.password)?;
-
-    let result = sqlx::query(
-        "INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')"
-    )
-    .bind(&req.username)
-    .bind(&password_hash)
-    .execute(&mut *tx)
-    .await?;
-
-    tx.commit().await?;
-
-    let user_id = result.last_insert_rowid();
-
-    let user = crate::models::User {
-        id: user_id,
-        username: req.username.clone(),
-        password_hash,
-        role: "admin".into(),
-        banned_until: None,
-        created_at: chrono::Utc::now().naive_utc(),
-    };
-
-    let token = auth::generate_token(&user, &state.jwt_secret, state.config.jwt.expiry_hours)?;
-
-    tracing::info!("Initial setup completed: admin user '{}' created", user.username);
-
-    Ok(axum::Json(crate::models::ApiResponse::ok(crate::models::AuthResponse {
-        token,
-        user: user.into(),
-    })))
 }

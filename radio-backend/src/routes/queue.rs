@@ -36,8 +36,8 @@ async fn add_to_queue(
     headers: HeaderMap,
     Json(req): Json<AddToQueueRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
-    let item_id = queue_manager::add_to_queue(&state, req.song_id, user.id, &user.username).await?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
+    let item_id = queue_manager::add_to_queue(&state, req.song_id, device.id, &device.display_name).await?;
 
     Ok(Json(ApiResponse::ok(serde_json::json!({
         "queue_item_id": item_id,
@@ -51,13 +51,13 @@ async fn remove_queue_item(
     Path(item_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;    auth::require_admin(&user)?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
+    auth::require_admin(&device)?;
 
     queue_manager::remove_queue_item(&state.db, item_id).await?;
 
-    // 记录管理操作
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'remove_queue', ?)")
-        .bind(user.id)
+        .bind(device.id)
         .bind(format!("Removed queue item {}", item_id))
         .execute(&state.db)
         .await?;
@@ -72,12 +72,13 @@ async fn move_queue_item(
     headers: HeaderMap,
     Json(req): Json<MoveQueueItemRequest>,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;    auth::require_admin(&user)?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
+    auth::require_admin(&device)?;
 
     queue_manager::move_queue_item(&state.db, item_id, req.new_position).await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'move_queue', ?)")
-        .bind(user.id)
+        .bind(device.id)
         .bind(format!("Moved item {} to position {}", item_id, req.new_position))
         .execute(&state.db)
         .await?;
@@ -90,12 +91,13 @@ async fn skip_current(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;    auth::require_admin(&user)?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
+    auth::require_admin(&device)?;
 
     queue_manager::skip_current(&state).await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'skip_track', 'Skipped current track')")
-        .bind(user.id)
+        .bind(device.id)
         .execute(&state.db)
         .await?;
 
@@ -111,11 +113,9 @@ async fn get_history(
 }
 
 /// GET /api/now-playing — 当前曲目信息（公开）
-/// 此端点将 Redis 中最近的播放状态与数据库歌曲信息结合起来。
 pub async fn now_playing(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<NowPlaying>>, AppError> {
-    // 尝试从 queue_items 获取当前正在播放的歌曲
     let playing = sqlx::query_as::<_, crate::models::QueueItem>(
         "SELECT * FROM queue_items WHERE status = 'playing' ORDER BY position ASC LIMIT 1"
     )
@@ -144,7 +144,7 @@ pub async fn now_playing(
     let lyrics_line = lyrics_text
         .as_deref()
         .map(|t| crate::lyrics::Lyrics::parse(t))
-        .and_then(|l| l.line_at(0));  // HTTP fallback 无实时位置，默认第 0 行
+        .and_then(|l| l.line_at(0));
 
     let song_summary = song.as_ref().map(|s| s.clone().into());
     let duration_ms = song.as_ref().map(|s| s.duration_ms).unwrap_or(0);

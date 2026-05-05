@@ -58,14 +58,13 @@ createApp(App).use(router).mount('#app')
 ```
 
 **`src/App.vue`** — 根组件
-- Setup overlay（首次运行创建管理员）
-- Normal app layout：HeaderBar + NavTabs + `<router-view>` + AuthModal + ToastContainer
-- 生命周期：loadStationInfo → connectWebSocket → 认证 → 轮询
+- App layout：HeaderBar + NavTabs + `<router-view>` + ToastContainer
+- 生命周期：loadStationInfo → connectWebSocket → loadDeviceUser → 轮询
 
 **`src/store.ts`** — 全局状态
 ```
 reactive({
-  token, currentUser, stationName, needsSetup,
+  deviceUser, stationName,
   playbackState, lyricsLines, useFileMode,
   queue, history, searchQuery, searchResults,
   myPlaylists, toasts,
@@ -75,7 +74,7 @@ reactive({
 导出工具函数：`formatTime`, `toast`, `applyTheme`, `cycleTheme`, `applyStationColors`, `parseLyrics`
 
 **`src/api.ts`** — API 层
-- HTTP：fetch + JWT auth headers
+- HTTP：fetch + httpOnly device_token cookie
 - WebSocket：自动重连（指数退避，最多 20 次）
 - 轮询：队列 5s、播放状态 2s（WebSocket 断开时兜底）
 - 播放控制：推流模式 / 推文件模式切换
@@ -95,7 +94,7 @@ reactive({
 
 ```
 App.vue
-├── HeaderBar.vue              # 站名、主题切换、用户信息、登录/退出
+├── HeaderBar.vue              # 站名、主题切换、设备信息、管理员提权
 ├── NavTabs.vue                # 导航标签栏（router-link）
 ├── <router-view>
 │   ├── PlayerView.vue         # 播放页面（封面、进度条、audio、歌词）
@@ -109,7 +108,6 @@ App.vue
 │       ├── AdminNcm.vue       # 🎵 网易云（复用 NcmSettings 组件）
 │       ├── AdminSettings.vue  # ⚙️ 系统设置
 │       └── AdminStats.vue     # 📊 统计
-├── AuthModal.vue              # 登录/注册弹窗
 ├── ToastContainer.vue         # 通知提示
 ├── StatusMessage.vue          # 通用状态提示（替换内联样式）
 └── NcmSettings.vue            # 网易云配置（管理员 + 用户复用）
@@ -150,8 +148,7 @@ App.vue
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| Rust 后端（API + WebSocket + 静态文件） | **2241** | 前端从此端口加载 |
-| C++ 音频引擎（音频流 + 命令 + 状态） | **2240** | 无头模式 |
+| Rust 后端（API + WebSocket + 音频流 + 静态文件） | **2241** | 前端从此端口加载 |
 | Vite 开发服务器 | **5173** | 仅开发时使用，代理 API 到 2241 |
 
 ### 开发代理
@@ -161,25 +158,26 @@ App.vue
 proxy: {
   '/api': 'http://localhost:2241',
   '/ws': { target: 'ws://localhost:2241', ws: true },
-  '/stream': 'http://localhost:2240',
+  '/stream': 'http://localhost:2241',
 }
 ```
 
 ### WebSocket 消息
 
-JSON，用 `type` 字段区分：`playback_state`, `queue_update`, `notice`, `ping`
+JSON，用 `type` 字段区分：`playback_state`, `queue_update`, `notice`, `ping`。
 
 ### HTTP API
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| `GET` | `/api/station` | — | 电台名、主题色 |
+| `GET` | `/api/station` | — | 电台名、主题色、流地址 |
 | `GET` | `/api/now-playing` | — | 当前曲目（HTTP 兜底） |
 | `GET` | `/api/songs?q=&limit=50` | — | 曲库搜索 |
-| `POST` | `/api/auth/register` | — | 注册 |
-| `POST` | `/api/auth/login` | — | 登录 → JWT |
-| `GET` `POST` | `/api/queue` | JWT/— | 队列 |
-| `GET` `POST` `DELETE` | `/api/playlists` | JWT | 歌单 |
+| `GET` | `/api/user/me` | Device | 当前设备信息 |
+| `POST` | `/api/user/display-name` | Device | 设置显示名称 |
+| `POST` | `/api/user/promote` | — | 通过 admin_setup_token 提权 |
+| `GET` `POST` | `/api/queue` | Device/— | 队列 |
+| `GET` `POST` `DELETE` | `/api/playlists` | Device | 歌单 |
 | `*` | `/api/admin/*` | Admin | 管理操作 |
 
 ---

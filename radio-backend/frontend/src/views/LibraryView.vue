@@ -5,7 +5,7 @@ import { debouncedSearch, addToQueue, downloadSong, uploadSong, loadMyPlaylists,
          loadUserNcmStatus, saveUserNcmSettings, testUserNcmLogin, onSearchInput } from '../api'
 
 onMounted(() => {
-  if (store.token) {
+  if (store.deviceUser) {
     loadMyPlaylists()
     loadUserNcmStatus()
   }
@@ -68,13 +68,13 @@ async function handleUpload() {
           </div>
           <div style="display:flex;gap:4px">
             <button class="btn btn-primary btn-small" @click="addToQueue(s.id)" title="投喂到电台">📻 点歌</button>
-            <button v-if="store.currentUser" class="btn btn-secondary btn-small" @click="downloadSong(s.id)" title="下载">⬇️</button>
+            <button v-if="store.deviceUser" class="btn btn-secondary btn-small" @click="downloadSong(s.id)" title="下载">⬇️</button>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="store.currentUser" class="card">
+    <div v-if="store.deviceUser" class="card">
       <h2>📤 上传歌曲</h2>
       <div class="upload-section">
         <input type="file" class="upload-file-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac" @change="handleFileSelect">
@@ -87,7 +87,7 @@ async function handleUpload() {
       }" v-text="store.uploadStatus"></div>
     </div>
 
-    <div v-if="store.currentUser" class="card">
+    <div v-if="store.deviceUser" class="card">
       <h2>📁 我的歌单</h2>
       <div v-if="store.myPlaylists.length === 0" style="text-align:center;color:var(--text-muted);padding:10px">还没有歌单</div>
       <div v-for="pl in store.myPlaylists" :key="pl.id" class="queue-item" style="cursor:default">
@@ -103,7 +103,7 @@ async function handleUpload() {
       </div>
     </div>
 
-    <div v-if="store.currentUser" class="card">
+    <div v-if="store.deviceUser" class="card">
       <h2>🎵 我的网易云账号</h2>
       <p style="color:var(--text-muted);font-size:0.85em;margin-bottom:12px">登录后可下载 VIP 歌曲。Cookie 方式更稳定，手机号方式可能触发验证码。</p>
       <div :class="['ncm-badge', store.userNcmBadgeClass]" v-text="store.userNcmBadge"></div>

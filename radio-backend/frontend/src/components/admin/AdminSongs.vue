@@ -2,14 +2,10 @@
 import { store, toast } from '../../store'
 import { getBackendUrl } from '../../api'
 
-function authHeaders() {
-  const h: Record<string, string> = {}; if (store.token) h.Authorization = "Bearer " + store.token; return h
-}
-
 async function adminRescanSongs() {
   toast('正在重新扫描...', 'info')
   try {
-    await fetch(getBackendUrl() + '/api/admin/rescan-songs', { method: 'POST', headers: authHeaders() })
+    await fetch(getBackendUrl() + '/api/admin/rescan-songs', { method: 'POST' })
     toast('扫描完成', 'success')
     loadSongs()
   } catch { toast('扫描失败', 'error') }
@@ -17,14 +13,14 @@ async function adminRescanSongs() {
 
 async function adminPlayNext() {
   try {
-    await fetch(getBackendUrl() + '/api/admin/playlist/next', { method: 'POST', headers: authHeaders() })
+    await fetch(getBackendUrl() + '/api/admin/playlist/next', { method: 'POST' })
     toast('已切到下一首', 'success')
   } catch { toast('请求失败', 'error') }
 }
 
 async function adminPlayPrev() {
   try {
-    await fetch(getBackendUrl() + '/api/admin/playlist/prev', { method: 'POST', headers: authHeaders() })
+    await fetch(getBackendUrl() + '/api/admin/playlist/prev', { method: 'POST' })
     toast('已切到上一首', 'success')
   } catch { toast('请求失败', 'error') }
 }
@@ -32,7 +28,7 @@ async function adminPlayPrev() {
 async function adminDeleteSong(id: number) {
   if (!confirm('确定删除此歌曲？')) return
   try {
-    const r = await fetch(getBackendUrl() + '/api/admin/songs/' + id, { method: 'DELETE', headers: authHeaders() })
+    const r = await fetch(getBackendUrl() + '/api/admin/songs/' + id, { method: 'DELETE' })
     const d = await r.json()
     toast(d.success ? '已删除' : (d.error || '删除失败'), d.success ? 'success' : 'error')
     if (d.success) loadSongs()
@@ -41,7 +37,7 @@ async function adminDeleteSong(id: number) {
 
 async function loadSongs() {
   try {
-    const r = await fetch(getBackendUrl() + '/api/admin/songs', { headers: authHeaders() })
+    const r = await fetch(getBackendUrl() + '/api/admin/songs')
     const d = await r.json()
     if (d.success) store.adminSongs = d.data || []
   } catch { /* ignore */ }

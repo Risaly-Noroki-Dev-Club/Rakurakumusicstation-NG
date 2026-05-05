@@ -3,13 +3,9 @@ import { store } from '../../store'
 import { getBackendUrl } from '../../api'
 import StatusMessage from '../StatusMessage.vue'
 
-function authHeaders() {
-  const h: Record<string, string> = {}; if (store.token) h.Authorization = "Bearer " + store.token; return h
-}
-
 async function loadSettings() {
   try {
-    const res = await fetch(getBackendUrl() + '/api/admin/settings', { headers: authHeaders() })
+    const res = await fetch(getBackendUrl() + '/api/admin/settings')
     const data = await res.json()
     if (!data.success) { store.settingsResult = data.error || '加载失败'; store.settingsResultType = 'error'; return }
     const s = data.data
@@ -41,7 +37,7 @@ async function saveSettings() {
     }
     const res = await fetch(getBackendUrl() + '/api/admin/settings', {
       method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
     })
     const data = await res.json()

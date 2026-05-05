@@ -2,72 +2,61 @@
 
 This file provides guidance for OpenCode sessions working in this repository.
 
-## Architecture
+## Architecture (v3.0)
 
-- **C++ Audio Engine** (`src/` directory, 7 modules) — port 2240
-  - Audio pipeline: ffmpeg → `BroadcastBuffer` → `StreamServer` (TCP clients)
-  - Endpoints: `/stream` (audio), `/health` (status), `POST /command` (receive commands), `GET /state` (playback state)
-  - Communication: HTTP between C++ engine and Rust backend (no Redis needed)
-  - Self-contained playlist scanner from `./media/`
-  - Key files: `src/main.cpp`, `src/radio_server.cpp`, `src/audio_player.cpp`
-- **Rust Backend** (`radio-backend/`) — port 2241
-  - JWT auth, multi-user, SQLite, playlist/queue management, WebSocket
-  - Drives C++ engine via HTTP `POST /command`; polls state via HTTP `GET /state`
-  - Static web UI in `radio-backend/static/` (Vue 3 CDN SPA — no build tools)
+- **Radio Engine** (`radio-engine/` crate) — embedded Rust audio engine
+  - Audio pipeline: ffmpeg → `RingBuffer` → stream (TCP clients)
+  - Provides: `RingBuffer`, `Player`, playlists, metadata extraction
+  - Embedded as a local crate inside `radio-backend` (no separate process)
+- **Rust Backend** (`radio-backend/`) — single binary, port 2241
+  - Device-based auth (httpOnly `device_token` cookie), admin via `admin_setup_token`
+  - SQLite, playlist/queue management, WebSocket, lyrics
+  - Embeds `radio-engine` — no external C++ process, no HTTP inter-process communication
+  - Static web UI in `radio-backend/static/` (Vue 3 SFC + Vite + TypeScript)
+- **Legacy C++ Engine** (`legacy/cpp-engine/`) — archived, not built or used
 
 ## Build
 
 ```bash
-./build_release.sh               # Full build (C++ + Rust, auto-downloads crow_all.h)
-./build_release.sh --no-crow     # Skip crow_all.h download (fail if missing)
-./build_release.sh --skip-rust   # C++ only
-
-# Debug build — C++ audio engine
-make debug
-
-# Release build — C++ audio engine
-make
-
-# Build hiredis (one-time)
-make hiredis
+./build_release.sh               # Full build (Rust backend + engine)
 ```
 
-- Source files: `src/*.cpp` + `src/*.hpp` (8 compilation units, header-only where simple).
-- Link flags `-lssl -lcrypto` are required (`crow_all.h` uses them).
-- C++17 is required.
-- Release build adds `-O3 -flto -march=native -w`; debug build omits `-w`.
+- Source files: `radio-engine/src/*.rs` (7 modules) + `radio-backend/src/*.rs` (9 modules).
+- The build script requires `cargo` and `ffmpeg` (runtime dependency, not build-time).
+- Build output: `dist/radio-backend` (single binary), `dist/static/`, `dist/start.sh`, `dist/stop.sh`.
+- `dist/config.toml` is seeded from `radio-backend/config.toml.example` on first build.
+- `dist/media/` and `dist/playlist_order.json` are preserved across rebuilds.
 
 ## Runtime
 
 ```bash
 cd dist
-./start.sh         # starts both C++ engine + Rust backend (nohup), writes .server.pid and .rust-server.pid
-./stop.sh          # stops both services, reads PID files, pgrep fallback cleanup
+./start.sh         # starts radio-backend (nohup), writes .server.pid
+./stop.sh          # stops the service, reads PID file, pgrep fallback
 ```
 
-- The C++ engine must run from inside `dist/` (or any dir containing `media/`).
-- `build_release.sh` preserves `dist/media/` and `dist/playlist_order.json` across rebuilds.
+- The server must run from inside `dist/` (or any dir containing `media/`).
+- `.server.pid` is the daemon lifecycle mechanism (single process, single PID file).
 - `playlist_order.json` is created at runtime on first run; no seed file exists.
-- `.server.pid` and `.rust-server.pid` are the daemon lifecycle mechanism.
 
 ## Key invariants
 
-- `playlist_` (filenames) and `playlist_metadata_` (TrackMetadata) are parallel vectors; any mutation must be mirrored under `playlist_mutex_`.
-- `BroadcastBuffer` capacity must be a power of two (enforced at construction via `throw`).
-- All core classes (`RadioServer`, `BroadcastBuffer`, `StreamServer`, `AudioPlayer`, `WebServer`, `ClientConnection`) live in `src/*.hpp` + `src/*.cpp`.
+- `playlist_` (filenames) and `playlist_metadata_` (TrackMetadata) are parallel vectors in the radio-engine player; any mutation must be mirrored under the playlist lock.
+- `RingBuffer` capacity must be a power of two (enforced at construction).
+- All core engine types (`RingBuffer`, `Player`, `StreamServer`) live in `radio-engine/src/`.
+- The backend uses a `device_cookie_middleware` that auto-creates device users on first visit — every HTTP response sets or refreshes the httpOnly cookie.
 
 ## Known quirks
 
-### C++ engine
-- `crow_all.h` and `radioserver` (compiled binary at repo root) are build artifacts; delete before committing.
-- `dist/settings.json` contains credentials; never commit it.
-- HTTP-based command/state API replaces Redis — the engine runs standalone.
+### Audio engine (radio-engine)
+- The engine emits audio stream at `/stream` from the same HTTP server (port 2241), not a separate port.
+- Playlist scanning uses `ffmpeg` for metadata extraction (same as legacy C++ engine).
 
 ### Rust backend
-- **No Redis dependency** — C++ engine communication uses HTTP (`POST /command`, `GET /state`).
-- **No Axum auth middleware** — every protected handler calls `require_auth_from_headers()` manually.
-- **JWT secret defaults to a hardcoded dev value** (`radio-backend-dev-secret-change-in-production`). Must override via `config.toml` `[jwt].secret` or `RADIO_JWT_SECRET` env var.
-- **Admin seed password is a placeholder** — the hash in `migrations/002_seed_defaults.sql` is all `A` characters. The admin user cannot log in until a real password hash is inserted or the register endpoint is used.
+- **Device-based auth** — no passwords, no JWT. Each browser/device gets a `device_token` cookie. Admin is promoted via `admin_setup_token` (configure in `config.toml`).
+- **No Redis dependency** — engine is embedded in-process.
+- **No Axum auth middleware** — every protected handler calls `require_auth_from_headers()` or uses `AuthUser` extractor.
+- **Admin setup token** — configured in `config.toml` `[device].admin_setup_token`. Must be set before first run.
 - **Settings save but don't hot-reload** — `POST /api/admin/settings` writes `config.toml` but changes take effect only after restart.
 - **Rescan needs `ffprobe`** on PATH to extract audio duration metadata.
 - **Download feature needs `music_dl.py`** at a path configured via `MUSIC_DL_PATH` env var.

@@ -1,6 +1,5 @@
 /// 应用配置，从 config.toml 加载，支持通过环境变量覆盖。
-/// 环境变量使用 `RADIO_` 前缀和大写路径表示法
-/// （例如 `RADIO_SERVER_PORT` 覆盖 `[server] port`）。
+/// 环境变量使用 `RADIO_` 前缀和大写路径表示法。
 
 use serde::Deserialize;
 
@@ -9,7 +8,7 @@ pub struct AppConfig {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     pub audio_engine: AudioEngineConfig,
-    pub jwt: JwtConfig,
+    pub device: DeviceConfig,
     pub queue: QueueConfig,
     pub station: StationConfig,
     pub logging: LoggingConfig,
@@ -31,8 +30,6 @@ pub struct DatabaseConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AudioEngineConfig {
-    #[serde(default = "default_engine_base_url")]
-    pub base_url: String,
     #[serde(default = "default_media_path")]
     pub media_path: String,
     /// 音频流 URL — 可以是绝对路径 (http://...) 或相对路径 (/stream)。
@@ -42,42 +39,30 @@ pub struct AudioEngineConfig {
 }
 
 impl AudioEngineConfig {
-    /// 将 stream_base 解析为绝对 URL。
+    /// 将 stream_base 解析为完整路径（相对路径直接返回）。
     pub fn resolve_stream_url(&self) -> String {
         if self.stream_base.starts_with("http://") || self.stream_base.starts_with("https://") {
             self.stream_base.clone()
         } else {
-            let base = self.base_url.trim_end_matches('/');
-            let path = self.stream_base.trim_start_matches('/');
-            format!("{}/{}", base, path)
+            self.stream_base.clone()
         }
     }
 
     /// 构建当前播放曲目的文件 URL。
     pub fn resolve_file_url(&self, song_id: i64) -> String {
-        let base = self.base_url.trim_end_matches('/');
-        format!("{}/file/{}", base, song_id)
-    }
-
-    /// 返回 C++ 引擎的 state 端点 URL。
-    pub fn state_url(&self) -> String {
-        let base = self.base_url.trim_end_matches('/');
-        format!("{}/state", base)
-    }
-
-    /// 返回 C++ 引擎的 command 端点 URL。
-    pub fn command_url(&self) -> String {
-        let base = self.base_url.trim_end_matches('/');
-        format!("{}/command", base)
+        format!("/api/songs/{}/file", song_id)
     }
 }
 
+/// 设备身份验证配置
 #[derive(Debug, Clone, Deserialize)]
-pub struct JwtConfig {
-    #[serde(default = "default_jwt_secret")]
-    pub secret: String,
-    #[serde(default = "default_expiry_hours")]
-    pub expiry_hours: u64,
+pub struct DeviceConfig {
+    /// Cookie 最大存活天数
+    #[serde(default = "default_cookie_max_age_days")]
+    pub cookie_max_age_days: u64,
+    /// 管理员设置令牌（在 claim-admin 端点中输入此令牌以升级为管理员）
+    #[serde(default = "default_admin_setup_token")]
+    pub admin_setup_token: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -115,11 +100,10 @@ pub struct LoggingConfig {
 fn default_host() -> String { "0.0.0.0".into() }
 fn default_port() -> u16 { 2241 }
 fn default_sqlite_url() -> String { "sqlite://data/radio.db?mode=rwc".into() }
-fn default_engine_base_url() -> String { "http://127.0.0.1:2240".into() }
 fn default_media_path() -> String { "./media".into() }
 fn default_stream_base() -> String { "/stream".into() }
-fn default_jwt_secret() -> String { "radio-backend-dev-secret-change-in-production".into() }
-fn default_expiry_hours() -> u64 { 24 }
+fn default_cookie_max_age_days() -> u64 { 365 }
+fn default_admin_setup_token() -> String { "change-me-in-production".into() }
 fn default_max_queue_size() -> usize { 100 }
 fn default_max_user_submissions() -> usize { 3 }
 fn default_rate_limit_window() -> u64 { 300 }
@@ -136,7 +120,6 @@ impl AppConfig {
         let mut config: Self = toml::from_str(&content)?;
 
         if let Ok(v) = std::env::var("RADIO_DATABASE_URL") { config.database.url = v; }
-        if let Ok(v) = std::env::var("RADIO_JWT_SECRET") { config.jwt.secret = v; }
         if let Ok(v) = std::env::var("RADIO_SERVER_PORT") {
             config.server.port = v.parse().unwrap_or(config.server.port);
         }
@@ -144,6 +127,7 @@ impl AppConfig {
         if let Ok(v) = std::env::var("RADIO_MEDIA_PATH") { config.audio_engine.media_path = v; }
         if let Ok(v) = std::env::var("RADIO_STREAM_BASE") { config.audio_engine.stream_base = v; }
         if let Ok(v) = std::env::var("RADIO_STATION_NAME") { config.station.name = v; }
+        if let Ok(v) = std::env::var("RADIO_ADMIN_SETUP_TOKEN") { config.device.admin_setup_token = v; }
 
         Ok(config)
     }

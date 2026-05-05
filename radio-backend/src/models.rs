@@ -5,20 +5,19 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-// ─── 用户 ───────────────────────────────────────────────────────
+// ─── 设备用户 ───────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct User {
+pub struct DeviceUser {
     pub id: i64,
-    pub username: String,
-    #[serde(skip_serializing)]
-    pub password_hash: String,
+    pub device_token: String,
+    pub display_name: String,
     pub role: String,
     pub banned_until: Option<NaiveDateTime>,
     pub created_at: NaiveDateTime,
 }
 
-impl User {
+impl DeviceUser {
     pub fn is_admin(&self) -> bool {
         self.role == "admin"
     }
@@ -29,28 +28,10 @@ impl User {
             None => false,
         }
     }
-}
 
-/// 面向公众的用户信息（不含密码哈希）。
-#[derive(Debug, Serialize)]
-pub struct UserPublic {
-    pub id: i64,
-    pub username: String,
-    pub role: String,
-    pub is_banned: bool,
-    pub created_at: NaiveDateTime,
-}
-
-impl From<User> for UserPublic {
-    fn from(u: User) -> Self {
-        let is_banned = u.is_banned();
-        Self {
-            id: u.id,
-            username: u.username,
-            role: u.role,
-            is_banned,
-            created_at: u.created_at,
-        }
+    /// 生成默认显示名称 "Listener-XXXX"
+    pub fn default_display_name(id: i64) -> String {
+        format!("Listener-{:04}", id % 10000)
     }
 }
 
@@ -103,7 +84,7 @@ impl From<Song> for SongSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Playlist {
     pub id: i64,
-    pub user_id: i64,
+    pub device_user_id: i64,
     pub name: String,
     pub is_public: bool,
     pub created_at: NaiveDateTime,
@@ -113,7 +94,7 @@ pub struct Playlist {
 #[derive(Debug, Serialize)]
 pub struct PlaylistWithCount {
     pub id: i64,
-    pub user_id: i64,
+    pub device_user_id: i64,
     pub name: String,
     pub is_public: bool,
     pub song_count: i64,
@@ -137,14 +118,14 @@ pub struct PlaylistSong {
 pub struct QueueItem {
     pub id: i64,
     pub song_id: i64,
-    pub user_id: i64,
-    pub status: String,       // 等待中 | 播放中 | 已播放 | 已跳过
+    pub device_user_id: i64,
+    pub status: String,       // pending | playing | played | skipped
     pub position: i32,
     pub added_at: NaiveDateTime,
     pub played_at: Option<NaiveDateTime>,
 }
 
-/// 为 API 响应丰富了歌曲和用户信息的队列条目。
+/// 为 API 响应丰富了歌曲和设备信息的队列条目。
 #[derive(Debug, Serialize)]
 pub struct QueueItemDisplay {
     pub id: i64,
@@ -161,7 +142,7 @@ pub struct QueueItemDisplay {
 pub struct PlayHistory {
     pub id: i64,
     pub song_id: i64,
-    pub user_id: Option<i64>,
+    pub device_user_id: Option<i64>,
     pub played_at: NaiveDateTime,
 }
 
@@ -181,47 +162,13 @@ pub struct AdminLog {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Favorite {
     pub id: i64,
-    pub user_id: i64,
+    pub device_user_id: i64,
     pub song_id: Option<i64>,
     pub playlist_id: Option<i64>,
     pub created_at: NaiveDateTime,
 }
 
-// ─── JWT Claims ─────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Claims {
-    /// Subject = 用户 ID，以字符串表示
-    pub sub: String,
-    /// 用于显示的用户名
-    pub username: String,
-    /// 用户角色
-    pub role: String,
-    /// 过期时间戳（自纪元以来的 UTC 秒数）
-    pub exp: usize,
-    /// 签发时间戳
-    pub iat: usize,
-}
-
 // ─── 请求 / 响应 DTO ────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub struct RegisterRequest {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct LoginRequest {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct AuthResponse {
-    pub token: String,
-    pub user: UserPublic,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct CreatePlaylistRequest {
@@ -247,12 +194,24 @@ pub struct MoveQueueItemRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct AdminActionRequest {
-    pub user_id: i64,
+    pub device_user_id: i64,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SetRoleRequest {
     pub role: String,
+}
+
+/// 设置 / 更新设备显示名称的请求
+#[derive(Debug, Deserialize)]
+pub struct SetDisplayNameRequest {
+    pub display_name: String,
+}
+
+/// 申请管理员身份的请求
+#[derive(Debug, Deserialize)]
+pub struct ClaimAdminRequest {
+    pub admin_setup_token: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -267,7 +226,7 @@ pub struct NowPlaying {
     pub file_url: Option<String>,
 }
 
-/// 从 C++ 引擎通过 HTTP 发送的播放状态消息。
+/// 从音频引擎发送的播放状态消息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackState {
     pub song_id: i64,
@@ -275,16 +234,15 @@ pub struct PlaybackState {
     pub position_ms: i64,
     pub duration_ms: i64,
     pub lyrics_line: Option<usize>,
-    pub status: String,       // 播放中 | 已停止 | 已暂停
+    pub status: String,       // playing | stopped | paused
     pub total_bytes_sent: u64,
     pub bitrate_kbps: u32,
     pub track_start_timestamp_ms: i64,
 }
 
-/// 通过 HTTP 发送给 C++ 音频引擎的命令。
+/// 发送给音频引擎的命令。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioCommand {
-    /// 命令类型：跳过、播放、停止、音量
     #[serde(rename = "type")]
     pub cmd_type: String,
     pub song_id: Option<i64>,
@@ -295,7 +253,6 @@ pub struct AudioCommand {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WsMessage {
-    /// 播放状态更新
     #[serde(rename = "playback_state")]
     PlaybackState {
         song_id: i64,
@@ -309,7 +266,6 @@ pub enum WsMessage {
         stream_url: String,
         file_url: Option<String>,
     },
-    /// 队列变更通知
     #[serde(rename = "queue_update")]
     QueueUpdate {
         action: String,
@@ -317,13 +273,11 @@ pub enum WsMessage {
         requested_by: Option<String>,
         queue_size: usize,
     },
-    /// 服务器通知（例如"歌曲已开始""曲目已跳过"）
     #[serde(rename = "notice")]
     Notice {
         message: String,
-        level: String,  // 信息、警告、错误
+        level: String,  // info | warning | error
     },
-    /// 心跳 ping - 客户端应回复 pong
     #[serde(rename = "ping")]
     Ping { timestamp: i64 },
 }
@@ -402,12 +356,12 @@ pub struct DownloadStatus {
     pub log: String,
 }
 
-// ─── 用户网易云账号 ──────────────────────────────────────────
+// ─── 网易云账号 ──────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct UserNcm {
     pub id: i64,
-    pub user_id: i64,
+    pub device_user_id: i64,
     pub ncm_cookie: String,
     pub ncm_phone: String,
     pub ncm_password: String,

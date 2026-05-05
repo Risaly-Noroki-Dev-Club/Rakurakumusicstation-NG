@@ -1,11 +1,10 @@
-export interface User {
+export interface DeviceUser {
   id: number
-  username: string
+  display_name: string
   role: string
-  password_hash?: string
-  is_banned?: boolean
-  banned_until?: string | null
+  device_token: string
   created_at?: string
+  banned_until?: string | null
 }
 
 export interface Song {
@@ -60,11 +59,6 @@ export interface ApiResponse<T = unknown> {
   success: boolean
   data?: T
   error?: string
-}
-
-export interface AuthResponse {
-  token: string
-  user: User
 }
 
 export interface StationInfo {

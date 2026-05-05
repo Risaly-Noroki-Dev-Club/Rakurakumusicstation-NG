@@ -1,4 +1,4 @@
-/// 用户个人网易云账号路由：设置、查看、测试个人网易云凭据。
+/// 设备个人网易云账号路由：设置、查看、测试个人网易云凭据。
 
 use crate::auth;
 use crate::db::AppState;
@@ -19,30 +19,29 @@ pub fn ncm_routes() -> Router<Arc<AppState>> {
 }
 
 /// 临时 secrets.json 路径（用于测试登录时传递给 music_dl.py）
-fn user_ncm_secrets(user: &crate::models::UserNcm) -> serde_json::Value {
+fn user_ncm_secrets(ncm: &crate::models::UserNcm) -> serde_json::Value {
     let mut secrets = serde_json::json!({
-        "ncm_cookie": user.ncm_cookie,
-        "ncm_phone": user.ncm_phone,
-        "ncm_password": user.ncm_password,
+        "ncm_cookie": ncm.ncm_cookie,
+        "ncm_phone": ncm.ncm_phone,
+        "ncm_password": ncm.ncm_password,
     });
-    // 清理空值
     if let Some(map) = secrets.as_object_mut() {
         map.retain(|_, v| !v.as_str().map(|s| s.is_empty()).unwrap_or(false));
     }
     secrets
 }
 
-/// GET /api/ncm — 获取当前用户的网易云账号状态
+/// GET /api/ncm — 获取当前设备的网易云账号状态
 pub async fn get_ncm(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<NcmStatus>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
 
     let ncm = sqlx::query_as::<_, crate::models::UserNcm>(
-        "SELECT * FROM user_ncm WHERE user_id = ?"
+        "SELECT * FROM user_ncm WHERE device_user_id = ?"
     )
-    .bind(user.id)
+    .bind(device.id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -69,19 +68,18 @@ pub async fn get_ncm(
     }
 }
 
-/// POST /api/ncm — 保存当前用户的网易云账号设置
+/// POST /api/ncm — 保存当前设备的网易云账号设置
 pub async fn save_ncm(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(body): Json<SaveNcmRequest>,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
 
-    // 查询已有记录
     let existing = sqlx::query_as::<_, crate::models::UserNcm>(
-        "SELECT * FROM user_ncm WHERE user_id = ?"
+        "SELECT * FROM user_ncm WHERE device_user_id = ?"
     )
-    .bind(user.id)
+    .bind(device.id)
     .fetch_optional(&state.db)
     .await?;
 
@@ -90,26 +88,24 @@ pub async fn save_ncm(
     let ncm_password = body.password.unwrap_or_default().trim().to_string();
 
     if let Some(record) = existing {
-        // 更新：只更新非空字段
         let cookie = if !ncm_cookie.is_empty() { &ncm_cookie } else { &record.ncm_cookie };
         let phone = if !ncm_phone.is_empty() { &ncm_phone } else { &record.ncm_phone };
         let pwd = if !ncm_password.is_empty() { &ncm_password } else { &record.ncm_password };
 
         sqlx::query(
-            "UPDATE user_ncm SET ncm_cookie = ?, ncm_phone = ?, ncm_password = ?, updated_at = datetime('now') WHERE user_id = ?"
+            "UPDATE user_ncm SET ncm_cookie = ?, ncm_phone = ?, ncm_password = ?, updated_at = datetime('now') WHERE device_user_id = ?"
         )
         .bind(cookie)
         .bind(phone)
         .bind(pwd)
-        .bind(user.id)
+        .bind(device.id)
         .execute(&state.db)
         .await?;
     } else {
-        // 插入
         sqlx::query(
-            "INSERT INTO user_ncm (user_id, ncm_cookie, ncm_phone, ncm_password) VALUES (?, ?, ?, ?)"
+            "INSERT INTO user_ncm (device_user_id, ncm_cookie, ncm_phone, ncm_password) VALUES (?, ?, ?, ?)"
         )
-        .bind(user.id)
+        .bind(device.id)
         .bind(&ncm_cookie)
         .bind(&ncm_phone)
         .bind(&ncm_password)
@@ -120,17 +116,17 @@ pub async fn save_ncm(
     Ok(Json(ApiResponse::ok("保存成功".into())))
 }
 
-/// POST /api/ncm/test — 测试当前用户的网易云登录
+/// POST /api/ncm/test — 测试当前设备的网易云登录
 pub async fn test_ncm(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let device = auth::require_device_auth(&headers, &state.db).await?;
 
     let ncm = sqlx::query_as::<_, crate::models::UserNcm>(
-        "SELECT * FROM user_ncm WHERE user_id = ?"
+        "SELECT * FROM user_ncm WHERE device_user_id = ?"
     )
-    .bind(user.id)
+    .bind(device.id)
     .fetch_optional(&state.db)
     .await?
     .ok_or_else(|| AppError::BadRequest("请先配置网易云账号".into()))?;
@@ -139,9 +135,8 @@ pub async fn test_ncm(
         return Err(AppError::BadRequest("请先配置网易云账号".into()));
     }
 
-    // 写入临时 secrets.json
     let secrets = user_ncm_secrets(&ncm);
-    let tmp_path: std::path::PathBuf = std::env::temp_dir().join(format!("radio_ncm_test_{}.json", user.id));
+    let tmp_path: std::path::PathBuf = std::env::temp_dir().join(format!("radio_ncm_test_{}.json", device.id));
     let content = serde_json::to_string(&secrets)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("序列化失败: {}", e)))?;
     std::fs::write(&tmp_path, content)
@@ -157,7 +152,6 @@ pub async fn test_ncm(
         .arg(&tmp_path)
         .output();
 
-    // 清理
     std::fs::remove_file(&tmp_path).ok();
 
     match result {

@@ -21,7 +21,7 @@ onMounted(() => { refreshQueue() })
             </span>
             点歌: {{ item.requested_by }}
             <button
-              v-if="store.currentUser?.role === 'admin' && item.status !== 'playing'"
+              v-if="store.deviceUser?.role === 'admin' && item.status !== 'playing'"
               class="btn btn-danger btn-small" style="margin-left:8px"
               @click="removeQueueItem(item.id)">移除</button>
           </div>

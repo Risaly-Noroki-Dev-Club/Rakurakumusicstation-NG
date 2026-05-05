@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import type {
-  User, Song, QueueItem, PlaybackState, LyricsLine,
+  DeviceUser, Song, QueueItem, PlaybackState, LyricsLine,
   Toast, Playlist, AdminStats, ThemeName, NcmStatus
 } from './types'
 
@@ -13,18 +13,9 @@ function getInitialThemeIndex(): number {
 }
 
 export interface Store {
-  token: string | null
-  currentUser: User | null
+  deviceUser: DeviceUser | null
   stationName: string
   needsSetup: boolean
-  setupUsername: string
-  setupPassword: string
-  setupError: string
-  showAuth: boolean
-  authMode: 'login' | 'register'
-  authError: string
-  authUsername: string
-  authPassword: string
   themeIdx: number
   coverLoadError: boolean
   playbackState: PlaybackState
@@ -36,7 +27,7 @@ export interface Store {
   searchResults: Song[]
   myPlaylists: Playlist[]
   newPlaylistName: string
-  users: User[]
+  users: DeviceUser[]
   adminLogs: Array<{ created_at: string; action: string; details: string }>
   adminSongs: Song[]
   adminStats: AdminStats | null
@@ -79,18 +70,9 @@ export interface Store {
 }
 
 export const store: Store = reactive({
-  token: localStorage.getItem('radio_token') || null,
-  currentUser: null as User | null,
+  deviceUser: null as DeviceUser | null,
   stationName: '电台',
   needsSetup: false,
-  setupUsername: '',
-  setupPassword: '',
-  setupError: '',
-  showAuth: false,
-  authMode: 'login' as 'login' | 'register',
-  authError: '',
-  authUsername: '',
-  authPassword: '',
   themeIdx: getInitialThemeIndex(),
   coverLoadError: false,
   playbackState: {
@@ -105,7 +87,7 @@ export const store: Store = reactive({
   searchResults: [] as Song[],
   myPlaylists: [] as Playlist[],
   newPlaylistName: '',
-  users: [] as User[],
+  users: [] as DeviceUser[],
   adminLogs: [],
   adminSongs: [] as Song[],
   adminStats: null,

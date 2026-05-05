@@ -1,6 +1,6 @@
 [package]
 name = "radio-backend"
-version = "2.3.0"
+version = "3.0.0-beta1"
 edition = "2021"
 description = "Rakuraku Music Station - Rust Business Backend"
 
@@ -15,23 +15,12 @@ tower-http = { version = "0.5", features = ["cors", "auth", "fs"] }
 
 # 数据库
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "migrate"] }
-# 如需 PostgreSQL 支持，切换 features:
-# sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid", "migrate"] }
-
-# HTTP 客户端（替代 Redis 用于与 C++ 音频引擎通信）
-reqwest = { version = "0.12", features = ["json"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# JWT 认证
-jsonwebtoken = "9"
-
-# 密码哈希（argon2id，最安全）
-argon2 = "0.5"
-
-# UUID 生成
+# UUID 生成（用于设备令牌）
 uuid = { version = "1", features = ["v4"] }
 
 # 日期/时间
@@ -58,3 +47,7 @@ base64 = "0.22"
 
 # 流 / 异步 trait
 futures-util = "0.3"
+bytes = "1"
+
+# 音频引擎（本地 crate）
+radio-engine = { path = "../radio-engine" }

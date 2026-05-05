@@ -10,24 +10,19 @@ port = 2241
 [database]
 # SQLite（默认，无需外部依赖）
 url = "sqlite://data/radio.db?mode=rwc"
-# 若使用 PostgreSQL：
-# url = "postgres://user:pass@localhost/radio"
 
 [audio_engine]
-# C++ 音频引擎的基础 URL（用于拼接相对 stream_base / file URL）
-base_url = "http://127.0.0.1:2240"
-# 媒体文件根目录（与 C++ 引擎共享）
+# 媒体文件根目录
 media_path = "./media"
-# 音频流地址 — 可以是绝对 URL 或相对路径：
-#   相对路径 "/stream" → 拼接为 "http://127.0.0.1:2240/stream"
-#   绝对路径 "http://192.168.1.100:2240/stream" → 直接使用
+# 音频流地址 — 相对路径 / 绝对 URL
 stream_base = "/stream"
 
-[jwt]
-# JWT 密钥（至少 32 个字符，生成命令：openssl rand -base64 32）
-secret = "change-me-to-a-random-string-32-chars"
-# Token 过期时间（小时）
-expiry_hours = 24
+[device]
+# Cookie 最大存活天数
+cookie_max_age_days = 365
+# 管理员设置令牌 — 在设备设置页输入此令牌以升级为管理员
+# 首次使用前请修改为自定义值
+admin_setup_token = "change-me-in-production"
 
 [queue]
 # 队列中最大歌曲数量
@@ -38,7 +33,6 @@ max_user_submissions = 3
 rate_limit_window_secs = 300
 
 [station]
-# 网页界面上显示的电台名称
 name = "Rakuraku Music Station"
 subtitle = "A Community Radio Powered by Everyone"
 primary_color = "#764ba2"
@@ -46,5 +40,4 @@ secondary_color = "#667eea"
 bg_color = "#f4f4f9"
 
 [logging]
-# 日志级别：trace、debug、info、warn、error
 level = "info"

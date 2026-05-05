@@ -65,6 +65,9 @@ radio-backend/frontend/node_modules/
 # 迁移文件哈希缓存（构建脚本用）
 radio-backend/.migration_hash
 
+# 发布压缩包
+*.tar.gz
+
 # 迁移遗留产物
 Rakurakumusicstation-NG/
 radio-backend/frontend/tsconfig.tsbuildinfo

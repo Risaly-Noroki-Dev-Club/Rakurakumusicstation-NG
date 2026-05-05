@@ -161,7 +161,7 @@ pub async fn upload_song(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let _user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let _user = auth::require_device_auth(&headers, &state.db).await?;
 
     let media_path = std::path::PathBuf::from(&state.config.audio_engine.media_path);
     std::fs::create_dir_all(&media_path)
@@ -252,7 +252,7 @@ pub async fn download_song(
     Path(id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let _user = auth::require_auth_from_headers(&headers, &state.db, &state.jwt_secret).await?;
+    let _user = auth::require_device_auth(&headers, &state.db).await?;
 
     let song = sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs WHERE id = ?")
         .bind(id)

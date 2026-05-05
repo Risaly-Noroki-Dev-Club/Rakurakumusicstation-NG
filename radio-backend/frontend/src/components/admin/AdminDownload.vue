@@ -4,10 +4,6 @@ import { store, toast } from '../../store'
 import { getBackendUrl } from '../../api'
 import StatusMessage from '../StatusMessage.vue'
 
-function authHeaders() {
-  const h: Record<string, string> = {}; if (store.token) h.Authorization = "Bearer " + store.token; return h
-}
-
 let downloadPoller: ReturnType<typeof setInterval> | null = null
 
 async function startDownload() {
@@ -23,7 +19,7 @@ async function startDownload() {
   store.downloadStatusType = 'info'
   try {
     const res = await fetch(getBackendUrl() + '/api/admin/download', {
-      method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playlist, quality: store.downloadQuality, format: store.downloadFormat })
     })
     const data = await res.json()
@@ -47,7 +43,7 @@ function pollDownload() {
   if (downloadPoller) clearInterval(downloadPoller)
   downloadPoller = setInterval(async () => {
     try {
-      const res = await fetch(getBackendUrl() + '/api/admin/download/status', { headers: authHeaders() })
+      const res = await fetch(getBackendUrl() + '/api/admin/download/status')
       const data = await res.json()
       if (data.success) {
         const d = data.data

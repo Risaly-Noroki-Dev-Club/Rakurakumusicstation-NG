@@ -48,12 +48,6 @@ onMounted(() => { syncFromStore(); loadStatus() })
 
 watch([activeTab, cookie, phone, password], () => syncToStore())
 
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = {}
-  if (store.token) h['Authorization'] = 'Bearer ' + store.token
-  return h
-}
-
 function showResult(msg: string, type: string) {
   result.value = msg
   resultType.value = type
@@ -62,7 +56,7 @@ function showResult(msg: string, type: string) {
 
 async function loadStatus() {
   try {
-    const res = await fetch(getBackendUrl() + props.apiPrefix, { headers: authHeaders() })
+    const res = await fetch(getBackendUrl() + props.apiPrefix)
     const d = await res.json()
     if (!d.success) return
     const data = d.data
@@ -89,7 +83,7 @@ async function saveNcm() {
   try {
     const res = await fetch(getBackendUrl() + props.apiPrefix, {
       method: 'POST',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     })
     const data = await res.json()
@@ -102,7 +96,7 @@ async function testNcm() {
   showResult('测试中...', 'info')
   try {
     const res = await fetch(getBackendUrl() + props.apiPrefix + '/test', {
-      method: 'POST', headers: authHeaders()
+      method: 'POST'
     })
     const data = await res.json()
     if (data.success) {

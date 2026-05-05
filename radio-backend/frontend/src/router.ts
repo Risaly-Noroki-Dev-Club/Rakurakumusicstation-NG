@@ -25,7 +25,7 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   if (to.meta.requiresAdmin) {
-    const user = store.currentUser
+    const user = store.deviceUser
     if (!user || user.role !== 'admin') {
       return { name: 'player' }
     }

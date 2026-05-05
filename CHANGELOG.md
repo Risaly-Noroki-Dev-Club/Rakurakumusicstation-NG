@@ -1,5 +1,48 @@
 # 更新日志
 
+## v3.0.0 — 2026-05-05
+
+### 重大架构变更：C++ 引擎被 Rust 重写替代
+
+- **全新 Rust 音频引擎** (`radio-engine/` crate) — 原 C++ 音频引擎（`legacy/cpp-engine/`，已归档不再使用）由 Rust 零拷贝环形缓冲区引擎替代。
+  - 音频管道：ffmpeg → `RingBuffer` → TCP 客户端流
+  - 播放列表扫描使用 ffmpeg 提取元数据（与旧版 C++ 引擎一致）
+  - 内嵌为 `radio-backend` 内的本地 crate（非独立进程）
+- **统一单二进制架构** — 不再有独立的 C++ 进程或通过 HTTP 进行进程间通信；引擎直接在 `radio-backend` 内运行。
+  - 音频流端点 `/stream` 现在由与 API 相同的 HTTP 服务器（端口 2241）提供服务，而非 C++ 引擎的端口 2240。
+  - 仅使用一个 PID 文件（`.server.pid`），管理单个进程。
+- **移除的依赖**：不再需要 `crow_all.h`、`Makefile`、`libssl-dev`、`wget`、`libasio-dev`。构建仅需 `cargo` + `ffmpeg`（运行时依赖）。
+
+### 认证方式：基于设备 → 取代 JWT/密码登录
+
+- **设备认证**（`migrations/004_device_auth.sql`）— 通过 httpOnly `device_token` cookie 实现无密码认证。
+  - 每台浏览器/设备在首次访问时自动注册设备用户。
+  - 通过 `admin_setup_token`（在 `config.toml` 中配置）将设备用户提升为管理员。
+  - 移除旧的基于密码的 `users` 表及其所有引用表。
+  - 前端不再需要登录/注册弹窗、JWT token 存储或密码字段。
+- **配置变更**：`[jwt]` 节 → 替换为 `[device]` 节（`cookie_max_age_days`、`admin_setup_token`）。
+- **移除的前端组件**：`AuthModal.vue`（登录/注册 UI 不再需要）。
+
+### 前端重构
+
+- `store.ts`：将 `token` + `currentUser`（基于 JWT）替换为 `deviceUser`（基于 cookie）。
+- `types.ts`：`User` → `DeviceUser`（`username` → `display_name`，新增 `device_token` 字段）。
+- `router.ts`：导航守卫现在检查 `deviceUser.role` 而非 `currentUser.role`。
+- `App.vue`：移除账户设置覆盖层；现在所有请求均自动完成设备认证。
+- `api.ts`：移除 JWT token 处理；`loadDeviceUser()` 替代 `loadCurrentUser()`。
+
+### 构建与启动简化
+
+- `build_release.sh`：v3.0 — 编译对象仅为 Rust；不再有 C++ 编译、不再下载 `crow_all.h`、不再使用 `--no-crow` / `--skip-rust` 参数。
+- `dist/start.sh` + `dist/stop.sh`：处理单个二进制文件；移除 `.rust-server.pid`。
+
+### 数据库迁移
+
+- 新增 `004_device_auth.sql`：创建 `device_users` 表及其所有引用表（`playlists`、`queue_items`、`play_history`、`admin_log`、`favorites`、`user_ncm`）。
+- 旧的迁移 `002_seed_defaults.sql`（密码/管理员种子数据）将不再使用。
+
+---
+
 ## v2.2.0 — 2026-05-03
 
 ### Bug 修复

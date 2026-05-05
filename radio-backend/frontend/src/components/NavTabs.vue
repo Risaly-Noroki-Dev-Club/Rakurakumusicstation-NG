@@ -22,7 +22,7 @@ const currentTab = computed(() => {
   return 'player'
 })
 
-const isAdmin = computed(() => store.currentUser?.role === 'admin')
+const isAdmin = computed(() => store.deviceUser?.role === 'admin')
 </script>
 
 <template>
