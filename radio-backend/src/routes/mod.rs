@@ -59,7 +59,7 @@ async fn stream_handler(
 
         let mut buf = vec![0u8; AUDIO_CHUNK_SIZE];
         loop {
-            let available = reader.wait_for_data(100);
+            let available = reader.wait_for_data(100).await;
             if available == 0 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                 continue;
@@ -81,6 +81,7 @@ async fn stream_handler(
 /// GET /api/station — 公开的电台信息
 async fn station_info(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
 ) -> axum::Json<serde_json::Value> {
     let ws_host = if state.config.server.host == "0.0.0.0" {
         "localhost"
@@ -104,7 +105,7 @@ async fn station_info(
         "primary_color": station.primary_color,
         "secondary_color": station.secondary_color,
         "bg_color": station.bg_color,
-        "stream_url": state.config.audio_engine.resolve_stream_url(),
+        "stream_url": state.config.audio_engine.resolve_stream_url(Some(&headers), state.config.server.port),
         "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
         "needs_setup": !has_admin,
     }))

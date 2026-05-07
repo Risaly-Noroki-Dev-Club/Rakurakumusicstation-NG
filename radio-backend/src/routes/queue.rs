@@ -115,6 +115,7 @@ async fn get_history(
 /// GET /api/now-playing — 当前曲目信息（公开）
 pub async fn now_playing(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
 ) -> Result<Json<ApiResponse<NowPlaying>>, AppError> {
     let playing = sqlx::query_as::<_, crate::models::QueueItem>(
         "SELECT * FROM queue_items WHERE status = 'playing' ORDER BY position ASC LIMIT 1"
@@ -159,7 +160,7 @@ pub async fn now_playing(
         lyrics_line,
         lyrics_text,
         started_at: playing.as_ref().and_then(|p| p.played_at.map(|t| t.to_string())),
-        stream_url: state.config.audio_engine.resolve_stream_url(),
+        stream_url: state.config.audio_engine.resolve_stream_url(Some(&headers), state.config.server.port),
         file_url,
     })))
 }

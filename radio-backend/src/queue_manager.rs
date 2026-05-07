@@ -235,8 +235,8 @@ pub async fn skip_current(
             .await?;
     }
 
-    let command = crate::models::AudioCommand {
-        cmd_type: "skip".into(),
+    let command = radio_engine::types::AudioCommand {
+        cmd_type: radio_engine::types::AudioCommandType::Skip,
         song_id: None,
         file_path: None,
     };

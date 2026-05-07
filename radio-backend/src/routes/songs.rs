@@ -4,7 +4,7 @@ use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
-use crate::routes::admin::{find_cover, get_duration};
+use crate::services::metadata::{find_cover, get_duration, sanitize_filename, parse_artist_title};
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -179,10 +179,7 @@ pub async fn upload_song(
             .unwrap_or("unknown.mp3")
             .to_string();
 
-        let safe_name = filename
-            .replace('/', "_")
-            .replace('\\', "_")
-            .replace("..", "_");
+        let safe_name = sanitize_filename(&filename);
 
         let data = field.bytes().await
             .map_err(|e| AppError::BadRequest(format!("读取上传数据失败: {}", e)))?;
@@ -205,12 +202,7 @@ pub async fn upload_song(
         let stem = dest_path.file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or(safe_name.clone());
-        let mut title = stem.clone();
-        let mut artist = String::new();
-        if let Some(pos) = stem.find(" - ") {
-            artist = stem[..pos].to_string();
-            title = stem[pos + 3..].to_string();
-        }
+        let (artist, title) = parse_artist_title(&stem);
 
         let rel_str = safe_name.clone();
         let duration_ms = get_duration(&dest_path).unwrap_or(0);

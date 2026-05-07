@@ -89,7 +89,7 @@ export interface WsPlaybackState {
   position_ms: number
   duration_ms: number
   lyrics_line: number | null
-  lyrics_text?: string
+  lyrics_lines?: LyricsLine[]
   status: string
   cover_url: string
   stream_url?: string

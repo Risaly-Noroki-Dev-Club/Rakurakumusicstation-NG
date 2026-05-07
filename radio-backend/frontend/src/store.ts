@@ -178,26 +178,4 @@ export function applyStationColors(info: {
     ROOT.style.setProperty('--bg', info.bg_color)
 }
 
-export function parseLyrics(lrcText: string): void {
-  const lines: LyricsLine[] = []
-  const re = /\[(\d{1,3}):(\d{1,2})(?:\.(\d{1,3}))?\](.*)/g
-  let match: RegExpExecArray | null
-  while ((match = re.exec(lrcText)) !== null) {
-    const min = parseInt(match[1])
-    const sec = parseInt(match[2])
-    const ms = match[3] ? parseInt(match[3].padEnd(3, '0')) : 0
-    const timeMs = min * 60000 + sec * 1000 + ms
-    const text = match[4].trim()
-    if (text) lines.push({ timeMs, text })
-  }
-  lines.sort((a, b) => a.timeMs - b.timeMs)
-  const merged: LyricsLine[] = []
-  for (const l of lines) {
-    if (merged.length > 0 && merged[merged.length - 1].timeMs === l.timeMs) {
-      merged[merged.length - 1].text = l.text
-    } else {
-      merged.push(l)
-    }
-  }
-  store.lyricsLines = merged
-}
+

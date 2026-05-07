@@ -94,14 +94,9 @@ pub fn broadcast(state: &Arc<AppState>, msg: WsMessage) {
 /// 向音频引擎发送命令（直接调用内嵌引擎）。
 pub async fn publish_command(
     state: &Arc<AppState>,
-    command: &crate::models::AudioCommand,
+    command: &radio_engine::types::AudioCommand,
 ) -> Result<(), AppError> {
-    let engine_cmd = radio_engine::types::AudioCommand {
-        cmd_type: command.cmd_type.clone(),
-        song_id: command.song_id,
-        file_path: command.file_path.clone(),
-    };
-    state.player_handle.send_command(engine_cmd);
+    state.player_handle.send_command(command.clone());
     Ok(())
 }
 
@@ -111,107 +106,97 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
     let state_clone = state.clone();
 
     tokio::spawn(async move {
-        let mut last_song_id: i64 = 0;
-        let mut cached_lyrics: Option<crate::lyrics::Lyrics> = None;
-        let mut cached_lrc_text: Option<String> = None;
+        #[derive(Clone)]
+        struct CachedSong {
+            db_song_id: i64,
+            title: String,
+            artist: String,
+            lyrics_lines: Option<Vec<crate::models::LyricsLineDto>>,
+        }
+
+        let mut last_index: i64 = 0;
+        let mut cached: Option<CachedSong> = None;
 
         tracing::info!("Engine state poller started");
 
         loop {
             let ps = state_clone.player_handle.get_state();
 
-            if ps.song_id != last_song_id && ps.song_id > 0 {
-                last_song_id = ps.song_id;
+            if ps.playlist_index != last_index && ps.playlist_index > 0 {
+                last_index = ps.playlist_index;
+                cached = None;
 
-                // Look up song in DB by file_path (engine uses file index as song_id)
-                let song_id_from_db = if !ps.file_path.is_empty() {
-                    sqlx::query_as::<_, (i64,)>(
-                        "SELECT id FROM songs WHERE file_path = ?"
+                if !ps.file_path.is_empty() {
+                    let song_row = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
+                        "SELECT id, title, artist, lyrics_path FROM songs WHERE file_path = ?"
                     )
                     .bind(&ps.file_path)
                     .fetch_optional(&state_clone.db)
                     .await
                     .ok()
-                    .flatten()
-                    .map(|(id,)| id)
-                } else {
-                    None
-                };
+                    .flatten();
 
-                if let Some(db_song_id) = song_id_from_db {
-                    if let Err(e) = queue_manager::mark_playing(&state_clone.db, db_song_id).await {
-                        tracing::error!("mark_playing failed for song {}: {}", db_song_id, e);
-                    }
+                    if let Some((db_song_id, title, artist, lyrics_path)) = song_row {
+                        if let Err(e) = queue_manager::mark_playing(&state_clone.db, db_song_id).await {
+                            tracing::error!("mark_playing failed for song {}: {}", db_song_id, e);
+                        }
 
-                    cached_lyrics = None;
-                    cached_lrc_text = None;
-                    if let Ok(Some(song)) = sqlx::query_as::<_, crate::models::Song>(
-                        "SELECT * FROM songs WHERE id = ?"
-                    )
-                    .bind(db_song_id)
-                    .fetch_optional(&state_clone.db)
-                    .await
-                    {
-                        if !song.lyrics_path.is_empty() {
+                        let lyrics_lines = lyrics_path.and_then(|path| {
+                            if path.is_empty() {
+                                return None;
+                            }
                             let lrc_full = std::path::Path::new(
                                 &state_clone.config.audio_engine.media_path,
                             )
-                            .join(&song.lyrics_path);
-                            if let Ok(content) = std::fs::read_to_string(&lrc_full) {
-                                cached_lyrics = Some(crate::lyrics::Lyrics::parse(&content));
-                                cached_lrc_text = Some(content);
-                            }
-                        }
+                            .join(&path);
+                            std::fs::read_to_string(&lrc_full).ok().map(|content| {
+                                let parsed = crate::lyrics::Lyrics::parse(&content);
+                                parsed.lines.into_iter().map(|l| crate::models::LyricsLineDto {
+                                    time_ms: l.time_ms,
+                                    text: l.text,
+                                }).collect::<Vec<_>>()
+                            })
+                        });
+
+                        cached = Some(CachedSong {
+                            db_song_id,
+                            title,
+                            artist,
+                            lyrics_lines,
+                        });
                     }
                 }
             }
 
-            let lyrics_line = cached_lyrics
+            let (song_id, title, artist, lyrics_lines) = match cached.as_ref() {
+                Some(c) => (c.db_song_id, c.title.clone(), c.artist.clone(), c.lyrics_lines.clone()),
+                None => (ps.playlist_index, String::new(), String::new(), None),
+            };
+
+            let lyrics_line = lyrics_lines
                 .as_ref()
-                .and_then(|l| l.line_at(ps.position_ms));
-
-            // Get title/artist from DB by matching file_path
-            let (title, artist) = if !ps.file_path.is_empty() {
-                sqlx::query_as::<_, (String, String)>(
-                    "SELECT title, artist FROM songs WHERE file_path = ?"
-                )
-                .bind(&ps.file_path)
-                .fetch_optional(&state_clone.db)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(|| (String::new(), String::new()))
-            } else {
-                (String::new(), String::new())
-            };
-
-            let db_song_id = if !ps.file_path.is_empty() {
-                sqlx::query_as::<_, (i64,)>(
-                    "SELECT id FROM songs WHERE file_path = ?"
-                )
-                .bind(&ps.file_path)
-                .fetch_optional(&state_clone.db)
-                .await
-                .ok()
-                .flatten()
-                .map(|(id,)| id)
-            } else {
-                None
-            };
+                .and_then(|lines| {
+                    lines.iter().enumerate().rev().find(|(_, l)| l.time_ms <= ps.position_ms)
+                        .map(|(idx, _)| idx)
+                });
 
             let enriched = WsMessage::PlaybackState {
-                song_id: db_song_id.unwrap_or(ps.song_id),
+                song_id,
                 title,
                 artist,
                 position_ms: ps.position_ms,
                 duration_ms: ps.duration_ms,
                 lyrics_line,
-                lyrics_text: cached_lrc_text.clone(),
+                lyrics_lines,
                 status: ps.status.clone(),
-                stream_url: state_clone.config.audio_engine.resolve_stream_url(),
-                file_url: db_song_id.map(|id| {
-                    state_clone.config.audio_engine.resolve_file_url(id)
-                }),
+                stream_url: state_clone.config.audio_engine.resolve_stream_url(
+                    None, state_clone.config.server.port
+                ),
+                file_url: if song_id > 0 {
+                    Some(state_clone.config.audio_engine.resolve_file_url(song_id))
+                } else {
+                    None
+                },
             };
 
             let _ = state_clone.ws_tx.send(

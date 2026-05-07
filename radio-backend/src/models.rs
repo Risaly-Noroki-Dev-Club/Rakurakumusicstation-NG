@@ -197,9 +197,26 @@ pub struct AdminActionRequest {
     pub device_user_id: i64,
 }
 
+/// 设备用户角色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    Admin,
+    User,
+}
+
+impl std::fmt::Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Role::Admin => write!(f, "admin"),
+            Role::User => write!(f, "user"),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SetRoleRequest {
-    pub role: String,
+    pub role: Role,
 }
 
 /// 设置 / 更新设备显示名称的请求
@@ -226,28 +243,15 @@ pub struct NowPlaying {
     pub file_url: Option<String>,
 }
 
-/// 从音频引擎发送的播放状态消息。
+/// 歌词行 DTO（用于 WebSocket 序列化）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PlaybackState {
-    pub song_id: i64,
-    pub file_path: String,
-    pub position_ms: i64,
-    pub duration_ms: i64,
-    pub lyrics_line: Option<usize>,
-    pub status: String,       // playing | stopped | paused
-    pub total_bytes_sent: u64,
-    pub bitrate_kbps: u32,
-    pub track_start_timestamp_ms: i64,
+pub struct LyricsLineDto {
+    pub time_ms: i64,
+    pub text: String,
 }
 
-/// 发送给音频引擎的命令。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AudioCommand {
-    #[serde(rename = "type")]
-    pub cmd_type: String,
-    pub song_id: Option<i64>,
-    pub file_path: Option<String>,
-}
+/// 播放状态枚举（从引擎 re-export）。
+pub use radio_engine::types::PlaybackStatus;
 
 /// 发送给已连接浏览器的 WebSocket 消息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,8 +265,8 @@ pub enum WsMessage {
         position_ms: i64,
         duration_ms: i64,
         lyrics_line: Option<usize>,
-        lyrics_text: Option<String>,
-        status: String,
+        lyrics_lines: Option<Vec<LyricsLineDto>>,
+        status: PlaybackStatus,
         stream_url: String,
         file_url: Option<String>,
     },

@@ -14,8 +14,11 @@ url = "sqlite://data/radio.db?mode=rwc"
 [audio_engine]
 # 媒体文件根目录
 media_path = "./media"
-# 音频流地址 — 相对路径 / 绝对 URL
-stream_base = "/stream"
+# 音频流地址 — 支持三种模式：
+#   "auto"          → 自动推断（推荐，根据请求 Host/X-Forwarded 头动态构建）
+#   "/stream"       → 相对路径，由前端用 window.location 解析
+#   "http://..."    → 强制绝对 URL（用于 CDN / 独立流服务器）
+stream_base = "auto"
 
 [device]
 # Cookie 最大存活天数

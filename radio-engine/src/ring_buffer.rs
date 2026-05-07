@@ -1,6 +1,6 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 
 use crate::config::BUFFER_CAPACITY;
 
@@ -14,7 +14,7 @@ use crate::config::BUFFER_CAPACITY;
 ///
 /// `UnsafeCell` is used for the `data` buffer to allow lock-free reads while
 /// the writer modifies it. This is sound because:
-/// 1. The writer holds the `cv_mutex` lock during writes, ensuring exclusive write access.
+/// 1. The writer holds the internal write lock during writes, ensuring exclusive write access.
 /// 2. The writer updates `write_pos` with `Release` ordering after data is written.
 /// 3. Readers read `write_pos` with `Acquire` ordering before reading data.
 /// 4. Readers and writer operate on disjoint regions of the buffer (enforced by the
@@ -28,13 +28,12 @@ pub struct RingBuffer {
     capacity: usize,
     write_pos: AtomicUsize,
     reader_positions: Mutex<Vec<Arc<AtomicUsize>>>,
-    cv_mutex: Mutex<()>,
-    cv: Condvar,
+    notify: tokio::sync::Notify,
 }
 
 // RingBuffer is Send + Sync because all shared mutable state is protected
-// by atomics (write_pos, reader positions) or mutex (reader_positions, cv_mutex).
-// The UnsafeCell for data is only accessed under the cv_mutex for writes,
+// by atomics (write_pos, reader positions) or mutex (reader_positions).
+// The UnsafeCell for data is only accessed under the write lock for writes,
 // and reads are synchronized via atomic position ordering.
 unsafe impl Send for RingBuffer {}
 unsafe impl Sync for RingBuffer {}
@@ -68,8 +67,7 @@ impl RingBuffer {
             capacity,
             write_pos: AtomicUsize::new(0),
             reader_positions: Mutex::new(Vec::new()),
-            cv_mutex: Mutex::new(()),
-            cv: Condvar::new(),
+            notify: tokio::sync::Notify::new(),
         })
     }
 
@@ -85,7 +83,6 @@ impl RingBuffer {
             return;
         }
 
-        let _lock = self.cv_mutex.lock().unwrap();
         let current_wp = self.write_pos.load(Ordering::Relaxed);
         let len = data.len();
 
@@ -137,8 +134,9 @@ impl RingBuffer {
         }
 
         // Write data into buffer (handle wrap-around)
-        // SAFETY: Exclusive write access is guaranteed by the cv_mutex lock above.
-        // Readers are synchronized via atomic write_pos with Release/Acquire ordering.
+        // SAFETY: Exclusive write access is guaranteed by the local computation above;
+        // no other thread writes to the buffer. Readers are synchronized via atomic
+        // write_pos with Release/Acquire ordering.
         let buf = unsafe { &mut *self.data.get() };
         let wp_idx = current_wp & self.mask;
         let first_seg = std::cmp::min(len, self.capacity - wp_idx);
@@ -151,8 +149,7 @@ impl RingBuffer {
         self.write_pos
             .store(current_wp + len, Ordering::Release);
 
-        drop(_lock);
-        self.cv.notify_all();
+        self.notify.notify_waiters();
     }
 
     /// Create a new reader that starts at the current write position
@@ -173,8 +170,7 @@ impl RingBuffer {
 
     /// Wake all waiting readers.
     pub fn notify_readers(&self) {
-        let _lock = self.cv_mutex.lock().unwrap();
-        self.cv.notify_all();
+        self.notify.notify_waiters();
     }
 
     /// Get current write position (raw counter value, not masked).
@@ -231,35 +227,36 @@ impl RingBufferReader {
         to_read
     }
 
-    /// Block until data is available or timeout expires.
+    /// Wait for data to become available or timeout expires.
     /// Returns number of bytes available to read.
-    pub fn wait_for_data(&self, timeout_ms: u64) -> usize {
-        let lock = self.buffer.cv_mutex.lock().unwrap();
+    pub async fn wait_for_data(&self, timeout_ms: u64) -> usize {
+        let timeout = tokio::time::Duration::from_millis(timeout_ms);
+        let deadline = tokio::time::Instant::now() + timeout;
 
-        let wp = self.buffer.write_pos.load(Ordering::Acquire);
-        let rp = self.read_pos.load(Ordering::Relaxed);
+        loop {
+            let wp = self.buffer.write_pos.load(Ordering::Acquire);
+            let rp = self.read_pos.load(Ordering::Relaxed);
 
-        let avail = if wp >= rp {
-            wp - rp
-        } else {
-            self.buffer.capacity - rp + wp
-        };
+            let avail = if wp >= rp {
+                wp - rp
+            } else {
+                self.buffer.capacity - rp + wp
+            };
 
-        if avail > 0 {
-            return avail;
-        }
+            if avail > 0 {
+                return avail;
+            }
 
-        let timeout = std::time::Duration::from_millis(timeout_ms);
-        let result = self.buffer.cv.wait_timeout(lock, timeout).unwrap();
-        let _guard = result.0;
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                return 0;
+            }
 
-        let wp = self.buffer.write_pos.load(Ordering::Acquire);
-        let rp = self.read_pos.load(Ordering::Relaxed);
-
-        if wp >= rp {
-            wp - rp
-        } else {
-            self.buffer.capacity - rp + wp
+            let remaining = deadline - now;
+            match tokio::time::timeout(remaining, self.buffer.notify.notified()).await {
+                Ok(()) => continue,
+                Err(_) => return 0,
+            }
         }
     }
 
@@ -274,7 +271,6 @@ impl RingBufferReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
 
     #[test]
     fn test_new_buffer() {
@@ -359,20 +355,20 @@ mod tests {
         assert!(n > 0);
     }
 
-    #[test]
-    fn test_wait_for_data() {
+    #[tokio::test]
+    async fn test_wait_for_data() {
         let buf = RingBuffer::new(1024);
         let reader = buf.create_reader();
 
-        assert_eq!(reader.wait_for_data(10), 0);
+        assert_eq!(reader.wait_for_data(10).await, 0);
 
         let buf_clone = Arc::clone(&buf);
-        thread::spawn(move || {
-            thread::sleep(std::time::Duration::from_millis(50));
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             buf_clone.push(b"test data");
         });
 
-        let avail = reader.wait_for_data(5000);
+        let avail = reader.wait_for_data(5000).await;
         assert!(avail > 0);
     }
 

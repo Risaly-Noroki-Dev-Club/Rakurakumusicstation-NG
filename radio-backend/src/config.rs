@@ -39,12 +39,46 @@ pub struct AudioEngineConfig {
 }
 
 impl AudioEngineConfig {
-    /// 将 stream_base 解析为完整路径（相对路径直接返回）。
-    pub fn resolve_stream_url(&self) -> String {
-        if self.stream_base.starts_with("http://") || self.stream_base.starts_with("https://") {
-            self.stream_base.clone()
+    /// 将 stream_base 解析为完整路径。
+    /// - "auto"     → 根据请求头动态推断（默认）
+    /// - "/stream"  → 相对路径
+    /// - "http://..." → 绝对路径
+    pub fn resolve_stream_url(
+        &self,
+        headers: Option<&axum::http::HeaderMap>,
+        server_port: u16,
+    ) -> String {
+        match self.stream_base.as_str() {
+            "auto" => match headers {
+                Some(h) => Self::infer_from_headers(h, server_port),
+                None => "/stream".to_string(),
+            },
+            url if url.starts_with("http://") || url.starts_with("https://") => {
+                url.to_string()
+            }
+            path => path.to_string(),
+        }
+    }
+
+    fn infer_from_headers(headers: &axum::http::HeaderMap, server_port: u16) -> String {
+        let proto = headers
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("http");
+        let host = headers
+            .get("x-forwarded-host")
+            .or_else(|| headers.get("host"))
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("localhost");
+
+        if host.contains(':') {
+            format!("{}://{}/stream", proto, host)
+        } else if (proto == "https" && server_port != 443)
+            || (proto == "http" && server_port != 80)
+        {
+            format!("{}://{}:{}/stream", proto, host, server_port)
         } else {
-            self.stream_base.clone()
+            format!("{}://{}/stream", proto, host)
         }
     }
 
@@ -101,7 +135,7 @@ fn default_host() -> String { "0.0.0.0".into() }
 fn default_port() -> u16 { 2241 }
 fn default_sqlite_url() -> String { "sqlite://data/radio.db?mode=rwc".into() }
 fn default_media_path() -> String { "./media".into() }
-fn default_stream_base() -> String { "/stream".into() }
+fn default_stream_base() -> String { "auto".into() }
 fn default_cookie_max_age_days() -> u64 { 365 }
 fn default_admin_setup_token() -> String { "change-me-in-production".into() }
 fn default_max_queue_size() -> usize { 100 }

@@ -1,9 +1,11 @@
-# Rakuraku Music Station NG — v3.0
+# Rakuraku Music Station NG — v3.1-beta
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)
 
 > Rust 全栈：嵌入式音频引擎 + Web 后端 + Vue 3 前端。
 > 一个自托管的网络电台，带现代 Web 界面、多设备支持、httpOnly Cookie 认证、WebSocket 实时同步和内嵌 Rust 音频引擎。
+
+**v3.1-beta 重点：** 引擎-后端概念对齐、流地址自动推断、路径标准化、强类型状态机。
 
 ---
 
@@ -126,40 +128,52 @@ sqlite3 dist/data/radio.db "UPDATE device_users SET role='admin' WHERE id=设备
 | 问题 | 解决方法 |
 |------|----------|
 | 无法连接 Web 界面 | 确认服务已启动：`cd dist && ./start.sh`；查看日志 `tail -f dist/server.log` |
-| 无声音/流不可用 | 确认 `media/` 中有音频文件；查看日志 `tail -f dist/server.log` |
+| 无声音/流不可用 | 确认 `media/` 中有音频文件；查看日志 `tail -f dist/server.log`；检查 `/api/station` 返回的 `stream_url` 是否正确 |
+| 反向代理后流地址错误 | 确保反代传递 `Host`、`X-Forwarded-Host`、`X-Forwarded-Proto` 头；或手动设置 `stream_base` 为绝对 URL |
 | 曲库无歌曲 | 在管理面板点击 **重新扫描** 或重启服务 |
 | 无法获取管理员权限 | 确认 `dist/config.toml` 中 `admin_setup_token` 已设置 |
 | 设置不生效 | 更改后需重启（`./stop.sh && ./start.sh`） |
 | 封面不显示 | 确保音频文件含内嵌封面（ID3 标签）；缺失时显示默认音符图标 |
-| 歌词不显示 | 仅支持同名 `.lrc` 文件放在同目录下 |
+| 歌词不显示 | 仅支持同名 `.lrc` 文件放在同目录下；v3.1 后端已预解析歌词，前端无需额外配置 |
 
 ---
 
 ## 技术架构
 
 ```
-media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──epoll──▶  N 客户端
-                     (零拷贝环形缓冲)            (fan-out)  (HTTP /stream)
-                            ▲
-                    Player (fork ffmpeg → pipe → buffer)
-                            │
-            ┌───────────────┴──────────────┐
-            │  Rust Backend (2241)          │
-            │  嵌入 radio-engine crate      │
-            │  Axum + SQLite + Device Auth  │
-            │  WebSocket + 歌词 + 队列管理   │
-            └──────────────────────────────┘
-                            │
-                    static/ (Vite-built Vue 3 SPA)
+media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶  N 客户端
+                      (零拷贝环形缓冲)           (async)     (HTTP /stream)
+                             ▲
+                     Player (fork ffmpeg → pipe → buffer)
+                             │
+             ┌───────────────┴──────────────┐
+             │  Rust Backend (2241)          │
+             │  嵌入 radio-engine crate      │
+             │  Axum + SQLite + Device Auth  │
+             │  WebSocket + 歌词 + 队列管理   │
+             └──────────────────────────────┘
+                             │
+                     static/ (Vite-built Vue 3 SPA)
 ```
 
 ### 服务划分
 
 | 组件 | 语言 | 说明 |
 |------|------|------|
-| 音频引擎 | Rust | `radio-engine/` crate，内嵌于后端，ffmpeg 解码 → 环形缓冲 → TCP 推流 |
+| 音频引擎 | Rust | `radio-engine/` crate，内嵌于后端，ffmpeg 解码 → 环形缓冲 → async 推流 |
 | 业务后端 | Rust | `radio-backend/`，REST API、WebSocket、设备认证、SQLite、队列管理 |
 | Web 前端 | TypeScript | Vue 3 SFC + Vite，构建产物在 `radio-backend/static/` |
+
+### v3.1-beta 核心改进
+
+| 改进项 | 说明 |
+|--------|------|
+| **stream_base = "auto"** | 自动检测反向代理（X-Forwarded-*）并构建正确的流地址，开箱即用 |
+| **路径标准化** | engine 内统一使用相对路径存储，`resolve_media_path` 自动识别绝对/相对路径 |
+| **概念对齐** | `PlaybackState.playlist_index`（原 `song_id`）、`PlaybackStatus` enum、`duration_ms` 统一 |
+| **歌词预解析** | 后端解析 LRC 为结构化数组通过 WebSocket 推送，前端零解析开销 |
+| **递归扫描** | engine `init_play_queue` 与 backend `rescan_songs` 均递归扫描子目录 |
+| **线程安全** | `RingBuffer` `Condvar` → `tokio::sync::Notify`，消除 `/stream` 阻塞线程问题 |
 
 ---
 
@@ -202,12 +216,20 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──epoll──▶  
 ```toml
 [server]          # host、port（默认 2241）
 [database]        # SQLite URL
-[audio_engine]    # media_path、stream_base（相对路径或绝对 URL）
+[audio_engine]    # media_path、stream_base（auto / 相对路径 / 绝对 URL）
 [device]          # cookie_max_age_days、admin_setup_token
 [queue]           # max_size、rate_limit
 [station]         # name、subtitle、主题色
 [logging]         # level
 ```
+
+### `stream_base` 三种模式
+
+| 值 | 场景 |
+|----|------|
+| `"auto"` | **推荐。** 自动根据 `Host` / `X-Forwarded-*` 请求头推断流地址，适用于大多数部署（含反向代理）。 |
+| `"/stream"` | 相对路径。前端用 `window.location.origin` 解析，适用于简单的内网直连。 |
+| `"http://cdn.example.com/stream"` | 强制绝对 URL。适用于 CDN 或独立流服务器。 |
 
 ---
 

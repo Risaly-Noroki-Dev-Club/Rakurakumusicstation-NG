@@ -30,7 +30,7 @@ pub async fn extract_metadata(file_path: &str, media_root: &str) -> anyhow::Resu
     let (artist, title) = parse_artist_title(&stem);
 
     let duration_secs = get_duration(&full_path).await.unwrap_or(0.0);
-    let lyrics = get_lyrics(&full_path).await.unwrap_or_default();
+    let embedded_lyrics = get_lyrics(&full_path).await.unwrap_or_default();
 
     Ok(TrackMetadata {
         filename,
@@ -40,9 +40,9 @@ pub async fn extract_metadata(file_path: &str, media_root: &str) -> anyhow::Resu
         genre: String::new(),
         year: String::new(),
         track_number: String::new(),
-        duration_secs,
-        cover_art: Vec::new(),
-        lyrics,
+        duration_ms: (duration_secs * 1000.0) as i64,
+        cover_data: Vec::new(),
+        embedded_lyrics,
         file_path: file_path_clone,
     })
 }

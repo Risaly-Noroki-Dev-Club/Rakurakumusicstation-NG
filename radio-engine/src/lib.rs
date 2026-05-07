@@ -4,6 +4,7 @@ pub mod player;
 pub mod ring_buffer;
 pub mod stream;
 pub mod types;
+pub mod util;
 
 pub use config::*;
 pub use metadata::*;

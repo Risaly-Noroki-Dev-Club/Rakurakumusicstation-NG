@@ -11,6 +11,7 @@ mod lyrics;
 mod models;
 mod queue_manager;
 mod routes;
+mod services;
 mod websocket;
 
 use axum::{
@@ -77,8 +78,8 @@ async fn main() -> anyhow::Result<()> {
     let (mut player, player_handle) =
         radio_engine::player::Player::new(ring_buffer.clone(), media_path.clone());
 
-    // 初始化播放列表并启动播放器
-    player.init_playlist().await;
+    // 初始化播放队列并启动播放器
+    player.init_play_queue().await;
     tokio::spawn(async move { player.run().await });
 
     tracing::info!("Audio engine started, media path: {}", media_path);
