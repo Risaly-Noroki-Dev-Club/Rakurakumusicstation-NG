@@ -1,4 +1,4 @@
-import { apiBase } from './client'
+import { apiBase, setStreamUrl, setAudioEngineUrl } from './client'
 import { store, applyStationColors, toast } from '../store'
 
 export async function loadStationInfo(): Promise<void> {
@@ -19,11 +19,8 @@ export async function loadStationInfo(): Promise<void> {
       if (info.stream_url) {
         try {
           const u = new URL(info.stream_url, window.location.origin)
-          // audioEngineUrl is managed by api/client.ts
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          const client = require('./client')
-          client.setStreamUrl(info.stream_url)
-          client.setAudioEngineUrl(u.origin)
+          setStreamUrl(info.stream_url)
+          setAudioEngineUrl(u.origin)
         } catch { /* ignore */ }
       }
     }

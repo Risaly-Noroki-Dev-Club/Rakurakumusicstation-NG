@@ -1,6 +1,7 @@
 import { apiBase, getStreamUrl, getAudioEngineUrl } from './client'
 import { store, toast } from '../store'
 import { refreshQueue } from './queue'
+import { onSearchInput } from './songs'
 import type { WsMessage } from '../types'
 
 let playbackPoller: ReturnType<typeof setInterval> | null = null
@@ -121,7 +122,6 @@ export function getWs(): WebSocket | null { return ws }
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 export function debouncedSearch(): void {
   if (searchTimer) clearTimeout(searchTimer)
-  const { onSearchInput } = require('./songs')
   searchTimer = setTimeout(onSearchInput, 300)
 }
 
