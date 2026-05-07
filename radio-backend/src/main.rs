@@ -15,7 +15,7 @@ mod services;
 mod websocket;
 
 use axum::{
-    http::{header, HeaderMap, Request},
+    http::{header, HeaderMap, Method, Request},
     middleware::{self, Next},
     response::Response,
     extract::State,
@@ -95,9 +95,20 @@ async fn main() -> anyhow::Result<()> {
         .layer(middleware::from_fn_with_state(state.clone(), device_cookie_middleware))
         .layer(
             CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods(Any)
-                .allow_headers(Any)
+                .allow_origin(tower_http::cors::AllowOrigin::predicate(|_origin, _parts| true))
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::PATCH,
+                    Method::OPTIONS,
+                ])
+                .allow_headers([
+                    header::CONTENT_TYPE,
+                    header::ACCEPT,
+                    header::AUTHORIZATION,
+                ])
                 .allow_credentials(true),
         );
 
