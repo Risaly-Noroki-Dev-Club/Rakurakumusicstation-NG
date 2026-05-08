@@ -17,6 +17,7 @@ use std::sync::Arc;
 pub fn song_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/:id/cover", get(get_song_cover))
+        .route("/:id/file", get(stream_song_file))
         .route("/:id/download", get(download_song))
         .route("/:id", get(get_song))
         .route("/", get(search_songs))
@@ -236,6 +237,85 @@ pub async fn upload_song(
     }
 
     Ok(Json(ApiResponse::ok(format!("上传成功: {}", uploaded_filename))))
+}
+
+/// GET /api/songs/{id}/file — 流式播放歌曲文件（支持 Range 请求，公开）
+pub async fn stream_song_file(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let song = sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
+
+    if song.file_path.is_empty() {
+        return Err(AppError::NotFound("Song file not available".into()));
+    }
+
+    let file_full = std::path::Path::new(&state.config.audio_engine.media_path)
+        .join(&song.file_path);
+
+    if !file_full.exists() {
+        return Err(AppError::NotFound("Song file not found on disk".into()));
+    }
+
+    let data = std::fs::read(&file_full)
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to read file")))?;
+    let total_len = data.len() as u64;
+
+    let range_header = headers.get(header::RANGE);
+    if let Some(range_val) = range_header {
+        let range_str = range_val.to_str().unwrap_or("");
+        if let Some(range) = parse_bytes_range(range_str, total_len) {
+            let body = axum::body::Body::from(data[range.start as usize..=range.end as usize].to_vec());
+            return Ok(Response::builder()
+                .status(StatusCode::PARTIAL_CONTENT)
+                .header(header::CONTENT_TYPE, "audio/mpeg")
+                .header(header::ACCEPT_RANGES, "bytes")
+                .header(header::CONTENT_RANGE, format!("bytes {}-{}/{}", range.start, range.end, total_len))
+                .header(header::CONTENT_LENGTH, (range.end - range.start + 1).to_string())
+                .body(body)
+                .unwrap());
+        }
+    }
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "audio/mpeg")
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, total_len.to_string())
+        .body(axum::body::Body::from(data))
+        .unwrap())
+}
+
+struct ByteRange {
+    start: u64,
+    end: u64,
+}
+
+fn parse_bytes_range(range: &str, total: u64) -> Option<ByteRange> {
+    let prefix = "bytes=";
+    if !range.starts_with(prefix) {
+        return None;
+    }
+    let rest = &range[prefix.len()..];
+    let parts: Vec<&str> = rest.split('-').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let start: u64 = parts[0].parse().ok()?;
+    let end: u64 = if parts[1].is_empty() {
+        total.saturating_sub(1)
+    } else {
+        parts[1].parse().ok()?
+    };
+    if start > end || start >= total {
+        return None;
+    }
+    Some(ByteRange { start, end: end.min(total.saturating_sub(1)) })
 }
 
 /// GET /api/songs/{id}/download — 下载歌曲文件（需要登录）

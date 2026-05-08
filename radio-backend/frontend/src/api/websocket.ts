@@ -1,4 +1,4 @@
-import { apiBase, getStreamUrl, getAudioEngineUrl } from './client'
+import { apiBase, getStreamUrl } from './client'
 import { store, toast } from '../store'
 import { refreshQueue } from './queue'
 import { onSearchInput } from './songs'
@@ -9,6 +9,40 @@ let ws: WebSocket | null = null
 let wsReconnectAttempts = 0
 const WS_MAX_RECONNECT_ATTEMPTS = 20
 const WS_BASE_RECONNECT_DELAY = 3000
+
+// ─── Interpolation state for smooth lyrics / progress ──────────────────
+let lastAnchorPos = 0
+let lastAnchorTime = 0
+let rafId: number | null = null
+let isInterpolating = false
+
+function startInterpolation(): void {
+  if (isInterpolating) return
+  isInterpolating = true
+  tick()
+}
+
+function stopInterpolation(): void {
+  isInterpolating = false
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+}
+
+function tick(): void {
+  if (!isInterpolating) return
+  const elapsed = performance.now() - lastAnchorTime
+  store.displayPositionMs = Math.max(0, Math.floor(lastAnchorPos + elapsed))
+  rafId = requestAnimationFrame(tick)
+}
+
+function updateAnchor(positionMs: number): void {
+  lastAnchorPos = Math.max(0, positionMs)
+  lastAnchorTime = performance.now()
+}
+
+// ─── WebSocket ─────────────────────────────────────────────────────────
 
 function getWsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss://' : 'ws://'
@@ -54,7 +88,9 @@ function handleWsMessage(msg: WsMessage): void {
   switch (msg.type) {
   case 'playback_state': {
     const prevSongId = store.playbackState.song_id
-    store.playbackState.song_id = msg.song_id || 0
+    const newSongId = msg.song_id || 0
+
+    store.playbackState.song_id = newSongId
     store.playbackState.title = msg.title || ''
     store.playbackState.artist = msg.artist || ''
     store.playbackState.position_ms = msg.position_ms || 0
@@ -62,19 +98,28 @@ function handleWsMessage(msg: WsMessage): void {
     store.playbackState.lyrics_line = msg.lyrics_line
     store.playbackState.status = msg.status || 'stopped'
     store.playbackState.cover_url = msg.cover_url || ''
-    if (msg.song_id !== prevSongId) {
+
+    // Update interpolation anchor
+    updateAnchor(msg.position_ms || 0)
+
+    // Hard-cut on song change so lyrics don't drift across tracks
+    if (newSongId !== prevSongId) {
+      store.displayPositionMs = lastAnchorPos
       store.coverLoadError = false
     }
-    if (msg.lyrics_lines && (msg.song_id !== prevSongId || store.lyricsLines.length === 0)) {
+
+    if (msg.lyrics_lines && (newSongId !== prevSongId || store.lyricsLines.length === 0)) {
       store.lyricsLines = msg.lyrics_lines
     }
+
+    startInterpolation()
     break
   }
   case 'queue_update':
     toast((msg.requested_by || '某人') + ' 为电台点了《' + (msg.song_title || '未知歌曲') + '》', 'info')
     refreshQueue()
     break
-  case 'notice':
+   case 'notice':
     toast(msg.message, msg.level === 'error' ? 'error' : 'info')
     break
   case 'ping':
@@ -100,6 +145,9 @@ export function refreshPlaybackPoll(): void {
       store.playbackState.lyrics_line = d.lyrics_line
       store.playbackState.cover_url = ''
       if (d.song.id !== prevId) store.coverLoadError = false
+      updateAnchor(d.position_ms || 0)
+      store.displayPositionMs = lastAnchorPos
+      startInterpolation()
     }).catch(() => {})
 }
 
@@ -110,6 +158,7 @@ export function startPollers(): { queuePoller: ReturnType<typeof setInterval>, p
 }
 
 export function stopPollers(qp: ReturnType<typeof setInterval>): void {
+  stopInterpolation()
   if (playbackPoller) clearInterval(playbackPoller)
   if (qp) clearInterval(qp)
   if (ws) ws.close()
@@ -125,12 +174,23 @@ export function debouncedSearch(): void {
   searchTimer = setTimeout(onSearchInput, 300)
 }
 
-// ─── Playback mode switching ────────────────────────────
+// ─── Volume helpers ─────────────────────────────────────
+
+export function volumeDown(audioEl: HTMLAudioElement): void {
+  audioEl.volume = Math.max(0, audioEl.volume - 0.1)
+}
+export function volumeUp(audioEl: HTMLAudioElement): void {
+  audioEl.volume = Math.min(1, audioEl.volume + 0.1)
+}
+
+// ─── File playback mode (kept internally as backup, not exported) ─────
 
 let mediaSource: MediaSource | null = null
 let sourceBuffer: SourceBuffer | null = null
+let fileOffset = 0
+let fileFetchActive = false
 
-export function switchPlaybackMode(audioEl: HTMLAudioElement): void {
+function switchPlaybackMode(audioEl: HTMLAudioElement): void {
   store.useFileMode = !store.useFileMode
   if (store.useFileMode) {
     if (typeof MediaSource !== 'undefined') {
@@ -140,22 +200,48 @@ export function switchPlaybackMode(audioEl: HTMLAudioElement): void {
       store.useFileMode = false
     }
   } else {
+    cleanupFilePlayback()
     audioEl.src = getStreamUrl()
     audioEl.load()
     audioEl.play().catch(() => {})
   }
 }
 
+function cleanupFilePlayback(): void {
+  fileFetchActive = false
+  if (sourceBuffer) {
+    try { mediaSource?.removeSourceBuffer(sourceBuffer) } catch {}
+    sourceBuffer = null
+  }
+  if (mediaSource) {
+    try { if (mediaSource.readyState === 'open') mediaSource.endOfStream() } catch {}
+    mediaSource = null
+  }
+}
+
 function startFilePlayback(audio: HTMLAudioElement): void {
+  cleanupFilePlayback()
+  fileOffset = 0
+  fileFetchActive = true
   mediaSource = new MediaSource()
   audio.src = URL.createObjectURL(mediaSource)
   mediaSource.addEventListener('sourceopen', async () => {
     try {
       sourceBuffer = mediaSource!.addSourceBuffer('audio/mpeg')
-      fetchFileChunk(0)
+      sourceBuffer.addEventListener('updateend', onSourceBufferUpdateEnd)
+      sourceBuffer.addEventListener('error', () => {
+        toast('推文件模式解码错误，回退到推流模式', 'error')
+        store.useFileMode = false
+        cleanupFilePlayback()
+        audio.src = getStreamUrl()
+        audio.load()
+        audio.play().catch(() => {})
+      })
+      fetchNextFileChunk()
     } catch {
       toast('推文件模式初始化失败，回退到推流模式', 'error')
       store.useFileMode = false
+      cleanupFilePlayback()
       audio.src = getStreamUrl()
       audio.load()
       audio.play().catch(() => {})
@@ -163,25 +249,39 @@ function startFilePlayback(audio: HTMLAudioElement): void {
   })
 }
 
-async function fetchFileChunk(offset: number): Promise<void> {
-  if (store.playbackState.song_id <= 0) return
+function onSourceBufferUpdateEnd(): void {
+  if (fileFetchActive && sourceBuffer && !sourceBuffer.updating) {
+    fetchNextFileChunk()
+  }
+}
+
+async function fetchNextFileChunk(): Promise<void> {
+  if (!fileFetchActive || store.playbackState.song_id <= 0) return
   try {
-    const res = await fetch(getAudioEngineUrl() + '/file/' + store.playbackState.song_id, {
-      headers: { 'Range': 'bytes=' + offset + '-' }
+    const res = await fetch(apiBase + '/api/songs/' + store.playbackState.song_id + '/file', {
+      headers: { 'Range': 'bytes=' + fileOffset + '-' }
     })
-    if (!res.ok) return
+    if (!res.ok) {
+      endFileStream()
+      return
+    }
     const buffer = await res.arrayBuffer()
-    if (buffer.byteLength > 0 && sourceBuffer && !sourceBuffer.updating) {
+    if (buffer.byteLength === 0) {
+      endFileStream()
+      return
+    }
+    fileOffset += buffer.byteLength
+    if (sourceBuffer && !sourceBuffer.updating) {
       sourceBuffer.appendBuffer(buffer)
     }
-  } catch { /* ignore */ }
+  } catch {
+    endFileStream()
+  }
 }
 
-// ─── Volume helpers ─────────────────────────────────────
-
-export function volumeDown(audioEl: HTMLAudioElement): void {
-  audioEl.volume = Math.max(0, audioEl.volume - 0.1)
-}
-export function volumeUp(audioEl: HTMLAudioElement): void {
-  audioEl.volume = Math.min(1, audioEl.volume + 0.1)
+function endFileStream(): void {
+  fileFetchActive = false
+  if (mediaSource && mediaSource.readyState === 'open') {
+    try { mediaSource.endOfStream() } catch {}
+  }
 }

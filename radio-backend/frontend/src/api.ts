@@ -20,7 +20,6 @@ export {
   stopPollers,
   refreshPlaybackPoll,
   debouncedSearch,
-  switchPlaybackMode,
   volumeDown,
   volumeUp,
   getWs,

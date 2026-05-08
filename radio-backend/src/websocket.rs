@@ -197,13 +197,14 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
                 } else {
                     None
                 },
+                timestamp_ms: chrono::Utc::now().timestamp_millis(),
             };
 
             let _ = state_clone.ws_tx.send(
                 serde_json::to_string(&enriched).unwrap_or_default()
             );
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
     });
 }

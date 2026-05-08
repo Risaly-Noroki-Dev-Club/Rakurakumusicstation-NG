@@ -21,11 +21,7 @@ export default defineConfig({
         ws: true,
       },
       '/stream': {
-        target: 'http://localhost:2240',
-        changeOrigin: true,
-      },
-      '/file': {
-        target: 'http://localhost:2240',
+        target: 'http://localhost:2241',
         changeOrigin: true,
       },
     },

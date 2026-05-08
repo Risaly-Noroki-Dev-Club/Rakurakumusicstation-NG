@@ -19,6 +19,7 @@ export interface Store {
   themeIdx: number
   coverLoadError: boolean
   playbackState: PlaybackState
+  displayPositionMs: number
   lyricsLines: LyricsLine[]
   useFileMode: boolean
   queue: QueueItem[]
@@ -79,6 +80,7 @@ export const store: Store = reactive({
     song_id: 0, title: '', artist: '', position_ms: 0,
     duration_ms: 0, lyrics_line: null, status: 'stopped', cover_url: ''
   },
+  displayPositionMs: 0,
   lyricsLines: [] as LyricsLine[],
   useFileMode: false,
   queue: [] as QueueItem[],

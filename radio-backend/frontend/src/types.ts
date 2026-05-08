@@ -93,6 +93,7 @@ export interface WsPlaybackState {
   status: string
   cover_url: string
   stream_url?: string
+  timestamp_ms?: number
 }
 
 export interface WsQueueUpdate {

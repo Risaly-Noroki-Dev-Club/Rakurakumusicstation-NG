@@ -59,7 +59,6 @@ function cancelAdminClaim() {
     <h1><span>🎵</span><span>{{ store.stationName }}</span></h1>
     <div>
       <button class="theme-toggle" title="切换主题" @click="cycleTheme">{{ themeIcon }}</button>
-      <span v-if="store.useFileMode" class="mode-badge mode-file">推文件模式</span>
       <span v-if="displayName" class="user-display" @click="openNameEditor" title="点击修改名称">{{ displayName }}</span>
       <span v-if="!displayName" class="user-display">连接中...</span>
       <button v-if="store.deviceUser && store.deviceUser.role !== 'admin'" class="btn btn-secondary btn-small" @click="openAdminClaim" title="使用设置令牌获取管理员权限">🔑</button>

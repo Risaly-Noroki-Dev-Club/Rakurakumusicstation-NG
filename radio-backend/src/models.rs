@@ -269,6 +269,7 @@ pub enum WsMessage {
         status: PlaybackStatus,
         stream_url: String,
         file_url: Option<String>,
+        timestamp_ms: i64,
     },
     #[serde(rename = "queue_update")]
     QueueUpdate {
