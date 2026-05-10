@@ -19,17 +19,13 @@
     <div style="display: flex; justify-content: center; align-items: center; gap: 14px; margin-bottom: 32px;">
         <button class="icon ghost" type="button" onclick="volumeDown()" title="降低音量"><i class="mdi mdi-volume-medium"></i></button>
         {% if is_admin %}
-        <form method="post" action="/api/admin/playlist/prev" style="display:inline">
-            <button class="icon secondary" type="submit" title="上一首"><i class="mdi mdi-skip-previous"></i></button>
-        </form>
+        <button class="icon secondary" type="button" onclick="skipPrev()" title="上一首"><i class="mdi mdi-skip-previous"></i></button>
         {% endif %}
-        <button class="icon huge" type="button" onclick="togglePlay()" id="bigPlayBtn" title="播放/暂停">
+        <button class="icon huge primary" type="button" onclick="togglePlay()" id="bigPlayBtn" title="播放/暂停">
             <i class="mdi mdi-play" id="bigPlayIcon"></i>
         </button>
         {% if is_admin %}
-        <form method="post" action="/api/admin/playlist/next" style="display:inline">
-            <button class="icon secondary" type="submit" title="下一首"><i class="mdi mdi-skip-next"></i></button>
-        </form>
+        <button class="icon secondary" type="button" onclick="skipNext()" title="下一首"><i class="mdi mdi-skip-next"></i></button>
         {% endif %}
         <button class="icon ghost" type="button" onclick="volumeUp()" title="提高音量"><i class="mdi mdi-volume-high"></i></button>
     </div>
@@ -66,6 +62,40 @@
             if (idx >= 0) lines[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     };
+
+    window.skipPrev = function() {
+        fetch('/api/admin/playlist/prev', { method: 'POST', credentials: 'same-origin' })
+            .catch(() => {});
+    };
+    window.skipNext = function() {
+        fetch('/api/admin/playlist/next', { method: 'POST', credentials: 'same-origin' })
+            .catch(() => {});
+    };
+
+    // 页面加载时拉取当前播放状态，避免“等待播放”闪烁
+    fetch('/api/now-playing', { credentials: 'same-origin' })
+        .then(r => r.json())
+        .then(res => {
+            if (res.success && res.data && res.data.song) {
+                const d = res.data;
+                const bigTitle = document.getElementById('bigTitle');
+                const bigArtist = document.getElementById('bigArtist');
+                const bigTime = document.getElementById('bigTime');
+                const bigTotal = document.getElementById('bigTotal');
+                const bigProgress = document.getElementById('bigProgress');
+                const bigCover = document.getElementById('bigCover');
+                if (bigTitle) bigTitle.textContent = d.song.title || '等待播放…';
+                if (bigArtist) bigArtist.textContent = d.song.artist || '';
+                if (bigTime) bigTime.textContent = fmt(d.position_ms || 0);
+                if (bigTotal) bigTotal.textContent = fmt(d.duration_ms || 0);
+                if (bigProgress) bigProgress.style.width = (d.duration_ms > 0 ? (d.position_ms / d.duration_ms * 100) : 0) + '%';
+                if (bigCover && d.song.id > 0) {
+                    const url = window.location.origin + '/api/songs/' + d.song.id + '/cover';
+                    if (bigCover.dataset.src !== url) { bigCover.src = url; bigCover.dataset.src = url; }
+                }
+            }
+        })
+        .catch(() => {});
 })();
 </script>
 {% endblock %}

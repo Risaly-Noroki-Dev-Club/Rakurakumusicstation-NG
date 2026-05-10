@@ -116,12 +116,8 @@
         <form method="post" action="/api/admin/rescan-songs" style="display:inline">
             <button type="submit" class="small secondary"><i class="mdi mdi-refresh"></i>重新扫描</button>
         </form>
-        <form method="post" action="/api/admin/playlist/prev" style="display:inline">
-            <button type="submit" class="small secondary"><i class="mdi mdi-skip-previous"></i>上一首</button>
-        </form>
-        <form method="post" action="/api/admin/playlist/next" style="display:inline">
-            <button type="submit" class="small secondary"><i class="mdi mdi-skip-next"></i>下一首</button>
-        </form>
+        <button type="button" class="small secondary" onclick="fetch('/api/admin/playlist/prev',{method:'POST',credentials:'same-origin'}).catch(()=>{})"><i class="mdi mdi-skip-previous"></i>上一首</button>
+        <button type="button" class="small secondary" onclick="fetch('/api/admin/playlist/next',{method:'POST',credentials:'same-origin'}).catch(()=>{})"><i class="mdi mdi-skip-next"></i>下一首</button>
     </div>
 </div>
 <div class="card flush">
