@@ -652,12 +652,38 @@
                     }
                 } catch(e) {}
             };
-            ws.onclose = () => { if (!reconnectTimer) reconnectTimer = setTimeout(()=>{ reconnectTimer=null; connectWs(); }, 3000); };
+            ws.onclose = () => { if (!reconnectTimer) reconnectTimer = setTimeout(()=>{ reconnectTimer=null; connectWs(); }, 1000); };
         }
 
         connectWs();
         if (!audio.src) audio.src = '{{ stream_url }}';
         audio.play().catch(()=>{});
+
+        // 标签页切换回来后立即重连 + 刷新状态，减少 1-2 秒卡顿
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                if (ws && ws.readyState !== WebSocket.OPEN) {
+                    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+                    connectWs();
+                }
+                // 同时通过 HTTP 回退刷新一次，避免 WS 刚重连还没收到首条消息
+                fetch('/api/now-playing', { credentials: 'same-origin' })
+                    .then(r => r.json())
+                    .then(res => {
+                        if (res.success && res.data && res.data.song) {
+                            const d = res.data;
+                            state = {
+                                title: d.song.title, artist: d.song.artist,
+                                duration_ms: d.duration_ms, position_ms: d.position_ms,
+                                status: 'playing', song_id: d.song.id,
+                                stream_url: d.stream_url
+                            };
+                            updatePlayer();
+                        }
+                    })
+                    .catch(() => {});
+            }
+        });
 
         const theme = localStorage.getItem('theme') || 'auto';
         document.documentElement.setAttribute('data-theme', theme);
