@@ -10,7 +10,9 @@ export { refreshQueue, refreshHistory, removeQueueItem, addToQueue } from './api
 
 export { onSearchInput, downloadSong, uploadSong } from './api/songs'
 
-export { loadMyPlaylists, createPlaylist } from './api/playlists'
+export { loadMyPlaylists, createPlaylist, deletePlaylist, loadPlaylistDetail, addSongToPlaylist, removeSongFromPlaylist } from './api/playlists'
+
+export { adminSkipNext, adminSkipPrev } from './api/admin'
 
 export { loadUserNcmStatus, saveUserNcmSettings, testUserNcmLogin } from './api/ncm'
 

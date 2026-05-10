@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { store } from '../../store'
 import { getBackendUrl } from '../../api'
-import StatusMessage from '../StatusMessage.vue'
 
 async function loadSettings() {
   try {
@@ -11,9 +10,9 @@ async function loadSettings() {
     const s = data.data
     store.settingsStationName = s.station_name || 'Rakuraku Music Station'
     store.settingsSubtitle = s.subtitle || ''
-    store.settingsPrimaryColor = s.primary_color || '#764ba2'
-    store.settingsSecondaryColor = s.secondary_color || '#667eea'
-    store.settingsBgColor = s.bg_color || '#f4f4f9'
+    store.settingsPrimaryColor = s.primary_color || '#003D99'
+    store.settingsSecondaryColor = s.secondary_color || '#00897B'
+    store.settingsBgColor = s.bg_color || '#FAFAFA'
     store.settingsAdminPassword = ''
     store.settingsResult = '设置已加载'
     store.settingsResultType = 'info'
@@ -54,35 +53,96 @@ async function saveSettings() {
   }
 }
 
-const emit = defineEmits<{ load: [] }>()
 loadSettings()
 </script>
 
 <template>
-  <div class="card">
-    <h2>⚙️ 系统设置</h2>
-    <div class="form-group">
-      <label>站点名称:</label>
-      <input type="text" v-model="store.settingsStationName" placeholder="Rakuraku Music Station">
+  <div>
+    <v-text-field
+      v-model="store.settingsStationName"
+      label="站点名称"
+      placeholder="Rakuraku Music Station"
+      class="mb-3"
+    />
+    <v-text-field
+      v-model="store.settingsSubtitle"
+      label="副标题"
+      placeholder="A Community Radio"
+      class="mb-3"
+    />
+
+    <div class="d-flex flex-wrap gap-4 align-center mb-3">
+      <div class="d-flex align-center">
+        <input
+          v-model="store.settingsPrimaryColor"
+          type="color"
+          class="am-color-picker mr-2"
+        >
+        <span class="text-body-2">主色</span>
+      </div>
+      <div class="d-flex align-center">
+        <input
+          v-model="store.settingsSecondaryColor"
+          type="color"
+          class="am-color-picker mr-2"
+        >
+        <span class="text-body-2">次色</span>
+      </div>
+      <div class="d-flex align-center">
+        <input
+          v-model="store.settingsBgColor"
+          type="color"
+          class="am-color-picker mr-2"
+        >
+        <span class="text-body-2">背景色</span>
+      </div>
     </div>
-    <div class="form-group">
-      <label>副标题:</label>
-      <input type="text" v-model="store.settingsSubtitle" placeholder="A Community Radio">
+
+    <v-text-field
+      v-model="store.settingsAdminPassword"
+      label="管理员密码"
+      placeholder="留空则不修改密码"
+      type="password"
+      class="mb-4"
+    />
+
+    <div class="d-flex gap-3">
+      <v-btn variant="outlined" color="secondary" @click="loadSettings">
+        加载设置
+      </v-btn>
+      <v-btn color="primary" @click="saveSettings">
+        保存设置
+      </v-btn>
     </div>
-    <div class="form-group color-group">
-      <label>主题颜色:</label>
-      <input type="color" v-model="store.settingsPrimaryColor"><span>主色</span>
-      <input type="color" v-model="store.settingsSecondaryColor"><span>次色</span>
-      <input type="color" v-model="store.settingsBgColor"><span>背景色</span>
-    </div>
-    <div class="form-group">
-      <label>管理员密码:</label>
-      <input type="password" v-model="store.settingsAdminPassword" placeholder="留空则不修改密码">
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-secondary" @click="loadSettings">加载设置</button>
-      <button class="btn btn-primary" @click="saveSettings">保存设置</button>
-    </div>
-    <StatusMessage :message="store.settingsResult" :type="store.settingsResultType as any" />
+
+    <v-alert
+      v-if="store.settingsResult"
+      :type="store.settingsResultType as any"
+      class="mt-4"
+      density="compact"
+      variant="tonal"
+    >
+      {{ store.settingsResult }}
+    </v-alert>
   </div>
 </template>
+
+<style scoped>
+.am-color-picker {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--am-border);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 2px;
+  background: var(--am-surface);
+}
+
+.gap-4 {
+  gap: 16px;
+}
+
+.gap-3 {
+  gap: 12px;
+}
+</style>

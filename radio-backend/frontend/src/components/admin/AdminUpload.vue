@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { store, toast } from '../../store'
+import { toast } from '../../store'
 import { getBackendUrl } from '../../api'
-import StatusMessage from '../StatusMessage.vue'
 
 const uploadFile = ref<File | null>(null)
 const uploadFileName = ref('')
@@ -36,28 +35,58 @@ async function uploadSong() {
     })
     const data = await res.json()
     if (data.success) {
-      uploadStatus.value = '✅ ' + data.data
+      uploadStatus.value = data.data || '上传成功'
       uploadStatusType.value = 'success'
       uploadFile.value = null
       uploadFileName.value = ''
     } else {
-      uploadStatus.value = '❌ ' + (data.error || '上传失败')
+      uploadStatus.value = data.error || '上传失败'
       uploadStatusType.value = 'error'
     }
   } catch {
-    uploadStatus.value = '❌ 上传失败'
+    uploadStatus.value = '上传失败'
     uploadStatusType.value = 'error'
   }
 }
 </script>
 
 <template>
-  <div class="card">
-    <h2>📤 上传新音乐</h2>
-    <div class="upload-section">
-      <input type="file" class="upload-file-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac" @change="handleFileSelect">
-      <button class="btn btn-primary" @click="uploadSong" :disabled="!uploadFile">上传文件</button>
-    </div>
-    <StatusMessage :message="uploadStatus" :type="uploadStatusType as any" />
+  <div>
+    <input
+      type="file"
+      accept=".mp3,.wav,.flac,.ogg,.m4a,.aac"
+      style="display: none"
+      @change="handleFileSelect"
+      ref="fileInput"
+    >
+    <v-btn
+      variant="outlined"
+      color="primary"
+      prepend-icon="mdi-cloud-upload"
+      block
+      @click="($refs.fileInput as HTMLInputElement).click()"
+    >
+      {{ uploadFileName || '选择文件' }}
+    </v-btn>
+
+    <v-btn
+      v-if="uploadFile"
+      class="mt-3"
+      color="primary"
+      block
+      @click="uploadSong"
+    >
+      上传
+    </v-btn>
+
+    <v-alert
+      v-if="uploadStatus"
+      :type="uploadStatusType as any"
+      class="mt-3"
+      density="compact"
+      variant="tonal"
+    >
+      {{ uploadStatus }}
+    </v-alert>
   </div>
 </template>

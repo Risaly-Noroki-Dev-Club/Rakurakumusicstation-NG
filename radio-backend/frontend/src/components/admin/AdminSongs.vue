@@ -43,34 +43,52 @@ async function loadSongs() {
   } catch { /* ignore */ }
 }
 
-const emit = defineEmits<{ load: [] }>()
 loadSongs()
+
+const headers = [
+  { title: '标题', key: 'title' },
+  { title: '艺术家', key: 'artist' },
+  { title: '操作', key: 'actions', sortable: false, width: '80' },
+]
 </script>
 
 <template>
-  <div class="card admin-panel">
-    <h2>🎵 歌曲管理</h2>
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <button class="btn btn-info btn-small" @click="adminRescanSongs">🔄 重新扫描</button>
-      <button class="btn btn-primary btn-small" @click="adminPlayNext">⏭ 下一首</button>
-      <button class="btn btn-secondary btn-small" @click="adminPlayPrev">⏮ 上一首</button>
+  <div>
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <v-btn color="info" prepend-icon="mdi-refresh" size="small" @click="adminRescanSongs">
+        重新扫描
+      </v-btn>
+      <v-btn color="primary" prepend-icon="mdi-skip-next" size="small" @click="adminPlayNext">
+        下一首
+      </v-btn>
+      <v-btn color="secondary" prepend-icon="mdi-skip-previous" size="small" @click="adminPlayPrev">
+        上一首
+      </v-btn>
     </div>
-    <div style="max-height:500px;overflow-y:auto">
-      <table class="song-table">
-        <thead><tr><th>标题</th><th>艺术家</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-if="store.adminSongs.length === 0">
-            <td colspan="3" style="text-align:center;color:var(--text-muted);padding:20px">点击重新扫描加载歌曲</td>
-          </tr>
-          <tr v-for="s in store.adminSongs" :key="s.id">
-            <td class="song-title" :title="s.title">{{ s.title }}</td>
-            <td style="color:var(--text-muted)">{{ s.artist || '-' }}</td>
-            <td class="actions">
-              <button class="btn btn-danger btn-small" @click="adminDeleteSong(s.id)">🗑️</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+
+    <v-data-table
+      :headers="headers"
+      :items="store.adminSongs"
+      density="compact"
+      class="elevation-0"
+    >
+      <template #item.actions="{ item }">
+        <v-btn
+          icon
+          variant="text"
+          color="error"
+          size="small"
+          @click="adminDeleteSong(item.id)"
+        >
+          <v-icon size="18">mdi-delete</v-icon>
+        </v-btn>
+      </template>
+    </v-data-table>
   </div>
 </template>
+
+<style scoped>
+.gap-2 {
+  gap: 8px;
+}
+</style>

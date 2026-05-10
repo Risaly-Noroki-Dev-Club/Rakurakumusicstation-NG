@@ -1,17 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { store } from './store'
-import PlayerView from './views/PlayerView.vue'
-import QueueView from './views/QueueView.vue'
+import NowPlayingView from './views/NowPlayingView.vue'
 import LibraryView from './views/LibraryView.vue'
+import UpNextView from './views/UpNextView.vue'
+import SettingsView from './views/SettingsView.vue'
 import AdminView from './views/AdminView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/player' },
-    { path: '/player', name: 'player', component: PlayerView },
-    { path: '/queue', name: 'queue', component: QueueView },
+    { path: '/', name: 'now-playing', component: NowPlayingView },
     { path: '/library', name: 'library', component: LibraryView },
+    { path: '/up-next', name: 'up-next', component: UpNextView },
+    { path: '/settings', name: 'settings', component: SettingsView },
     { path: '/admin', redirect: '/admin/users' },
     {
       path: '/admin/:subtab',
@@ -27,7 +28,7 @@ router.beforeEach((to) => {
   if (to.meta.requiresAdmin) {
     const user = store.deviceUser
     if (!user || user.role !== 'admin') {
-      return { name: 'player' }
+      return { name: 'now-playing' }
     }
   }
 })

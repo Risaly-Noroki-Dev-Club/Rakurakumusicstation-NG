@@ -2,9 +2,9 @@
 import { ref, onUnmounted } from 'vue'
 import { store, toast } from '../../store'
 import { getBackendUrl } from '../../api'
-import StatusMessage from '../StatusMessage.vue'
 
 let eventSource: EventSource | null = null
+const fileInput = ref<HTMLInputElement | null>(null)
 
 function startDownload() {
   const playlist = store.downloadPlaylist.trim()
@@ -30,32 +30,26 @@ function startDownload() {
         store.downloadStatusType = 'info'
         openEventSource()
       } else {
-        store.downloadStatusMsg = '❌ ' + (data.error || '启动失败')
+        store.downloadStatusMsg = data.error || '启动失败'
         store.downloadStatusType = 'error'
         store.downloadRunning = false
       }
     })
     .catch(() => {
-      store.downloadStatusMsg = '❌ 请求失败'
+      store.downloadStatusMsg = '请求失败'
       store.downloadStatusType = 'error'
       store.downloadRunning = false
     })
 }
 
 function openEventSource() {
-  if (eventSource) {
-    eventSource.close()
-  }
-
+  if (eventSource) eventSource.close()
   const url = getBackendUrl() + '/api/admin/download/stream'
   eventSource = new EventSource(url, { withCredentials: true })
-
   eventSource.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data)
-      if (data.log) {
-        store.downloadLog += data.log + '\n'
-      }
+      if (data.log) store.downloadLog += data.log + '\n'
       if (data.done) {
         store.downloadRunning = false
         store.downloadStatusMsg = '下载完成'
@@ -67,11 +61,8 @@ function openEventSource() {
       store.downloadLog += e.data + '\n'
     }
   }
-
   eventSource.onerror = () => {
-    if (!store.downloadRunning) {
-      closeEventSource()
-    }
+    if (!store.downloadRunning) closeEventSource()
   }
 }
 
@@ -88,33 +79,80 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="card">
-    <h2>⬇️ 批量下载歌单</h2>
-    <textarea v-model="store.downloadPlaylist" rows="8" class="download-input"
-      placeholder="每行一首，格式：艺术家 - 歌名&#10;例：&#10;toe - tremolo+delay&#10;Whale Fall - True Places&#10;rinri - 君の世界は透明なんだね"></textarea>
-    <div class="download-options">
-      <div class="form-group" style="margin-bottom:0">
-        <label>音质：</label>
-        <select v-model="store.downloadQuality">
-          <option value="exhigh">超高音质 (320k)</option>
-          <option value="lossless">无损</option>
-          <option value="high">高音质 (192k)</option>
-          <option value="standard">标准 (128k)</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom:0">
-        <label>备用格式：</label>
-        <select v-model="store.downloadFormat">
-          <option value="mp3">MP3</option>
-          <option value="flac">FLAC</option>
-          <option value="m4a">M4A</option>
-          <option value="opus">Opus</option>
-        </select>
-      </div>
-      <button class="btn btn-primary" @click="startDownload" :disabled="store.downloadRunning">开始下载</button>
+  <div>
+    <v-textarea
+      v-model="store.downloadPlaylist"
+      rows="8"
+      placeholder="每行一首，格式：艺术家 - 歌名&#10;例：&#10;toe - tremolo+delay&#10;Whale Fall - True Places"
+      hide-details
+      class="mb-3"
+    />
+
+    <div class="d-flex flex-wrap gap-3 align-center mb-3">
+      <v-select
+        v-model="store.downloadQuality"
+        :items="[
+          { title: '超高音质 (320k)', value: 'exhigh' },
+          { title: '无损', value: 'lossless' },
+          { title: '高音质 (192k)', value: 'high' },
+          { title: '标准 (128k)', value: 'standard' },
+        ]"
+        label="音质"
+        item-title="title"
+        item-value="value"
+        style="min-width: 180px"
+        hide-details
+      />
+      <v-select
+        v-model="store.downloadFormat"
+        :items="[
+          { title: 'MP3', value: 'mp3' },
+          { title: 'FLAC', value: 'flac' },
+          { title: 'M4A', value: 'm4a' },
+          { title: 'Opus', value: 'opus' },
+        ]"
+        label="格式"
+        item-title="title"
+        item-value="value"
+        style="min-width: 120px"
+        hide-details
+      />
+      <v-spacer />
+      <v-btn
+        color="primary"
+        prepend-icon="mdi-download"
+        :disabled="store.downloadRunning"
+        @click="startDownload"
+      >
+        开始下载
+      </v-btn>
     </div>
-    <StatusMessage :message="store.downloadStatusMsg" :type="store.downloadStatusType as any" />
-    <div v-if="store.downloadLog" class="download-log" style="display:block" v-text="store.downloadLog"
-         :style="{ background: 'var(--card)', color: 'var(--text)', padding: '14px', borderRadius: '8px', fontSize: '0.82em', maxHeight: '280px', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', fontFamily: 'monospace', marginTop: '12px' }"></div>
+
+    <v-alert
+      v-if="store.downloadStatusMsg"
+      :type="store.downloadStatusType as any"
+      density="compact"
+      variant="tonal"
+      class="mb-3"
+    >
+      {{ store.downloadStatusMsg }}
+    </v-alert>
+
+    <v-card
+      v-if="store.downloadLog"
+      class="mt-3"
+      color="surface-variant"
+      elevation="0"
+    >
+      <v-card-text>
+        <pre class="text-caption" style="max-height: 280px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; font-family: var(--font-mono);">{{ store.downloadLog }}</pre>
+      </v-card-text>
+    </v-card>
   </div>
 </template>
+
+<style scoped>
+.gap-3 {
+  gap: 12px;
+}
+</style>

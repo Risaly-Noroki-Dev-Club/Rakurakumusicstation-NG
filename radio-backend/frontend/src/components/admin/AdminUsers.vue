@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { store, toast } from '../../store'
 import { getBackendUrl } from '../../api'
 
+const loading = ref(false)
+
 async function loadUsers() {
+  loading.value = true
   try {
     const r = await fetch(getBackendUrl() + '/api/admin/users')
     const d = await r.json()
@@ -13,6 +17,7 @@ async function loadUsers() {
     const d = await r.json()
     if (d.success) store.adminLogs = d.data || []
   } catch { /* ignore */ }
+  loading.value = false
 }
 
 async function adminPromote(id: number) {
@@ -57,43 +62,121 @@ async function adminUnban(id: number) {
   } catch { toast('请求失败', 'error') }
 }
 
-const emit = defineEmits<{ load: [] }>()
-loadUsers()
+onMounted(() => {
+  loadUsers()
+})
+
+const headers = [
+  { title: 'ID', key: 'id', width: '60' },
+  { title: '用户名', key: 'display_name' },
+  { title: '角色', key: 'role' },
+  { title: '状态', key: 'status' },
+  { title: '操作', key: 'actions', sortable: false },
+]
 </script>
 
 <template>
   <div>
-    <div class="card admin-panel">
-      <h2>👥 用户管理</h2>
-      <table class="users-table">
-        <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
-        <tbody>
-          <tr v-for="u in store.users" :key="u.id">
-            <td>{{ u.id }}</td><td>{{ u.display_name }}</td>
-            <td>
-              <span :class="['role-badge', u.role === 'admin' ? 'role-admin' : 'role-user']">
-                {{ u.role === 'admin' ? '管理员' : '用户' }}
-              </span>
-            </td>
-            <td>{{ (u as any).is_banned ? '🔴已封禁' : '🟢正常' }}</td>
-            <td>
-              <button v-if="u.role !== 'admin'" class="btn btn-primary btn-small" @click="adminPromote(u.id)">⭐ 提权</button>
-              <button v-if="u.role === 'admin'" class="btn btn-warning btn-small" @click="adminDemote(u.id)">⬇ 降权</button>
-              <button v-if="(u as any).is_banned" class="btn btn-secondary btn-small" @click="adminUnban(u.id)">解封</button>
-              <button v-else class="btn btn-danger btn-small" @click="adminBan(u.id)">封禁</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="card admin-panel">
-      <h2>📋 操作日志 (最近100条)</h2>
-      <div style="max-height:300px;overflow-y:auto;font-size:0.85em">
-        <div v-for="(l, idx) in store.adminLogs" :key="idx" style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,0.05)">
-          <span style="color:var(--text-muted)">[{{ l.created_at }}]</span>
-          {{ l.action }} — {{ l.details }}
+    <v-data-table
+      :headers="headers"
+      :items="store.users"
+      density="compact"
+      class="elevation-0"
+      :loading="loading"
+      :items-per-page="20"
+      :items-per-page-options="[10, 20, 50, 100]"
+    >
+      <template #item.role="{ item }">
+        <v-chip
+          size="small"
+          :color="item.role === 'admin' ? 'primary' : 'default'"
+          variant="tonal"
+        >
+          {{ item.role === 'admin' ? '管理员' : '用户' }}
+        </v-chip>
+      </template>
+
+      <template #item.status="{ item }">
+        <v-chip
+          size="small"
+          :color="(item as any).is_banned ? 'error' : 'success'"
+          variant="tonal"
+        >
+          {{ (item as any).is_banned ? '已封禁' : '正常' }}
+        </v-chip>
+      </template>
+
+      <template #item.actions="{ item }">
+        <div class="d-flex gap-1">
+          <v-btn
+            v-if="item.role !== 'admin'"
+            size="x-small"
+            color="primary"
+            variant="text"
+            @click="adminPromote(item.id)"
+          >
+            提权
+          </v-btn>
+          <v-btn
+            v-if="item.role === 'admin'"
+            size="x-small"
+            color="warning"
+            variant="text"
+            @click="adminDemote(item.id)"
+          >
+            降权
+          </v-btn>
+          <v-btn
+            v-if="(item as any).is_banned"
+            size="x-small"
+            color="success"
+            variant="text"
+            @click="adminUnban(item.id)"
+          >
+            解封
+          </v-btn>
+          <v-btn
+            v-else
+            size="x-small"
+            color="error"
+            variant="text"
+            @click="adminBan(item.id)"
+          >
+            封禁
+          </v-btn>
         </div>
-      </div>
-    </div>
+      </template>
+    </v-data-table>
+
+    <v-card class="mt-4" elevation="1">
+      <v-card-title class="text-subtitle-1 font-weight-bold">
+        操作日志（最近100条）
+      </v-card-title>
+      <v-card-text>
+        <div class="max-h-300 overflow-y-auto">
+          <div
+            v-for="(l, idx) in store.adminLogs"
+            :key="idx"
+            class="py-1 text-caption"
+            :class="{ 'border-b': idx < store.adminLogs.length - 1 }"
+          >
+            <span class="text-medium-emphasis">[{{ l.created_at }}]</span>
+            {{ l.action }} — {{ l.details }}
+          </div>
+        </div>
+      </v-card-text>
+    </v-card>
   </div>
 </template>
+
+<style scoped>
+.gap-1 {
+  gap: 4px;
+}
+.max-h-300 {
+  max-height: 300px;
+}
+.border-b {
+  border-bottom: 1px solid var(--am-divider);
+}
+</style>

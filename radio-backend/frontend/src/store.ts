@@ -68,6 +68,14 @@ export interface Store {
   userNcmResult: string
   userNcmResultType: string
   toasts: Toast[]
+
+  // ─── New states for Apple-Music-style player ───
+  showLyrics: boolean
+  extractedColor: string
+  isDesktop: boolean
+  showSnackbar: boolean
+  snackbarText: string
+  snackbarColor: string
 }
 
 export const store: Store = reactive({
@@ -114,9 +122,9 @@ export const store: Store = reactive({
   ncmResultType: '',
   settingsStationName: '',
   settingsSubtitle: '',
-  settingsPrimaryColor: '#764ba2',
-  settingsSecondaryColor: '#667eea',
-  settingsBgColor: '#f4f4f9',
+  settingsPrimaryColor: '#003D99',
+  settingsSecondaryColor: '#00897B',
+  settingsBgColor: '#FAFAFA',
   settingsAdminPassword: '',
   settingsResult: '',
   settingsResultType: '',
@@ -129,6 +137,13 @@ export const store: Store = reactive({
   userNcmResult: '',
   userNcmResultType: '',
   toasts: [] as Toast[],
+
+  showLyrics: false,
+  extractedColor: '#003D99',
+  isDesktop: window.innerWidth >= 960,
+  showSnackbar: false,
+  snackbarText: '',
+  snackbarColor: 'info',
 })
 
 export function formatTime(ms: number | undefined | null): string {
@@ -142,6 +157,9 @@ export function formatTime(ms: number | undefined | null): string {
 export function toast(message: string, level: 'info' | 'success' | 'error' = 'info'): void {
   const id = Date.now() + Math.random()
   store.toasts.push({ id, message, level })
+  store.snackbarText = message
+  store.snackbarColor = level
+  store.showSnackbar = true
   setTimeout(() => {
     const idx = store.toasts.findIndex(t => t.id === id)
     if (idx >= 0) store.toasts.splice(idx, 1)
@@ -173,11 +191,14 @@ export function applyStationColors(info: {
   bg_color?: string
 }): void {
   if (info.primary_color)
-    ROOT.style.setProperty('--primary', info.primary_color)
+    ROOT.style.setProperty('--am-primary', info.primary_color)
   if (info.secondary_color)
-    ROOT.style.setProperty('--secondary', info.secondary_color)
+    ROOT.style.setProperty('--am-secondary', info.secondary_color)
   if (info.bg_color)
-    ROOT.style.setProperty('--bg', info.bg_color)
+    ROOT.style.setProperty('--am-bg', info.bg_color)
 }
 
-
+// Responsive listener
+window.addEventListener('resize', () => {
+  store.isDesktop = window.innerWidth >= 960
+})
