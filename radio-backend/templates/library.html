@@ -40,7 +40,7 @@
             </div>
             <div class="actions">
                 <form method="post" action="/api/queue" style="display:inline">
-                    <input type="hidden" name="song_id" value="{{ song.id }}">
+                    <input type="hidden" name="song_id" data-type="number" value="{{ song.id }}">
                     <button type="submit" class="small"><i class="mdi mdi-radio"></i>点歌</button>
                 </form>
                 <a href="/api/songs/{{ song.id }}/download" class="btn small secondary icon" title="下载">

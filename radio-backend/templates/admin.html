@@ -68,11 +68,13 @@
                     <div class="actions">
                         {% if u.role != "admin" %}
                         <form method="post" action="/api/admin/users/{{ u.id }}/role" style="display:inline">
+                            <input type="hidden" name="_method" value="PUT">
                             <input type="hidden" name="role" value="admin">
                             <button type="submit" class="small"><i class="mdi mdi-arrow-up-bold"></i>提权</button>
                         </form>
                         {% else %}
                         <form method="post" action="/api/admin/users/{{ u.id }}/role" style="display:inline">
+                            <input type="hidden" name="_method" value="PUT">
                             <input type="hidden" name="role" value="user">
                             <button type="submit" class="small secondary"><i class="mdi mdi-arrow-down-bold"></i>降权</button>
                         </form>

@@ -43,7 +43,7 @@
                 <span class="badge">等待</span>
                     {% if let Some(song) = item.song.as_ref() %}
                     <form method="post" action="/api/queue" style="display:inline">
-                        <input type="hidden" name="song_id" value="{{ song.id }}">
+                        <input type="hidden" name="song_id" data-type="number" value="{{ song.id }}">
                         <button type="submit" class="icon ghost small" title="重新点播"><i class="mdi mdi-restart"></i></button>
                     </form>
                     {% endif %}
@@ -84,7 +84,7 @@
             </div>
             {% if let Some(song) = h.song.as_ref() %}
             <form method="post" action="/api/queue" style="display:inline">
-                <input type="hidden" name="song_id" value="{{ song.id }}">
+                <input type="hidden" name="song_id" data-type="number" value="{{ song.id }}">
                 <button type="submit" class="icon ghost small" title="再次点播"><i class="mdi mdi-restart"></i></button>
             </form>
             {% endif %}

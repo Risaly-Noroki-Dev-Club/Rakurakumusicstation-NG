@@ -693,6 +693,128 @@
         };
     })();
     </script>
+
+    <script>
+    /*
+     * 全局表单 → AJAX：避免 SSR 页面提交 <form action="/api/..."> 时
+     * 浏览器导航到原始 JSON 响应。所有 action 以 /api/ 开头的表单
+     * 都会被劫持，按 enctype 决定 multipart / JSON，并支持 _method 覆盖。
+     */
+    (function() {
+        function showToast(msg, isError) {
+            let toast = document.getElementById('__ajax_toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = '__ajax_toast';
+                toast.style.cssText = 'position:fixed;bottom:88px;left:50%;transform:translateX(-50%);background:var(--surface);color:var(--on-surface);padding:12px 20px;border-radius:var(--radius);box-shadow:var(--elevation-8);font-size:14px;z-index:1000;border-left:4px solid var(--primary);max-width:80vw;';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = msg;
+            toast.style.borderLeftColor = isError ? 'var(--error)' : 'var(--success)';
+            toast.style.opacity = '1';
+            clearTimeout(toast._t);
+            toast._t = setTimeout(function() { toast.style.opacity = '0'; }, 2400);
+        }
+
+        function buildJsonBody(form) {
+            const obj = {};
+            const elems = form.querySelectorAll('input, textarea, select');
+            elems.forEach(function(el) {
+                const k = el.name;
+                if (!k || k === '_method' || el.disabled) return;
+                if (el.type === 'checkbox') {
+                    obj[k] = el.checked;
+                } else if (el.type === 'radio') {
+                    if (el.checked) obj[k] = el.value;
+                } else if (el.type === 'file') {
+                    /* skip — multipart path handles files */
+                } else {
+                    const hint = el.getAttribute('data-type') || el.type;
+                    const v = el.value;
+                    if (hint === 'number' && v !== '') obj[k] = Number(v);
+                    else obj[k] = v;
+                }
+            });
+            return obj;
+        }
+
+        document.addEventListener('submit', function(e) {
+            if (e.defaultPrevented) return;
+            const form = e.target;
+            if (!form || form.tagName !== 'FORM') return;
+
+            const submitter = e.submitter;
+            const action = (submitter && submitter.getAttribute && submitter.getAttribute('formaction')) ||
+                           form.getAttribute('action') || '';
+            if (!action.startsWith('/api/')) return;
+
+            e.preventDefault();
+
+            const isMultipart = (form.enctype === 'multipart/form-data');
+            let method = ((submitter && submitter.getAttribute && submitter.getAttribute('formmethod')) ||
+                          form.getAttribute('method') || 'POST').toUpperCase();
+            const methodOverrideEl = form.querySelector('input[name="_method"]');
+            if (methodOverrideEl && methodOverrideEl.value) {
+                method = methodOverrideEl.value.toUpperCase();
+            }
+
+            const buttons = form.querySelectorAll('button');
+            buttons.forEach(function(b) { b.disabled = true; });
+
+            let opts;
+            if (method === 'GET' || method === 'DELETE') {
+                opts = { method: method, credentials: 'same-origin' };
+            } else if (isMultipart) {
+                const fd = new FormData(form);
+                fd.delete('_method');
+                opts = { method: method, credentials: 'same-origin', body: fd };
+            } else {
+                opts = {
+                    method: method,
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(buildJsonBody(form))
+                };
+            }
+
+            fetch(action, opts)
+                .then(function(r) {
+                    const ct = r.headers.get('content-type') || '';
+                    const parse = ct.indexOf('application/json') !== -1
+                        ? r.json().catch(function() { return null; })
+                        : Promise.resolve(null);
+                    return parse.then(function(data) {
+                        return { ok: r.ok, status: r.status, data: data };
+                    });
+                })
+                .then(function(res) {
+                    if (res.ok && (!res.data || res.data.success !== false)) {
+                        const msg = (res.data && typeof res.data.data === 'string') ? res.data.data : '操作成功';
+                        try { sessionStorage.setItem('__flash', msg); } catch (_) {}
+                        window.location.reload();
+                    } else {
+                        const msg = (res.data && (res.data.error || res.data.message)) ||
+                                    ('请求失败 (' + res.status + ')');
+                        showToast(msg, true);
+                        buttons.forEach(function(b) { b.disabled = false; });
+                    }
+                })
+                .catch(function(err) {
+                    showToast('网络错误: ' + (err && err.message ? err.message : err), true);
+                    buttons.forEach(function(b) { b.disabled = false; });
+                });
+        }, false);
+
+        document.addEventListener('DOMContentLoaded', function() {
+            let flash = null;
+            try { flash = sessionStorage.getItem('__flash'); } catch (_) {}
+            if (flash) {
+                try { sessionStorage.removeItem('__flash'); } catch (_) {}
+                showToast(flash, false);
+            }
+        });
+    })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
