@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="card" style="text-align:center; padding: 48px 24px;">
-    <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
-    <h2 style="margin-bottom: 8px;">出错了</h2>
-    <p style="color: var(--text-secondary);">{{ message }}</p>
-    <a href="/" style="margin-top: 16px; display: inline-block;">返回首页</a>
+<div style="max-width: 480px; margin: 60px auto; text-align:center;">
+    <div class="card" style="padding: 48px 24px;">
+        <div style="width: 72px; height: 72px; margin: 0 auto 20px; border-radius: 24px; background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); display: flex; align-items: center; justify-content: center; font-size: 40px;">
+            <i class="mdi mdi-alert-circle-outline"></i>
+        </div>
+        <h2 style="margin-bottom: 8px; font-size: 22px;">出错了</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 24px;">{{ message }}</p>
+        <a href="/" class="btn"><i class="mdi mdi-home"></i>返回首页</a>
+    </div>
 </div>
 {% endblock %}

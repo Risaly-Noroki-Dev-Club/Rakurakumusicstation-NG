@@ -1,34 +1,44 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div style="max-width: 600px; margin: 0 auto; text-align: center;">
-    <div style="width: 280px; height: 280px; margin: 0 auto 24px; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-lg); background: var(--border);">
-        <img id="bigCover" src="" alt="cover" class="cover" style="border-radius: 16px;" onerror="this.style.display='none'">
+<div style="max-width: 520px; margin: 0 auto; text-align: center;">
+    <div style="position: relative; width: 100%; max-width: 360px; margin: 8px auto 32px;">
+        <div style="position: absolute; inset: 12px; border-radius: 28px; background: var(--primary); filter: blur(40px); opacity: .25; z-index: 0;"></div>
+        <img id="bigCover" src="" alt="封面" class="cover" style="position: relative; z-index: 1; border-radius: var(--radius-card); box-shadow: var(--elevation-8);" onerror="this.style.visibility='hidden'">
     </div>
-    <h1 id="bigTitle" style="font-size: 1.75rem; font-weight: 700; margin: 0 0 8px;">等待播放...</h1>
-    <p id="bigArtist" style="font-size: 1.1rem; color: var(--text-secondary); margin: 0 0 24px;"></p>
 
-    <div class="progress-bar" style="margin-bottom: 8px;"><div class="fill" id="bigProgress"></div></div>
-    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 24px;">
+    <h1 id="bigTitle" style="font-size: 26px; font-weight: 600; margin: 0 0 6px; font-family: var(--font-display);">等待播放…</h1>
+    <p id="bigArtist" style="font-size: 15px; color: var(--text-secondary); margin: 0 0 28px;"></p>
+
+    <div class="progress-bar tall" style="margin-bottom: 8px;"><div class="fill" id="bigProgress"></div></div>
+    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin-bottom: 28px; font-weight: 500; font-family: var(--font-mono);">
         <span id="bigTime">0:00</span>
         <span id="bigTotal">0:00</span>
     </div>
 
-    <div style="display: flex; justify-content: center; align-items: center; gap: 16px; margin-bottom: 16px;">
-        <button class="small secondary" onclick="volumeDown()">🔉</button>
+    <div style="display: flex; justify-content: center; align-items: center; gap: 14px; margin-bottom: 32px;">
+        <button class="icon ghost" type="button" onclick="volumeDown()" title="降低音量"><i class="mdi mdi-volume-medium"></i></button>
         {% if is_admin %}
-        <form method="post" action="/api/admin/playlist/prev" style="display:inline"><button class="small secondary" type="submit">⏮️</button></form>
+        <form method="post" action="/api/admin/playlist/prev" style="display:inline">
+            <button class="icon secondary" type="submit" title="上一首"><i class="mdi mdi-skip-previous"></i></button>
+        </form>
         {% endif %}
-        <button style="width: 64px; height: 64px; border-radius: 50%; font-size: 24px;" onclick="togglePlay()" id="bigPlayBtn">▶️</button>
+        <button class="icon huge" type="button" onclick="togglePlay()" id="bigPlayBtn" title="播放/暂停">
+            <i class="mdi mdi-play" id="bigPlayIcon"></i>
+        </button>
         {% if is_admin %}
-        <form method="post" action="/api/admin/playlist/next" style="display:inline"><button class="small secondary" type="submit">⏭️</button></form>
+        <form method="post" action="/api/admin/playlist/next" style="display:inline">
+            <button class="icon secondary" type="submit" title="下一首"><i class="mdi mdi-skip-next"></i></button>
+        </form>
         {% endif %}
-        <button class="small secondary" onclick="volumeUp()">🔊</button>
+        <button class="icon ghost" type="button" onclick="volumeUp()" title="提高音量"><i class="mdi mdi-volume-high"></i></button>
     </div>
 
     {% if !lyrics_lines.is_empty() %}
     <div class="card">
-        <div class="card-title">📝 歌词</div>
+        <div class="card-title">
+            <span class="label"><i class="mdi mdi-text-box-outline"></i>歌词</span>
+        </div>
         <div class="lyrics-box" id="lyricsBox">
             {% for line in lyrics_lines %}
             <div class="line" data-time="{{ line.time_ms }}">{{ line.text }}</div>

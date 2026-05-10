@@ -26,6 +26,7 @@ use axum::{
 };
 use sqlx::Row;
 use std::sync::Arc;
+use tower_http::services::ServeDir;
 
 /// 构建组合的应用程序路由器。
 pub fn build_router(state: Arc<AppState>) -> Router {
@@ -60,6 +61,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // 正在播放（公开）
         .route("/api/now-playing", get(queue::now_playing))
         .with_state(state)
+        // 静态资源回退（MDI 字体/CSS、PWA manifest、icon 等放在 ./static/）
+        .fallback_service(ServeDir::new("static"))
 }
 
 async fn page_ctx(
