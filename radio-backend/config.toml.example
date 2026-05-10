@@ -34,6 +34,8 @@ max_size = 100
 max_user_submissions = 3
 # 限速窗口（秒）
 rate_limit_window_secs = 300
+# 点歌冷却时间（秒），0 表示禁用
+request_cooldown_secs = 60
 
 [station]
 name = "Rakuraku Music Station"

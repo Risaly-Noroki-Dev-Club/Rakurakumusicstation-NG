@@ -6,6 +6,31 @@ use crate::models::{QueueItem, QueueItemDisplay, SongSummary};
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
+/// 检查设备用户是否处于点歌冷却中。
+pub async fn check_cooldown(db: &SqlitePool, device_user_id: i64, cooldown_secs: u64) -> Result<(), AppError> {
+    if cooldown_secs == 0 {
+        return Ok(());
+    }
+
+    let elapsed: Option<(i64,)> = sqlx::query_as(
+        "SELECT strftime('%s', 'now') - strftime('%s', last_request_time) FROM user_requests WHERE device_user_id = ? AND last_request_time > datetime('now', '-' || ? || ' seconds')"
+    )
+    .bind(device_user_id)
+    .bind(cooldown_secs as i64)
+    .fetch_optional(db)
+    .await?;
+
+    if let Some((elapsed,)) = elapsed {
+        let remaining = cooldown_secs.saturating_sub(elapsed.max(0) as u64);
+        return Err(AppError::RateLimited(format!(
+            "Cooldown active: please wait {} seconds before requesting another song",
+            remaining
+        )));
+    }
+
+    Ok(())
+}
+
 /// 检查设备用户是否超出队列提交的速率限制。
 pub async fn check_rate_limit(db: &SqlitePool, device_user_id: i64, window_secs: u64, max_subs: usize) -> Result<bool, AppError> {
     let cutoff = chrono::Utc::now() - chrono::Duration::seconds(window_secs as i64);
@@ -49,6 +74,8 @@ pub async fn add_to_queue(
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
+    check_cooldown(db, device_user_id, config.request_cooldown_secs).await?;
+
     if check_rate_limit(db, device_user_id, config.rate_limit_window_secs, config.max_user_submissions).await? {
         return Err(AppError::RateLimited(format!(
             "You can only submit {} songs per {} seconds",
@@ -83,6 +110,13 @@ pub async fn add_to_queue(
     .await?;
 
     let queue_item_id = result.last_insert_rowid();
+
+    sqlx::query(
+        "INSERT OR REPLACE INTO user_requests (device_user_id, last_request_time) VALUES (?, datetime('now'))"
+    )
+    .bind(device_user_id)
+    .execute(db)
+    .await?;
 
     crate::websocket::broadcast(state, crate::models::WsMessage::QueueUpdate {
         action: "added".into(),

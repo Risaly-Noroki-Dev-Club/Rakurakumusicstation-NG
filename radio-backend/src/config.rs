@@ -109,6 +109,8 @@ pub struct QueueConfig {
     pub max_user_submissions: usize,
     #[serde(default = "default_rate_limit_window")]
     pub rate_limit_window_secs: u64,
+    #[serde(default = "default_request_cooldown")]
+    pub request_cooldown_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,6 +158,7 @@ fn default_admin_setup_token() -> String { "change-me-in-production".into() }
 fn default_max_queue_size() -> usize { 100 }
 fn default_max_user_submissions() -> usize { 3 }
 fn default_rate_limit_window() -> u64 { 300 }
+fn default_request_cooldown() -> u64 { 0 }
 fn default_station_name() -> String { "Rakuraku Music Station".into() }
 fn default_subtitle() -> String { "A Community Radio".into() }
 fn default_primary_color() -> String { "#764ba2".into() }

@@ -52,7 +52,7 @@ fn encrypt_ecb(data: &[u8], key_str: &str) -> Vec<u8> {
     let padded = pkcs7_pad(data, 16);
     let mut result = Vec::with_capacity(padded.len());
 
-    for chunk in padded.chunks(16) {
+    for chunk in padded.chunks_exact(16) {
         let mut block = GenericArray::clone_from_slice(chunk);
         cipher.encrypt_block(&mut block);
         result.extend_from_slice(&block);
@@ -61,11 +61,14 @@ fn encrypt_ecb(data: &[u8], key_str: &str) -> Vec<u8> {
 }
 
 fn decrypt_ecb(encrypted: &[u8], key_str: &str) -> Vec<u8> {
+    if encrypted.is_empty() {
+        return Vec::new();
+    }
     let key = generate_key(key_str.as_bytes());
     let cipher = Aes128::new(GenericArray::from_slice(&key));
     let mut result = Vec::with_capacity(encrypted.len());
 
-    for chunk in encrypted.chunks(16) {
+    for chunk in encrypted.chunks_exact(16) {
         let mut block = GenericArray::clone_from_slice(chunk);
         cipher.decrypt_block(&mut block);
         result.extend_from_slice(&block);
