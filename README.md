@@ -1,11 +1,11 @@
-# Rakuraku Music Station NG — v3.1-beta
+# Rakuraku Music Station NG — v3.0.0
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)
 
-> Rust 全栈：嵌入式音频引擎 + Web 后端 + Vue 3 前端。
-> 一个自托管的网络电台，带现代 Web 界面、多设备支持、httpOnly Cookie 认证、WebSocket 实时同步和内嵌 Rust 音频引擎。
+> Rust 全栈：嵌入式音频引擎 + Web 后端 + SSR 页面。
+> 一个自托管的网络电台，设备免密认证，WebSocket 实时同步，内嵌 Rust 音频引擎。
 
-**v3.1-beta 重点：** 引擎-后端概念对齐、流地址自动推断、路径标准化、强类型状态机。
+**v3.0.0 正式版 "it's never meant"**
 
 ---
 
@@ -14,19 +14,19 @@
 ### 从源码构建
 
 ```bash
-# 安装依赖（Debian/Ubuntu）
+# 依赖 (Debian/Ubuntu)
 apt install ffmpeg
 
-# 构建（需 Rust toolchain）
+# 构建 (需要 Rust toolchain)
 ./build_release.sh
 
-# 放入音乐文件
+# 放入音乐
 cp /path/to/music/*.mp3 dist/media/
 
 # 启动
 cd dist && ./start.sh
 
-# 浏览器打开 http://localhost:2241
+# 打开 http://localhost:2241
 ```
 
 ### 停止服务
@@ -39,7 +39,7 @@ cd dist && ./stop.sh
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| Web 界面 + API + 音频流 + WebSocket | `2241` | 单端口，统一二进制文件 |
+| Web 界面 + API + 音频流 + WebSocket | `2241` | 单端口，单二进制 |
 
 ---
 
@@ -47,79 +47,71 @@ cd dist && ./stop.sh
 
 ### 首次启动
 
-浏览器打开 `http://localhost:2241`，设备会自动获得一个 `device_token` Cookie。无密码，无需注册。
+浏览器打开 `http://localhost:2241`，设备自动获得 `device_token` Cookie。无需注册。
 
-如需管理员权限：编辑 `dist/config.toml` 中的 `admin_setup_token`，然后点击导航栏 **🔑** 按钮输入该令牌即可升级为管理员。
+获取管理员权限：在「设置」页面输入 `config.toml` 中的 `admin_setup_token` 申请提权。
 
 ### 页面导航
 
-| 标签 | 功能 |
-|------|------|
-| **播放器** | 当前曲目、封面、进度条、同步歌词、音量控制 |
-| **队列** | 前方排队歌曲 + 播放历史 |
-| **曲库** | 搜索/浏览歌曲、点歌、下载、上传、歌单、网易云账号 |
+| 页面 | 路径 | 功能 |
+|------|------|------|
+| **播放器** | `/` | 封面、进度条、同步歌词、音量 / 播放控制 |
+| **曲库** | `/library` | 搜索歌曲、点歌、上传、歌单、网易云账号绑定 |
+| **队列** | `/queue` | 待播队列与播放历史 |
+| **设置** | `/settings` | 显示名称、亮色/暗色/自动主题、管理员提权 |
+
+页面顶部有音频进度条常驻，曲目封面、歌词通过 WebSocket 实时同步。
 
 ### 点歌
 
-曲库中搜索歌曲 → 点击 **📻 点歌** 即可加入电台队列。
-
-### 下载歌曲
-
-曲库列表中每首歌曲旁的 **⬇️** 按钮，点击即可下载到本地。
+曲库搜索 → 点击 **📻 点歌** 加入队列。请求队列优先于文件夹循环，点歌后会在当前曲目结束后立即播放。
 
 ### 上传歌曲
 
-曲库页面下方的 **📤 上传歌曲** 面板，支持 MP3/FLAC/WAV/OGG/M4A/AAC（最大 100 MB）。上传后自动加入曲库。
+曲库页面下方 **⬆️ 上传歌曲**，支持 MP3 / FLAC / WAV / OGG / M4A / AAC（最大 100 MB）。上传后自动加入曲库并刷新播放队列。
 
 ### 网易云账号
 
-曲库页面下方的 **🎵 我的网易云账号** 面板，可配置个人网易云 Cookie 或手机号+密码。每个设备独立配置，互不影响。配置后可下载 VIP 歌曲。
-
-### 播放器控制
-
-- **播放/暂停** — 切换状态
-- **音量** — 滑块调节
-- **进度** — 点击/拖动进度条跳转
-- **主题** — 🌓 按钮切换亮色/暗色/自动模式
+曲库页面下方 **☁️ 网易云账号**，可填入个人网易云 Cookie 或手机号 + 密码。每设备独立存储，可下载 VIP 歌曲。
 
 ### 外部播放器
 
-VLC、mpv、ffplay 等可直接播放 `http://localhost:2241/stream`。
-
-### PWA 支持
-
-可在 Android/iOS 添加到主屏幕，离线缓存界面壳层。
+VLC、mpv、ffplay 可直接播放 `http://localhost:2241/stream`。
 
 ---
 
 ## 管理员指南
 
-管理员角色用户可看到 **管理** 标签页。
+管理员在侧栏看到 **🛡️ 管理** 入口。
 
 ### 管理面板
 
 | 子标签 | 功能 |
 |--------|------|
-| 👥 用户管理 | 查看设备列表、封禁/解封、提权/降权、操作日志 |
-| 🎵 歌曲管理 | 查看/删除歌曲、重新扫描 media/、切歌 |
-| 📤 上传 | 上传音频文件 |
-| ⬇️ 下载 | 批量下载歌单（原生 Rust 网易云下载，SSE 实时进度） |
-| 🎵 网易云 | 全局网易云账号配置 |
+| 📊 统计 | 用户数、歌曲数、队列数、歌单数 |
+| 👥 用户 | 设备列表、封禁/解封、提权/降权、操作日志 |
+| 🎵 歌曲 | 歌曲列表、删除、重新扫描、上一首/下一首 |
+| ⬆️ 上传 | 上传音频文件 |
+| ⬇️ 下载 | 批量网易云下载（粘贴歌单，SSE 实时日志） |
+| ☁️ 网易云 | 全局网易云账号配置 |
 | ⚙️ 设置 | 电台名称、副标题、主题色 |
-| 📊 统计 | 设备数、歌曲数、队列数、歌单数 |
+
+### 批量下载
+
+管理 → 下载，输入歌单（每行 `艺术家 - 歌名`），选择音质和格式，即可通过原生 Rust NCM 引擎批量下载。进度通过 SSE 实时推送到页面。
 
 ### 提权设备
 
-在 **用户管理** 中点击 **⭐ 提权** 可将普通设备提升为管理员，**⬇ 降权** 撤销。
+用户管理 → 点击 **提权** 升级为管理员；**降权** 撤销。
 
-备选方案（SQLite）：
+SQL 备选方案：
 ```bash
 sqlite3 dist/data/radio.db "UPDATE device_users SET role='admin' WHERE id=设备ID;"
 ```
 
-### 重新扫描媒体库
+### 重新扫描
 
-直接向 `media/` 文件夹添加文件后，在 **歌曲管理** 中点击 **🔄 重新扫描**（需服务器安装 ffprobe）。
+直接放文件到 `media/` 后，歌曲管理中点击 **🔄 重新扫描**（需要 ffprobe）。
 
 ---
 
@@ -127,14 +119,14 @@ sqlite3 dist/data/radio.db "UPDATE device_users SET role='admin' WHERE id=设备
 
 | 问题 | 解决方法 |
 |------|----------|
-| 无法连接 Web 界面 | 确认服务已启动：`cd dist && ./start.sh`；查看日志 `tail -f dist/server.log` |
-| 无声音/流不可用 | 确认 `media/` 中有音频文件；查看日志 `tail -f dist/server.log`；检查 `/api/station` 返回的 `stream_url` 是否正确 |
-| 反向代理后流地址错误 | 确保反代传递 `Host`、`X-Forwarded-Host`、`X-Forwarded-Proto` 头；或手动设置 `stream_base` 为绝对 URL |
-| 曲库无歌曲 | 在管理面板点击 **重新扫描** 或重启服务 |
-| 无法获取管理员权限 | 确认 `dist/config.toml` 中 `admin_setup_token` 已设置 |
-| 设置不生效 | 更改后需重启（`./stop.sh && ./start.sh`） |
-| 封面不显示 | 确保音频文件含内嵌封面（ID3 标签）；缺失时显示默认音符图标 |
-| 歌词不显示 | 仅支持同名 `.lrc` 文件放在同目录下；v3.1 后端已预解析歌词，前端无需额外配置 |
+| 无法连接 | 确认启动：`cd dist && ./start.sh`；查看日志 `tail -f dist/server.log` |
+| 无声音 | 确认 `media/` 有音频文件；检查 `/api/station` 的 `stream_url` |
+| 反代后流地址不正确 | 确保代理传递 `Host` / `X-Forwarded-*` 头，或 `stream_base` 设为绝对 URL |
+| 曲库无歌曲 | 管理面板点击 **重新扫描**，或重启服务 |
+| 无法获取管理员 | 确认 `dist/config.toml` 中 `admin_setup_token` 已设置 |
+| 设置不生效 | 需重启服务 (`./stop.sh && ./start.sh`) |
+| 封面不显示 | 需内嵌封面(ID3)；缺失时显示默认音符图标 |
+| 歌词不显示 | 仅支持同名 `.lrc` 放同目录；后端自动解析推送 |
 
 ---
 
@@ -148,66 +140,59 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
                              │
              ┌───────────────┴──────────────┐
              │  Rust Backend (2241)          │
-             │  嵌入 radio-engine crate      │
+             │  内嵌 radio-engine crate      │
              │  Axum + SQLite + Device Auth  │
              │  WebSocket + 歌词 + 队列管理   │
              └──────────────────────────────┘
                              │
-                     static/ (Vite-built Vue 3 SPA)
+                     Askama SSR 模板 (服务端渲染)
 ```
 
 ### 服务划分
 
 | 组件 | 语言 | 说明 |
 |------|------|------|
-| 音频引擎 | Rust | `radio-engine/` crate，内嵌于后端，ffmpeg 解码 → 环形缓冲 → async 推流 |
-| 业务后端 | Rust | `radio-backend/`，REST API、WebSocket、设备认证、SQLite、队列管理 |
-| Web 前端 | TypeScript | Vue 3 SFC + Vite，构建产物在 `radio-backend/static/` |
+| 音频引擎 | Rust | `radio-engine/`，ffmpeg 解码 → 环形缓冲 → async 推流 |
+| 业务后端 | Rust | `radio-backend/`，REST API、WebSocket、SQLite、SSR 页面 |
+| Web 前端 | HTML+JS | Askama 服务端模板 + 少量 vanilla JS，无 SPA 框架 |
 
-### v3.1-beta 核心改进
+### v3.0.0 主要特性
 
-| 改进项 | 说明 |
-|--------|------|
-| **stream_base = "auto"** | 自动检测反向代理（X-Forwarded-*）并构建正确的流地址，开箱即用 |
-| **路径标准化** | engine 内统一使用相对路径存储，`resolve_media_path` 自动识别绝对/相对路径 |
-| **概念对齐** | `PlaybackState.playlist_index`（原 `song_id`）、`PlaybackStatus` enum、`duration_ms` 统一 |
-| **歌词预解析** | 后端解析 LRC 为结构化数组通过 WebSocket 推送，前端零解析开销 |
-| **递归扫描** | engine `init_play_queue` 与 backend `rescan_songs` 均递归扫描子目录 |
-| **线程安全** | `RingBuffer` `Condvar` → `tokio::sync::Notify`，消除 `/stream` 阻塞线程问题 |
+| 特性 | 说明 |
+|------|------|
+| **SSR 页面** | 服务端渲染 Askama 模板，无前端构建步骤，首屏秒开 |
+| **请求队列** | 用户点歌优先级高于文件夹循环；Wake/Notify 机制即时响应 |
+| **批量下载** | 管理面板粘贴歌单批量下载，SSE 推送实时进度 |
+| **stream_base** | 自动检测反代(X-Forwarded-*)构建流地址，也支持相对/绝对路径 |
+| **路径标准化** | engine 内部统一相对路径存储，`resolve_media_path` 处理绝对/相对 |
+| **歌词预解析** | 后端 LRC → 结构化数组 WebSocket 推送，前端零解析 |
+| **NCM 导入任务** | 网易云下载状态持久化到 SQLite，支持掉线恢复 |
 
 ---
 
 ## API 参考
 
-### Rust 后端
-
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
+| `GET` | `/` `/:page` | Device | SSR 页面（播放器/曲库/队列/设置/管理） |
 | `GET` | `/api/station` | 无 | 电台信息 |
 | `GET` | `/api/now-playing` | 无 | 当前曲目 |
-| `GET` | `/api/songs?q=` | 无 | 曲库搜索 |
+| `GET` | `/api/songs?q=` | 无 | 搜索歌曲 |
 | `GET` | `/api/songs/:id` | 无 | 歌曲详情 |
 | `GET` | `/api/songs/:id/cover` | 无 | 封面图片 |
-| `GET` | `/api/songs/:id/download` | Device | 下载歌曲文件 |
+| `GET` | `/api/songs/:id/download` | Device | 下载歌曲 |
 | `POST` | `/api/songs/upload` | Device | 上传歌曲 |
-| `GET` | `/api/queue` | 无 | 队列 |
+| `GET` | `/api/queue` | 无 | 待播队列 |
 | `GET` | `/api/queue/history` | 无 | 播放历史 |
 | `POST` | `/api/queue` | Device | 点歌 |
-| `GET` | `/api/user/me` | Device | 当前设备信息 |
-| `POST` | `/api/user/display-name` | Device | 设置显示名称 |
-| `POST` | `/api/user/promote` | 无 | 通过 admin_setup_token 提权 |
 | `GET` `POST` `DELETE` | `/api/playlists` | Device | 歌单管理 |
-| `GET` `POST` `DELETE` | `/api/favorites` | Device | 收藏管理 |
 | `GET` `POST` | `/api/ncm` | Device | 个人网易云账号 |
 | `POST` | `/api/ncm/test` | Device | 测试网易云登录 |
+| `POST` | `/api/auth/name` | Device | 修改显示名称 |
+| `POST` | `/api/auth/claim-admin` | 无 | 管理员提权(token) |
 | `*` | `/api/admin/*` | Admin | 管理端点 |
 | `WS` | `/ws` | Device (query) | WebSocket 实时推送 |
-
-### 音频流
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/stream` | 音频流 (`Content-Type: audio/mpeg`) |
+| `GET` | `/stream` | 无 | 音频流 (`audio/mpeg`) |
 
 ---
 
@@ -236,19 +221,16 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 ## 构建手册
 
 ```bash
-# 依赖：ffmpeg、Rust toolchain
+# 依赖: ffmpeg, Rust toolchain
 
 # 一键构建
 ./build_release.sh
-
-# 前端（如修改了源码）
-cd radio-backend/frontend && npm install && npm run build
 
 # 仅 Rust
 cd radio-backend && cargo build --release
 ```
 
-支持格式：MP3、WAV、FLAC、OGG、M4A、AAC
+支持格式: MP3、WAV、FLAC、OGG、M4A、AAC
 
 ---
 
@@ -265,9 +247,8 @@ MIT
 - 知夏 (Zhixia) — 项目协作者
 - [FFmpeg](https://ffmpeg.org/) — 音频解码
 - [Axum](https://github.com/tokio-rs/axum) — Rust HTTP 框架
-- [Vue 3](https://vuejs.org/) — 前端框架
-- [Vite](https://vitejs.dev/) — 前端构建工具
+- [Askama](https://github.com/djc/askama) — 模板引擎
 - [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL 工具集
-- [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) / [Music163Api-Go](https://github.com/XiaoMengXinX/Music163Api-Go) — 网易云音乐 API 实现参考（GPL-3.0）
+- [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) — 网易云 API 参考 (GPL-3.0)
 
-灵感来源：《孤独摇滚！》— 伊地知虹夏
+灵感来源: 《孤独摇滚！》— 伊地知虹夏
