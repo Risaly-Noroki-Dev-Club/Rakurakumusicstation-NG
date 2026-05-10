@@ -49,5 +49,9 @@ base64 = "0.22"
 futures-util = "0.3"
 bytes = "1"
 
+# 用于在 accept 时设置 TCP keepalive / user timeout，解决 hyper 在
+# streaming 响应空闲期间漏检客户端断开导致连接/fd/任务泄漏的问题
+socket2 = { version = "0.5", features = ["all"] }
+
 # 音频引擎（本地 crate）
 radio-engine = { path = "../radio-engine" }

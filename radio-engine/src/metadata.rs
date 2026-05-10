@@ -6,7 +6,12 @@ use regex::Regex;
 use crate::types::TrackMetadata;
 
 /// Extract metadata from an audio file path.
-/// Uses ffprobe for duration and lyrics, regex for artist-title from filename.
+/// Uses ffprobe for duration only; artist/title parsed from filename.
+///
+/// Note: `embedded_lyrics` and `cover_data` are intentionally left empty —
+/// they were never consumed downstream and extracting them via ffprobe
+/// caused thousands of extra subprocess forks at startup plus tens of MB
+/// of permanent memory bloat for large libraries.
 pub async fn extract_metadata(file_path: &str, media_root: &str) -> anyhow::Result<TrackMetadata> {
     let path = Path::new(file_path);
     let filename = path
@@ -30,7 +35,6 @@ pub async fn extract_metadata(file_path: &str, media_root: &str) -> anyhow::Resu
     let (artist, title) = parse_artist_title(&stem);
 
     let duration_secs = get_duration(&full_path).await.unwrap_or(0.0);
-    let embedded_lyrics = get_lyrics(&full_path).await.unwrap_or_default();
 
     Ok(TrackMetadata {
         filename,
@@ -42,7 +46,7 @@ pub async fn extract_metadata(file_path: &str, media_root: &str) -> anyhow::Resu
         track_number: String::new(),
         duration_ms: (duration_secs * 1000.0) as i64,
         cover_data: Vec::new(),
-        embedded_lyrics,
+        embedded_lyrics: String::new(),
         file_path: file_path_clone,
     })
 }
@@ -62,7 +66,8 @@ pub async fn get_duration(file_path: &str) -> anyhow::Result<f64> {
         .context("Failed to run ffprobe for duration")?;
 
     if !output.status.success() {
-        anyhow::bail!("ffprobe exited with non-zero status");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("ffprobe exited with non-zero status: {}", stderr.trim());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -123,7 +128,9 @@ pub async fn get_lyrics(file_path: &str) -> anyhow::Result<String> {
 /// Parse "Artist - Title" from filename stem.
 /// Returns (artist, title).
 pub fn parse_artist_title(filename: &str) -> (String, String) {
-    let re = Regex::new(r"^(.+?)\s*[-–—]\s*(.+)$").unwrap();
+    use std::sync::OnceLock;
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"^(.+?)\s*[-–—]\s*(.+)$").unwrap());
     if let Some(caps) = re.captures(filename) {
         let artist = caps.get(1).unwrap().as_str().trim().to_string();
         let title = caps.get(2).unwrap().as_str().trim().to_string();

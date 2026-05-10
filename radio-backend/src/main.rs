@@ -115,8 +115,49 @@ async fn main() -> anyhow::Result<()> {
     let addr = format!("{}:{}", state.config.server.host, state.config.server.port);
     tracing::info!("HTTP server listening on http://{}", addr);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let listener = bind_with_keepalive(&addr).await?;
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+/// Bind a TCP listener with TCP keepalive enabled on the listening socket.
+///
+/// Why: hyper, when serving an HTTP/1.1 streaming response that hasn't tried
+/// to write yet, doesn't actively poll the TCP read side, so an abrupt client
+/// disappearance (e.g. `timeout 1 curl`) leaves the server-side socket stuck
+/// in ESTABLISHED forever. The tokio task spawned per stream stays parked in
+/// `wait_for_data`, the ring-buffer reader is never dropped, and the fd is
+/// never released — fd/conn/task accumulate indefinitely under load.
+///
+/// On Linux SO_KEEPALIVE plus the per-socket TCP_KEEPIDLE/INTVL/CNT options
+/// are inherited by accepted sockets, so setting them on the listening socket
+/// is enough. With these settings the kernel kills idle dead connections
+/// within ~50s, which lets hyper drop the body and our task exit cleanly.
+async fn bind_with_keepalive(addr: &str) -> anyhow::Result<tokio::net::TcpListener> {
+    use socket2::{Domain, Protocol, Socket, TcpKeepalive, Type};
+    use std::net::SocketAddr;
+    use std::time::Duration;
+
+    let socket_addr: SocketAddr = addr.parse()?;
+    let domain = if socket_addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
+    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+    socket.set_nonblocking(true)?;
+    socket.set_reuse_address(true)?;
+
+    let mut keepalive = TcpKeepalive::new()
+        .with_time(Duration::from_secs(20))
+        .with_interval(Duration::from_secs(10));
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        keepalive = keepalive.with_retries(3);
+    }
+    socket.set_tcp_keepalive(&keepalive)?;
+
+    socket.bind(&socket_addr.into())?;
+    socket.listen(1024)?;
+
+    let std_listener: std::net::TcpListener = socket.into();
+    let listener = tokio::net::TcpListener::from_std(std_listener)?;
+    Ok(listener)
 }

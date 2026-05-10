@@ -86,49 +86,37 @@ impl RingBuffer {
         let current_wp = self.write_pos.load(Ordering::Relaxed);
         let len = data.len();
 
-        // Find the slowest reader position
+        // Find the slowest reader position (all positions are unbounded counters).
+        // When there are no readers, treat slowest_rp as current_wp so used=0.
         let slowest_rp = {
             let readers = self.reader_positions.lock().unwrap();
             if readers.is_empty() {
-                0
+                current_wp
             } else {
-                let mut min_rp = usize::MAX;
-                for r in readers.iter() {
-                    let rp = r.load(Ordering::Relaxed);
-                    if rp < min_rp {
-                        min_rp = rp;
-                    }
-                }
-                if min_rp == usize::MAX {
-                    0
-                } else {
-                    min_rp
-                }
+                readers.iter()
+                    .map(|r| r.load(Ordering::Relaxed))
+                    .min()
+                    .unwrap_or(current_wp)
             }
         };
 
-        // Calculate used space (from slowest reader to writer)
-        let used = if current_wp >= slowest_rp {
-            current_wp - slowest_rp
-        } else {
-            self.capacity - slowest_rp + current_wp
-        };
-        let free = self.capacity - used;
+        // used is always <= capacity because the overflow logic below prevents
+        // any reader from falling more than capacity bytes behind.
+        let used = current_wp - slowest_rp;
+        let free = self.capacity.saturating_sub(used);
 
         if data.len() > free {
-            // Advance all readers that are behind
+            // Writing data.len() bytes will overwrite circular positions that
+            // some readers haven't consumed yet.  The overwritten range
+            // (in unbounded-counter space) is [current_wp - capacity,
+            // current_wp - capacity + data.len()).  Any reader whose position
+            // falls in that range must be fast-forwarded past it.
+            let overwrite_end = current_wp + data.len() - self.capacity;
             let readers = self.reader_positions.lock().unwrap();
             for r in readers.iter() {
                 let rp = r.load(Ordering::Relaxed);
-                let behind = if current_wp >= rp {
-                    current_wp - rp
-                } else {
-                    self.capacity - rp + current_wp
-                };
-                if behind < data.len() {
-                    let needed_advance = data.len() - behind;
-                    let new_rp = (rp + needed_advance) & self.mask;
-                    r.store(new_rp, Ordering::Release);
+                if rp < overwrite_end {
+                    r.store(overwrite_end, Ordering::Release);
                 }
             }
         }
@@ -156,8 +144,9 @@ impl RingBuffer {
     /// (catches up — skips all buffered data).
     pub fn create_reader(self: &Arc<Self>) -> RingBufferReader {
         let current_wp = self.write_pos.load(Ordering::Acquire);
-        let wp_idx = current_wp & self.mask;
-        let read_pos = Arc::new(AtomicUsize::new(wp_idx));
+        // Store the raw (unbounded) write position so that avail = write_pos - read_pos
+        // is computed in the same address space as write_pos.
+        let read_pos = Arc::new(AtomicUsize::new(current_wp));
 
         let mut readers = self.reader_positions.lock().unwrap();
         readers.push(read_pos.clone());
@@ -181,8 +170,14 @@ impl RingBuffer {
 
 impl Drop for RingBufferReader {
     fn drop(&mut self) {
-        if let Ok(mut readers) = self.buffer.reader_positions.lock() {
-            readers.retain(|r| !Arc::ptr_eq(r, &self.read_pos));
+        let mut readers = match self.buffer.reader_positions.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        readers.retain(|r| !Arc::ptr_eq(r, &self.read_pos));
+        // 大量连接断开后回收 Vec 多余容量，避免内存长期占用
+        if readers.capacity() > readers.len().saturating_add(16) * 2 {
+            readers.shrink_to_fit();
         }
     }
 }
@@ -221,8 +216,9 @@ impl RingBufferReader {
                 .copy_from_slice(&buf[..second_seg]);
         }
 
-        let new_rp = (rp + to_read) & self.buffer.mask;
-        self.read_pos.store(new_rp, Ordering::Release);
+        // Advance without masking: read_pos stays in the same unbounded-counter
+        // space as write_pos so that avail = write_pos - read_pos is always valid.
+        self.read_pos.store(rp + to_read, Ordering::Release);
 
         to_read
     }
@@ -263,8 +259,7 @@ impl RingBufferReader {
     /// Skip ahead to the current write position (for late joiners).
     pub fn catch_up(&self) {
         let wp = self.buffer.write_pos.load(Ordering::Acquire);
-        let wp_idx = wp & self.buffer.mask;
-        self.read_pos.store(wp_idx, Ordering::Release);
+        self.read_pos.store(wp, Ordering::Release);
     }
 }
 

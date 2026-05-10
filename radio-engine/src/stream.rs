@@ -2,23 +2,26 @@ use axum::body::Body;
 use axum::response::Response;
 use http::header;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
+
+/// Channel buffer size between the streaming task and the HTTP body writer.
+///
+/// Bounded so that when hyper stops draining (because the underlying TCP
+/// connection is dead), our producer task blocks on `send` and we can detect
+/// the dead client via `send_timeout`. The unbounded variant masked this
+/// because the producer never blocked and `tx.is_closed()` was never updated
+/// by hyper for connections that went idle before the first write.
+pub const STREAM_CHANNEL_CAPACITY: usize = 4;
 
 /// Create a streaming HTTP response that sends audio/mpeg data.
 ///
-/// Returns a tuple of (sender, response). The caller should feed audio/mpeg
-/// data chunks into the sender, and return the response to the HTTP framework
-/// (Axum). Each client gets its own mpsc channel pair.
-///
-/// The response includes appropriate headers for audio streaming:
-/// - Content-Type: audio/mpeg
-/// - Cache-Control: no-cache
-/// - Access-Control-Allow-Origin: *
-/// - Connection: keep-alive
-pub fn create_stream_response() -> (mpsc::UnboundedSender<bytes::Bytes>, Response<Body>) {
-    let (tx, rx) = mpsc::unbounded_channel::<bytes::Bytes>();
-    let stream = UnboundedReceiverStream::new(rx)
+/// Returns a tuple of (sender, response). The caller feeds audio/mpeg data
+/// chunks into the sender; the sender is bounded so a dead client surfaces
+/// as `send` blocking.
+pub fn create_stream_response() -> (mpsc::Sender<bytes::Bytes>, Response<Body>) {
+    let (tx, rx) = mpsc::channel::<bytes::Bytes>(STREAM_CHANNEL_CAPACITY);
+    let stream = ReceiverStream::new(rx)
         .map(|chunk: bytes::Bytes| Ok::<_, std::convert::Infallible>(chunk));
 
     let body = Body::from_stream(stream);

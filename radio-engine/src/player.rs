@@ -72,35 +72,13 @@ async fn spawn_ffmpeg(args: &FfmpegArgs, duration_ms: i64) -> io::Result<Child> 
         .spawn()
 }
 
-/// Preload state for crossfade. Tracks the next track being preloaded
-/// including the ffmpeg process, its stdout, and track metadata.
-struct PreloadState {
-    stdout: ChildStdout,
-    child: Child,
-    track_idx: usize,
-    duration_ms: i64,
-}
-
 /// Mutable state for a single track's streaming loop.
 struct StreamState {
-    main_child: Child,
-    main_stdout: ChildStdout,
     track_idx: usize,
     duration_ms: i64,
-    preload: Option<PreloadState>,
-    preload_read_buf: Vec<u8>,
-    preload_accum: Vec<u8>,
-    preload_triggered: bool,
     track_start: Instant,
     track_start_system: i64,
     total_bytes_sent: u64,
-    main_buf: Vec<u8>,
-}
-
-/// Action returned from handling main ffmpeg reads.
-enum MainAction {
-    Continue,
-    Break,
 }
 
 /// Audio player that spawns ffmpeg, reads from pipe, pushes to ring buffer,
@@ -170,7 +148,7 @@ impl Player {
         for (full_path, rel_path) in files {
             let filename = rel_path.clone();
 
-            let meta = crate::metadata::extract_metadata(&full_path.to_string_lossy(), &self.media_path)
+            let meta = crate::metadata::extract_metadata(&rel_path, &self.media_path)
                 .await
                 .unwrap_or_else(|_| TrackMetadata {
                     filename: filename.clone(),
@@ -296,74 +274,73 @@ impl Player {
         let mut main_child = spawn_ffmpeg(&ff_args, duration_ms)
             .await
             .context("Failed to spawn main ffmpeg")?;
-        let main_stdout = main_child
+        let mut main_stdout = main_child
             .stdout
             .take()
             .context("Main ffmpeg stdout not available")?;
 
+        // Spawn a dedicated task to read from ffmpeg stdout so that
+        // `main_stdout.read()` never blocks the state-publish timer.
+        let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        
+        let ffmpeg_task = tokio::spawn(async move {
+            let mut buf = vec![0u8; AUDIO_CHUNK_SIZE];
+            loop {
+                match main_stdout.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if audio_tx.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            
+            // 确保ffmpeg子进程被正确清理
+            match main_child.kill().await {
+                Ok(_) => tracing::debug!("FFmpeg process terminated cleanly"),
+                Err(e) => tracing::warn!("Failed to kill FFmpeg process: {}", e),
+            }
+        });
+
         let mut state = StreamState {
-            main_child,
-            main_stdout,
             track_idx,
             duration_ms,
-            preload: None,
-            preload_read_buf: vec![0u8; AUDIO_CHUNK_SIZE],
-            preload_accum: Vec::new(),
-            preload_triggered: false,
             track_start: Instant::now(),
             track_start_system: chrono::Utc::now().timestamp_millis(),
             total_bytes_sent: 0,
-            main_buf: vec![0u8; AUDIO_CHUNK_SIZE],
         };
 
+        let mut last_publish = Instant::now();
         'stream: loop {
-            tokio::select! {
-                biased;
-
-                // Commands (highest priority)
-                cmd = self.cmd_rx.recv() => {
-                    match cmd {
-                        Some(cmd) => {
-                            if self.handle_command(&cmd) {
-                                break 'stream;
-                            }
-                        }
-                        None => break 'stream,
-                    }
-                }
-
-                // Main audio data from ffmpeg
-                result = state.main_stdout.read(&mut state.main_buf) => {
-                    match self.handle_main_read(result, &mut state).await {
-                        MainAction::Continue => continue 'stream,
-                        MainAction::Break => break 'stream,
-                    }
-                }
-
-                // Preload audio data
-                result = async {
-                    match state.preload.as_mut() {
-                        Some(p) => p.stdout.read(&mut state.preload_read_buf).await,
-                        None => std::future::pending::<io::Result<usize>>().await,
-                    }
-                }, if state.preload.is_some() => {
-                    self.handle_preload_read(result, &mut state).await;
-                }
-
-                // Periodic state publish and crossfade trigger
-                _ = tokio::time::sleep(Duration::from_millis(STATE_PUBLISH_INTERVAL_MS)) => {
-                    self.publish_state_from_stream(&state);
-                    self.try_start_crossfade(&mut state).await?;
+            if let Ok(cmd) = self.cmd_rx.try_recv() {
+                if self.handle_command(&cmd) {
+                    // 立即取消 ffmpeg 任务，触发 kill_on_drop 清理子进程
+                    ffmpeg_task.abort();
+                    break 'stream;
                 }
             }
-        }
 
-        // Cleanup main ffmpeg
-        let _ = state.main_child.kill().await;
+            match audio_rx.try_recv() {
+                Ok(d) => {
+                    self.buffer.push(&d);
+                    state.total_bytes_sent += d.len() as u64;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    // ffmpeg 已自然结束，等待任务完成
+                    let _ = ffmpeg_task.await;
+                    break 'stream;
+                }
+            }
 
-        // Cleanup preload if any
-        if let Some(mut p) = state.preload.take() {
-            let _ = p.child.kill().await;
+            if last_publish.elapsed() >= Duration::from_millis(STATE_PUBLISH_INTERVAL_MS) {
+                self.publish_state_from_stream(&state);
+                last_publish = Instant::now();
+            }
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
 
         // Advance to next track (unless we stopped/skipped)
@@ -379,100 +356,6 @@ impl Player {
         Ok(())
     }
 
-    /// Handle a read result from the main ffmpeg stdout.
-    async fn handle_main_read(
-        &self,
-        result: io::Result<usize>,
-        state: &mut StreamState,
-    ) -> MainAction {
-        match result {
-            Ok(0) => {
-                // Main track ended naturally
-                if let Some(p) = state.preload.take() {
-                    self.transition_preload_to_main(p, state).await;
-                    MainAction::Continue
-                } else {
-                    MainAction::Break
-                }
-            }
-            Ok(n) => {
-                self.buffer.push(&state.main_buf[..n]);
-                state.total_bytes_sent += n as u64;
-                MainAction::Continue
-            }
-            Err(e) => {
-                tracing::error!("Main ffmpeg read error: {}", e);
-                MainAction::Break
-            }
-        }
-    }
-
-    /// Switch the preloaded track to become the main track.
-    async fn transition_preload_to_main(
-        &self,
-        preload: PreloadState,
-        state: &mut StreamState,
-    ) {
-        if !state.preload_accum.is_empty() {
-            tracing::info!(
-                "[XFade] Drained {} bytes of preloaded audio",
-                state.preload_accum.len()
-            );
-            self.buffer.push(&state.preload_accum);
-            state.preload_accum.clear();
-        }
-
-        let _ = state.main_child.kill().await;
-
-        state.main_stdout = preload.stdout;
-        state.main_child = preload.child;
-        state.track_idx = preload.track_idx;
-        state.duration_ms = preload.duration_ms;
-        state.track_start = Instant::now();
-        state.track_start_system = chrono::Utc::now().timestamp_millis();
-        state.total_bytes_sent = 0;
-        state.preload_triggered = false;
-
-        tracing::info!(
-            "[XFade] Switched to next track (idx={})",
-            state.track_idx
-        );
-
-        {
-            let pl = self.play_queue.lock().unwrap();
-            let sz = pl.len();
-            if sz > 0 {
-                self.current_track
-                    .store(state.track_idx % sz, Ordering::Relaxed);
-            }
-        }
-    }
-
-    /// Handle a read result from the preload ffmpeg stdout.
-    async fn handle_preload_read(
-        &self,
-        result: io::Result<usize>,
-        state: &mut StreamState,
-    ) {
-        match result {
-            Ok(0) => {
-                tracing::warn!("Preload ffmpeg ended early");
-                if let Some(mut p) = state.preload.take() {
-                    let _ = p.child.kill().await;
-                }
-            }
-            Ok(n) => {
-                state.preload_accum.extend_from_slice(&state.preload_read_buf[..n]);
-            }
-            Err(e) => {
-                tracing::error!("Preload ffmpeg read error: {}", e);
-                if let Some(mut p) = state.preload.take() {
-                    let _ = p.child.kill().await;
-                }
-            }
-        }
-    }
-
     /// Publish playback state using values from the stream loop.
     fn publish_state_from_stream(&self, state: &StreamState) {
         self.publish_state(
@@ -481,64 +364,8 @@ impl Player {
             &state.track_start,
             state.track_start_system,
             state.total_bytes_sent,
-            state.preload_triggered,
+            false,
         );
-    }
-
-    /// Check if crossfade should start and spawn the preload ffmpeg if so.
-    async fn try_start_crossfade(
-        &self,
-        state: &mut StreamState,
-    ) -> Result<(), anyhow::Error> {
-        if state.preload_triggered
-            || state.preload.is_some()
-            || state.duration_ms <= (CROSSFADE_SECONDS as i64 * 1000)
-        {
-            return Ok(());
-        }
-
-        let elapsed = state.track_start.elapsed().as_millis() as i64;
-        if elapsed < state.duration_ms - (CROSSFADE_SECONDS as i64 * 1000) {
-            return Ok(());
-        }
-
-        let (next_path, next_idx, next_duration) = match self.peek_next_track() {
-            Some(info) => info,
-            None => return Ok(()),
-        };
-
-        let next_ff_args = FfmpegArgs {
-            input_file: next_path.clone(),
-            fade_in: true,
-            start_offset_secs: None,
-        };
-
-        match spawn_ffmpeg(&next_ff_args, next_duration).await {
-            Ok(mut child) => {
-                if let Some(stdout) = child.stdout.take() {
-                    state.preload = Some(PreloadState {
-                        stdout,
-                        child,
-                        track_idx: next_idx,
-                        duration_ms: next_duration,
-                    });
-                    state.preload_triggered = true;
-                    state.preload_accum.clear();
-                    tracing::info!(
-                        "[XFade] Preloading next track: {}",
-                        next_path
-                    );
-                } else {
-                    tracing::error!("Preload ffmpeg stdout not available");
-                    let _ = child.kill().await;
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to spawn preload ffmpeg: {}", e);
-            }
-        }
-
-        Ok(())
     }
 
     /// Publish the current playback state to the shared state struct.
@@ -558,15 +385,16 @@ impl Player {
         } else {
             position_ms
         };
+    // publish_state logging removed for production
 
-        let file_path_rel = {
-            let pl = self.play_queue.lock().unwrap();
-            if track_idx < pl.len() {
-                pl[track_idx].clone()
-            } else {
-                String::new()
-            }
-        };
+    let file_path_rel = {
+        let pl = self.play_queue.lock().unwrap();
+        if track_idx < pl.len() {
+            pl[track_idx].clone()
+        } else {
+            String::new()
+        }
+    };
 
         let mut state = self.state.lock().unwrap();
         state.playlist_index = track_idx as i64;

@@ -102,11 +102,15 @@ pub async fn publish_command(
 
 /// 启动引擎状态轮询器，将播放状态转发给 WebSocket 客户端。
 /// 直接读取内嵌引擎的状态（不通过 HTTP）。
+///
+/// ## 内存优化
+/// - 仅在有订阅者时才发送消息
+/// - 歌词仅在切换歌曲时解析一次并缓存，且只在首条消息中发送全量歌词
+/// - 后续消息只发送当前歌词行索引，避免每 500ms 克隆数十 KB 的歌词数组
 pub fn start_engine_state_poller(state: Arc<AppState>) {
     let state_clone = state.clone();
 
     tokio::spawn(async move {
-        #[derive(Clone)]
         struct CachedSong {
             db_song_id: i64,
             title: String,
@@ -114,17 +118,25 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
             lyrics_lines: Option<Vec<crate::models::LyricsLineDto>>,
         }
 
-        let mut last_index: i64 = 0;
+        let mut last_index: i64 = -1;
         let mut cached: Option<CachedSong> = None;
+        // 记录已向客户端发送过全量歌词的歌曲 ID，避免重复克隆
+        let mut lyrics_broadcast_song_id: Option<i64> = None;
 
         tracing::info!("Engine state poller started");
 
         loop {
             let ps = state_clone.player_handle.get_state();
 
-            if ps.playlist_index != last_index && ps.playlist_index > 0 {
-                last_index = ps.playlist_index;
+            let song_changed = (ps.playlist_index != last_index && ps.playlist_index >= 0)
+                || (cached.is_none() && !ps.file_path.is_empty());
+
+            if song_changed {
+                if ps.playlist_index != last_index {
+                    last_index = ps.playlist_index;
+                }
                 cached = None;
+                lyrics_broadcast_song_id = None;
 
                 if !ps.file_path.is_empty() {
                     let song_row = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
@@ -168,43 +180,56 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
                 }
             }
 
-            let (song_id, title, artist, lyrics_lines) = match cached.as_ref() {
-                Some(c) => (c.db_song_id, c.title.clone(), c.artist.clone(), c.lyrics_lines.clone()),
-                None => (ps.playlist_index, String::new(), String::new(), None),
-            };
+            // 仅在有活跃订阅者时才发送消息
+            if state_clone.ws_tx.receiver_count() > 0 {
+                let (song_id, title, artist) = match cached.as_ref() {
+                    Some(c) => (c.db_song_id, c.title.clone(), c.artist.clone()),
+                    None => (ps.playlist_index, String::new(), String::new()),
+                };
 
-            let lyrics_line = lyrics_lines
-                .as_ref()
-                .and_then(|lines| {
-                    lines.iter().enumerate().rev().find(|(_, l)| l.time_ms <= ps.position_ms)
+                let lyrics_lines_ref = cached.as_ref().and_then(|c| c.lyrics_lines.as_ref());
+
+                let lyrics_line = lyrics_lines_ref.and_then(|lines| {
+                    lines.iter().enumerate().rev()
+                        .find(|(_, l)| l.time_ms <= ps.position_ms)
                         .map(|(idx, _)| idx)
                 });
 
-            let enriched = WsMessage::PlaybackState {
-                song_id,
-                title,
-                artist,
-                position_ms: ps.position_ms,
-                duration_ms: ps.duration_ms,
-                lyrics_line,
-                lyrics_lines,
-                status: ps.status.clone(),
-                stream_url: state_clone.config.audio_engine.resolve_stream_url(
-                    None, state_clone.config.server.port
-                ),
-                file_url: if song_id > 0 {
-                    Some(state_clone.config.audio_engine.resolve_file_url(song_id))
+                // 全量歌词只在歌曲切换后的首条消息中发送，后续只发行索引
+                let should_send_full_lyrics = lyrics_broadcast_song_id != Some(song_id);
+                let lyrics_lines_payload = if should_send_full_lyrics {
+                    lyrics_broadcast_song_id = Some(song_id);
+                    lyrics_lines_ref.cloned()
                 } else {
                     None
-                },
-                timestamp_ms: chrono::Utc::now().timestamp_millis(),
-            };
+                };
 
-            let _ = state_clone.ws_tx.send(
-                serde_json::to_string(&enriched).unwrap_or_default()
-            );
+                let enriched = WsMessage::PlaybackState {
+                    song_id,
+                    title,
+                    artist,
+                    position_ms: ps.position_ms,
+                    duration_ms: ps.duration_ms,
+                    lyrics_line,
+                    lyrics_lines: lyrics_lines_payload,
+                    status: ps.status.clone(),
+                    stream_url: state_clone.config.audio_engine.resolve_stream_url(
+                        None, state_clone.config.server.port
+                    ),
+                    file_url: if song_id > 0 {
+                        Some(state_clone.config.audio_engine.resolve_file_url(song_id))
+                    } else {
+                        None
+                    },
+                    timestamp_ms: chrono::Utc::now().timestamp_millis(),
+                };
 
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                let _ = state_clone.ws_tx.send(
+                    serde_json::to_string(&enriched).unwrap_or_default()
+                );
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
     });
 }

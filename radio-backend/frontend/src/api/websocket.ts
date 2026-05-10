@@ -33,7 +33,9 @@ function stopInterpolation(): void {
 function tick(): void {
   if (!isInterpolating) return
   const elapsed = performance.now() - lastAnchorTime
-  store.displayPositionMs = Math.max(0, Math.floor(lastAnchorPos + elapsed))
+  const raw = Math.max(0, Math.floor(lastAnchorPos + elapsed))
+  const duration = store.playbackState.duration_ms
+  store.displayPositionMs = duration > 0 ? Math.min(raw, duration) : raw
   rafId = requestAnimationFrame(tick)
 }
 
