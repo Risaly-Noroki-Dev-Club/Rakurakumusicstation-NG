@@ -18,13 +18,28 @@ let queuePoller: ReturnType<typeof setInterval> | null = null
 const audioEl = ref<HTMLAudioElement | null>(null)
 provide('audioEl', audioEl)
 
+// 浏览器 autoplay 策略要求首次播放必须有用户手势触发，否则 .play() 会被静默拒绝。
+// 我们尝试自动播一次，被拒就显示一个全屏覆盖层等用户点。
+const needsTapToPlay = ref(false)
+
 function initAudio() {
   if (!audioEl.value) return
   audioEl.value.src = getStreamUrl()
   audioEl.value.load()
-  // Defer play() to next tick so the browser has processed the element insertion
   requestAnimationFrame(() => {
-    audioEl.value?.play().catch(() => {})
+    const p = audioEl.value?.play()
+    if (p && typeof p.then === 'function') {
+      p.catch(() => { needsTapToPlay.value = true })
+    }
+  })
+}
+
+function startPlaybackFromGesture() {
+  if (!audioEl.value) return
+  audioEl.value.play().then(() => {
+    needsTapToPlay.value = false
+  }).catch(() => {
+    // 仍然失败：保留按钮，让用户重试
   })
 }
 
@@ -191,6 +206,21 @@ watch(() => store.showSnackbar, (val) => {
       </v-btn>
     </v-bottom-navigation>
 
+    <!-- 浏览器 autoplay 拦截兜底：要点一下才能开始播 -->
+    <div
+      v-if="needsTapToPlay"
+      class="am-tap-overlay"
+      @click="startPlaybackFromGesture"
+    >
+      <div class="am-tap-card">
+        <v-icon size="56" color="primary">mdi-play-circle</v-icon>
+        <div class="text-h6 mt-3">点击开始收听</div>
+        <div class="text-caption text-medium-emphasis mt-1">
+          浏览器需要您的一次点击才能开始播放
+        </div>
+      </div>
+    </div>
+
     <!-- Global Snackbar (replaces ToastContainer) -->
     <v-snackbar
       v-model="store.showSnackbar"
@@ -250,5 +280,33 @@ watch(() => store.showSnackbar, (val) => {
   .am-content-wrapper {
     padding: 24px 32px;
   }
+}
+
+/* Tap-to-play overlay (shown when browser blocks autoplay) */
+.am-tap-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  animation: am-fade-in 0.2s ease;
+}
+
+.am-tap-card {
+  background: var(--am-surface);
+  border-radius: 16px;
+  padding: 32px 40px;
+  text-align: center;
+  box-shadow: var(--am-shadow-16);
+  max-width: 320px;
+}
+
+@keyframes am-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 </style>

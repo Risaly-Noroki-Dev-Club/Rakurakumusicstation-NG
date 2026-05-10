@@ -2,9 +2,9 @@
 
 use crate::db::AppState;
 use crate::error::AppError;
-use crate::models::ApiResponse;
+use crate::models::{ApiResponse, ImportPlaylistRequest, ImportPlaylistResponse, NcmImportTask};
 use crate::routes::admin::get_admin;
-use crate::services::ncm::NcmClient;
+use crate::services::ncm::{get_playlist_track_all, NcmClient};
 use axum::{
     extract::State,
     http::HeaderMap,
@@ -174,4 +174,103 @@ pub async fn test_ncm_login(
             "output": format!("请求失败: {}", e),
         })))),
     }
+}
+
+fn extract_playlist_id(link: &str) -> Option<i64> {
+    let re = regex::Regex::new(r"(?:id=|/playlist/)(\d+)").ok()?;
+    if let Some(caps) = re.captures(link) {
+        return caps.get(1)?.as_str().parse().ok();
+    }
+    link.trim().parse().ok()
+}
+
+/// POST /api/admin/ncm/playlist — 解析网易云歌单链接并写入导入任务表
+pub async fn import_playlist(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ImportPlaylistRequest>,
+) -> Result<Json<ApiResponse<ImportPlaylistResponse>>, AppError> {
+    let _admin = get_admin(&state, &headers).await?;
+
+    let playlist_id = extract_playlist_id(&body.link)
+        .ok_or_else(|| AppError::BadRequest("无法解析歌单链接".into()))?;
+
+    let music_u = read_music_u_from_secrets();
+    let client = NcmClient::new(None, music_u);
+
+    let tracks = get_playlist_track_all(&client, playlist_id)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("获取歌单失败: {}", e)))?;
+
+    let batch_id = uuid::Uuid::new_v4().to_string();
+
+    for track in &tracks {
+        let artist_names = track
+            .ar
+            .iter()
+            .map(|a| a.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        sqlx::query(
+            "INSERT INTO ncm_import_tasks (song_id, name, artists, batch_id) VALUES (?, ?, ?, ?)",
+        )
+        .bind(track.id)
+        .bind(&track.name)
+        .bind(&artist_names)
+        .bind(&batch_id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("保存导入任务失败: {}", e)))?;
+    }
+
+    Ok(Json(ApiResponse::ok(ImportPlaylistResponse {
+        total: tracks.len(),
+        batch_id,
+        message: format!("成功添加 {} 首歌曲到导入队列", tracks.len()),
+    })))
+}
+
+/// POST /api/admin/ncm/import — 将 pending 的导入任务加入下载队列
+pub async fn start_ncm_import(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<String>>, AppError> {
+    let _admin = get_admin(&state, &headers).await?;
+
+    let tasks: Vec<NcmImportTask> = sqlx::query_as::<_, NcmImportTask>(
+        "SELECT * FROM ncm_import_tasks WHERE status = 'pending'",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("查询导入任务失败: {}", e)))?;
+
+    if tasks.is_empty() {
+        return Err(AppError::BadRequest("没有待处理的导入任务".into()));
+    }
+
+    // 构建 CSV 格式的歌单文本（与现有下载解析器兼容）
+    let mut lines = Vec::new();
+    for task in &tasks {
+        lines.push(format!("{}, {}", task.artists, task.name));
+    }
+    let playlist = lines.join("\n");
+
+    // 启动下载任务
+    crate::routes::admin::download::spawn_download_job(state.clone(), playlist, None, None)?;
+
+    // 标记为 queued
+    for task in &tasks {
+        sqlx::query(
+            "UPDATE ncm_import_tasks SET status = 'queued', updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(task.id)
+        .execute(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("更新任务状态失败: {}", e)))?;
+    }
+
+    Ok(Json(ApiResponse::ok(format!(
+        "已启动 {} 首歌曲的导入下载",
+        tasks.len()
+    ))))
 }

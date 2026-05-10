@@ -166,6 +166,23 @@ impl RingBuffer {
     pub fn current_write_pos(&self) -> usize {
         self.write_pos.load(Ordering::Acquire)
     }
+
+    /// Discard all currently-buffered audio: fast-forward every reader to the
+    /// current write position so they stop consuming stale data.
+    ///
+    /// Used when the player skips a track — without this, listeners would have
+    /// to drain the previously-buffered audio (multi-second delay at 128 kbps)
+    /// before hearing the new track.
+    pub fn clear(&self) {
+        let wp = self.write_pos.load(Ordering::Acquire);
+        let readers = self.reader_positions.lock().unwrap();
+        for r in readers.iter() {
+            r.store(wp, Ordering::Release);
+        }
+        // Wake any reader waiting in `wait_for_data` so they immediately see avail=0
+        // and re-enter the wait loop pointing at the new write_pos.
+        self.notify.notify_waiters();
+    }
 }
 
 impl Drop for RingBufferReader {

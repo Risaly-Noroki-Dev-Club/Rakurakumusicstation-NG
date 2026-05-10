@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto; text-align: center;">
+    <div style="width: 280px; height: 280px; margin: 0 auto 24px; border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-lg); background: var(--border);">
+        <img id="bigCover" src="" alt="cover" class="cover" style="border-radius: 16px;" onerror="this.style.display='none'">
+    </div>
+    <h1 id="bigTitle" style="font-size: 1.75rem; font-weight: 700; margin: 0 0 8px;">等待播放...</h1>
+    <p id="bigArtist" style="font-size: 1.1rem; color: var(--text-secondary); margin: 0 0 24px;"></p>
+
+    <div class="progress-bar" style="margin-bottom: 8px;"><div class="fill" id="bigProgress"></div></div>
+    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 24px;">
+        <span id="bigTime">0:00</span>
+        <span id="bigTotal">0:00</span>
+    </div>
+
+    <div style="display: flex; justify-content: center; align-items: center; gap: 16px; margin-bottom: 16px;">
+        <button class="small secondary" onclick="volumeDown()">🔉</button>
+        {% if is_admin %}
+        <form method="post" action="/api/admin/playlist/prev" style="display:inline"><button class="small secondary" type="submit">⏮️</button></form>
+        {% endif %}
+        <button style="width: 64px; height: 64px; border-radius: 50%; font-size: 24px;" onclick="togglePlay()" id="bigPlayBtn">▶️</button>
+        {% if is_admin %}
+        <form method="post" action="/api/admin/playlist/next" style="display:inline"><button class="small secondary" type="submit">⏭️</button></form>
+        {% endif %}
+        <button class="small secondary" onclick="volumeUp()">🔊</button>
+    </div>
+
+    {% if !lyrics_lines.is_empty() %}
+    <div class="card">
+        <div class="card-title">📝 歌词</div>
+        <div class="lyrics-box" id="lyricsBox">
+            {% for line in lyrics_lines %}
+            <div class="line" data-time="{{ line.time_ms }}">{{ line.text }}</div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const lines = document.querySelectorAll('#lyricsBox .line');
+    let lastIdx = -1;
+    window.updateLyrics = function(positionMs) {
+        if (!lines.length) return;
+        let idx = -1;
+        for (let i = lines.length - 1; i >= 0; i--) {
+            if (parseInt(lines[i].dataset.time) <= positionMs) { idx = i; break; }
+        }
+        if (idx !== lastIdx) {
+            lastIdx = idx;
+            lines.forEach((l, i) => { l.classList.toggle('active', i === idx); });
+            if (idx >= 0) lines[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    };
+})();
+</script>
+{% endblock %}

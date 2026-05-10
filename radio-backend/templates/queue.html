@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-title">📋 待播队列 <span class="badge primary">{{ queue.len() }}</span></div>
+    {% if queue.is_empty() %}
+    <div class="empty">队列为空</div>
+    {% else %}
+    <div>
+        {% for item in queue %}
+        <div class="song-row">
+            <div style="flex:1; min-width:0;">
+                <div style="font-weight:600;">
+                    {% if item.status == "playing" %}🔊{% else %}🎵{% endif %}
+                    {% if let Some(song) = item.song.as_ref() %}{{ song.title }}{% else %}未知歌曲{% endif %}
+                </div>
+                <div class="song-meta">
+                    {% if let Some(song) = item.song.as_ref() %}{{ song.artist }}{% endif %}
+                    · 点歌: {{ item.requested_by }}
+                    {% if item.status == "playing" %}
+                    <span class="badge success">播放中</span>
+                    {% else %}
+                    <span class="badge">等待</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="actions">
+                {% if item.status != "playing" %}
+                    {% if let Some(song) = item.song.as_ref() %}
+                    <form method="post" action="/api/queue" style="display:inline">
+                        <input type="hidden" name="song_id" value="{{ song.id }}">
+                        <button type="submit" class="small secondary">🔁</button>
+                    </form>
+                    {% endif %}
+                    {% if is_admin %}
+                    <form method="post" action="/api/queue/{{ item.id }}" style="display:inline">
+                        <input type="hidden" name="_method" value="DELETE">
+                        <button type="submit" class="small danger" onclick="return confirm('移除?')">✕</button>
+                    </form>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div class="card-title">📜 播放历史 <span class="badge">{{ history.len() }}</span></div>
+    {% if history.is_empty() %}
+    <div class="empty">暂无历史</div>
+    {% else %}
+    <div style="max-height: 320px; overflow-y: auto;">
+        {% for h in history %}
+        <div class="song-row">
+            <div style="flex:1; min-width:0;">
+                <div style="font-weight:600;">{% if let Some(song) = h.song.as_ref() %}{{ song.title }}{% else %}未知{% endif %}</div>
+                <div class="song-meta">{{ h.requested_by }} · {{ h.played_at }}</div>
+            </div>
+            {% if let Some(song) = h.song.as_ref() %}
+            <form method="post" action="/api/queue" style="display:inline">
+                <input type="hidden" name="song_id" value="{{ song.id }}">
+                <button type="submit" class="small secondary">🔁</button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

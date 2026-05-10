@@ -1,20 +1,22 @@
+use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 
 use crate::config::{
     AUDIO_CHUNK_SIZE, CHANNELS, CROSSFADE_SECONDS, MP3_BITRATE, SAMPLE_RATE,
     STATE_PUBLISH_INTERVAL_MS, SUPPORTED_FORMATS,
 };
 use crate::ring_buffer::RingBuffer;
-use crate::types::{AudioCommand, FfmpegArgs, PlaybackState, TrackMetadata};
+use crate::types::{
+    AudioCommand, AudioCommandType, FfmpegArgs, PlaybackState, RequestedTrack, TrackMetadata,
+};
 
 /// Build ffmpeg command line arguments for track playback.
 pub fn build_ffmpeg_args(args: &FfmpegArgs, duration_ms: i64) -> Vec<String> {
@@ -60,7 +62,6 @@ pub fn build_ffmpeg_args(args: &FfmpegArgs, duration_ms: i64) -> Vec<String> {
 }
 
 /// Spawn an ffmpeg process for track playback.
-/// Returns the child process with stdout ready.
 async fn spawn_ffmpeg(args: &FfmpegArgs, duration_ms: i64) -> io::Result<Child> {
     let ff_args = build_ffmpeg_args(args, duration_ms);
     Command::new("ffmpeg")
@@ -72,25 +73,57 @@ async fn spawn_ffmpeg(args: &FfmpegArgs, duration_ms: i64) -> io::Result<Child> 
         .spawn()
 }
 
-/// Mutable state for a single track's streaming loop.
-struct StreamState {
-    track_idx: usize,
+/// Where the currently-playing track was sourced from.
+#[derive(Debug, Clone)]
+enum TrackSource {
+    /// Folder-cycle track at this index in `play_queue`.
+    Folder(usize),
+    /// User-requested track popped from the request queue.
+    Request,
+}
+
+/// A track resolved and ready to be streamed.
+#[derive(Debug, Clone)]
+struct CurrentTrack {
+    source: TrackSource,
+    /// Absolute filesystem path (passed to ffmpeg).
+    abs_path: String,
+    /// Path relative to media_root (used in PlaybackState.file_path).
+    rel_path: String,
     duration_ms: i64,
-    track_start: Instant,
-    track_start_system: i64,
-    total_bytes_sent: u64,
+    title: String,
+    artist: String,
+    song_id: Option<i64>,
+}
+
+/// What ended the streaming loop for a track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamOutcome {
+    /// ffmpeg finished naturally (track ended).
+    Natural,
+    /// Skip / Next command was processed.
+    Skipped,
+    /// Prev command was processed.
+    Prev,
+    /// Stop or other terminating reason — exit the player.
+    Stopped,
 }
 
 /// Audio player that spawns ffmpeg, reads from pipe, pushes to ring buffer,
-/// and handles crossfade between tracks.
+/// and supports a folder-cycle fallback plus a user-driven request queue.
 pub struct Player {
     buffer: Arc<RingBuffer>,
     play_queue: Arc<Mutex<Vec<String>>>,
     play_queue_metadata: Arc<Mutex<Vec<TrackMetadata>>>,
+    /// Cursor into `play_queue` for the folder-cycle fallback.
     current_track: Arc<AtomicUsize>,
+    /// User-requested tracks (FIFO) — drained before the folder cycle each round.
+    request_queue: Arc<Mutex<VecDeque<RequestedTrack>>>,
     cmd_rx: mpsc::UnboundedReceiver<AudioCommand>,
     state: Arc<Mutex<PlaybackState>>,
     stop_flag: Arc<AtomicBool>,
+    /// Wakes the idle loop when a new request arrives or the queue is reloaded.
+    wake: Arc<Notify>,
     media_path: String,
 }
 
@@ -100,6 +133,8 @@ pub struct PlayerHandle {
     cmd_tx: mpsc::UnboundedSender<AudioCommand>,
     state: Arc<Mutex<PlaybackState>>,
     stop_flag: Arc<AtomicBool>,
+    request_queue: Arc<Mutex<VecDeque<RequestedTrack>>>,
+    wake: Arc<Notify>,
 }
 
 impl Player {
@@ -111,15 +146,19 @@ impl Player {
         let play_queue = Arc::new(Mutex::new(Vec::new()));
         let play_queue_metadata = Arc::new(Mutex::new(Vec::new()));
         let current_track = Arc::new(AtomicUsize::new(0));
+        let request_queue = Arc::new(Mutex::new(VecDeque::new()));
+        let wake = Arc::new(Notify::new());
 
         let player = Self {
             buffer,
             play_queue,
             play_queue_metadata,
             current_track,
+            request_queue: Arc::clone(&request_queue),
             cmd_rx,
             state: Arc::clone(&state),
             stop_flag: Arc::clone(&stop_flag),
+            wake: Arc::clone(&wake),
             media_path,
         };
 
@@ -127,6 +166,8 @@ impl Player {
             cmd_tx,
             state,
             stop_flag,
+            request_queue,
+            wake,
         };
 
         (player, handle)
@@ -164,19 +205,25 @@ impl Player {
             new_metadata.push(meta);
         }
 
-        let mut queue = self.play_queue.lock().unwrap();
-        let mut metadata = self.play_queue_metadata.lock().unwrap();
+        {
+            let mut queue = self.play_queue.lock().unwrap();
+            let mut metadata = self.play_queue_metadata.lock().unwrap();
 
-        queue.clear();
-        metadata.clear();
-        queue.extend(new_queue);
-        metadata.extend(new_metadata);
+            queue.clear();
+            metadata.clear();
+            queue.extend(new_queue);
+            metadata.extend(new_metadata);
 
-        tracing::info!(
-            "Play queue initialized: {} tracks from {}",
-            queue.len(),
-            self.media_path
-        );
+            tracing::info!(
+                "Play queue initialized: {} tracks from {}",
+                queue.len(),
+                self.media_path
+            );
+        }
+
+        // Wake the idle loop so newly-uploaded tracks start playing right away
+        // (without this, an empty-folder startup waits up to 5s before recheck).
+        self.wake.notify_waiters();
     }
 
     /// Main playback loop.
@@ -186,112 +233,219 @@ impl Player {
                 break;
             }
 
-            // Drain pending commands before selecting a track.
-            while let Ok(cmd) = self.cmd_rx.try_recv() {
-                if let crate::types::AudioCommandType::ReloadQueue = cmd.cmd_type {
-                    self.init_play_queue().await;
-                } else if self.handle_command(&cmd) {
-                    // Stop or other interrupting command
-                }
+            // Drain commands that arrived while idle. Skip/Prev/Next/Play with no
+            // current track is a no-op; ReloadQueue and Stop are honored.
+            self.drain_idle_commands().await;
+            if self.stop_flag.load(Ordering::Relaxed) {
+                break;
             }
 
-            let playlist_empty = {
-                let pl = self.play_queue.lock().unwrap();
-                pl.is_empty()
+            let track = match self.pick_next_track() {
+                Some(t) => t,
+                None => {
+                    // Nothing to play. Wait for either a wake-up signal (request
+                    // pushed, queue reloaded) or a 5s timeout, whichever comes first.
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                        _ = self.wake.notified() => {}
+                    }
+                    continue;
+                }
             };
 
-            if playlist_empty {
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-
-            let (track_filename, track_idx, duration_ms) =
-                self.get_current_track_info();
-
-            if track_filename.is_empty() {
-                self.current_track.fetch_add(1, Ordering::Relaxed);
-                continue;
-            }
-
-            if !Path::new(&track_filename).exists() {
-                tracing::error!("File not found: {}", track_filename);
-                self.current_track.fetch_add(1, Ordering::Relaxed);
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                continue;
-            }
-
+            let source_label = match track.source {
+                TrackSource::Request => " (requested)".to_string(),
+                TrackSource::Folder(idx) => {
+                    let total = self.play_queue.lock().unwrap().len();
+                    format!(" ({}/{})", idx + 1, total)
+                }
+            };
             tracing::info!(
-                "Playing: {} ({}/{}) [{}s]",
-                track_filename,
-                track_idx + 1,
-                self.play_queue.lock().unwrap().len(),
-                duration_ms / 1000
+                "Playing: {} [{}s]{}",
+                track.rel_path,
+                track.duration_ms / 1000,
+                source_label
             );
 
-            let _ = self
-                .stream_track(&track_filename, track_idx, duration_ms)
-                .await;
+            let outcome = self.stream_track(&track).await;
+
+            // Decide how to advance the folder cursor.
+            //   Natural / Skipped (folder track) → advance forward
+            //   Prev (folder track)              → advance backward
+            //   Request track                    → leave folder cursor untouched
+            //                                       (popped from request queue already)
+            //   Stopped                          → break
+            match outcome {
+                StreamOutcome::Stopped => break,
+                StreamOutcome::Natural | StreamOutcome::Skipped => {
+                    if let TrackSource::Folder(_) = track.source {
+                        self.advance_folder(1);
+                    }
+                }
+                StreamOutcome::Prev => {
+                    if let TrackSource::Folder(_) = track.source {
+                        self.advance_folder(-1);
+                    }
+                }
+            }
         }
 
         let mut state = self.state.lock().unwrap();
-        state.playlist_index = 0;
-        state.file_path.clear();
-        state.position_ms = 0;
-        state.duration_ms = 0;
-        state.status = crate::types::PlaybackStatus::Stopped;
-        state.total_bytes_sent = 0;
-
+        *state = PlaybackState::default();
         tracing::info!("Player stopped");
     }
 
-    /// Get the current track's absolute file path, index, and duration.
-    fn get_current_track_info(&self) -> (String, usize, i64) {
-        let pl = self.play_queue.lock().unwrap();
-        let pl_meta = self.play_queue_metadata.lock().unwrap();
-        let sz = pl.len();
-        if sz == 0 {
-            return (String::new(), 0, 0);
+    /// Process commands that arrived while no track was playing. Only
+    /// `ReloadQueue` and `Stop` are meaningful here; the rest are dropped.
+    async fn drain_idle_commands(&mut self) {
+        let mut needs_reload = false;
+        while let Ok(cmd) = self.cmd_rx.try_recv() {
+            match cmd.cmd_type {
+                AudioCommandType::ReloadQueue => needs_reload = true,
+                AudioCommandType::Stop => {
+                    self.stop_flag.store(true, Ordering::Relaxed);
+                    return;
+                }
+                AudioCommandType::Play => {
+                    // Play with file_path: push as one-shot request so the regular
+                    // pick_next_track path handles it (with proper metadata).
+                    if let Some(fp) = cmd.file_path {
+                        let rel = crate::util::relativize_media_path(&fp, &self.media_path);
+                        self.request_queue
+                            .lock()
+                            .unwrap()
+                            .push_front(RequestedTrack {
+                                file_path: rel.clone(),
+                                song_id: cmd.song_id.unwrap_or(0),
+                                title: Path::new(&rel)
+                                    .file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                                artist: String::new(),
+                                duration_ms: 0,
+                            });
+                    }
+                }
+                _ => {} // Skip/Prev/Next while idle: nothing to skip.
+            }
         }
-        let idx = self.current_track.load(Ordering::Relaxed) % sz;
-        let rel_path = pl[idx].clone();
-        let full_path = crate::util::resolve_media_path(&rel_path, &self.media_path)
-            .to_string_lossy()
-            .to_string();
-        let duration = if idx < pl_meta.len() {
-            pl_meta[idx].duration_ms
-        } else {
-            0
-        };
-        (full_path, idx, duration)
+        if needs_reload {
+            self.init_play_queue().await;
+        }
     }
 
-    /// Stream a single track with crossfade support.
-    /// Returns Ok(()) when finished naturally, Err on fatal error.
-    async fn stream_track(
-        &mut self,
-        initial_path: &str,
-        track_idx: usize,
-        duration_ms: i64,
-    ) -> Result<(), anyhow::Error> {
-        let file_path = initial_path.to_string();
+    /// Pick the next track to play: request queue first, then folder cycle.
+    fn pick_next_track(&self) -> Option<CurrentTrack> {
+        // Try the request queue first. Skip entries whose file no longer exists.
+        loop {
+            let req = match self.request_queue.lock().unwrap().pop_front() {
+                Some(r) => r,
+                None => break,
+            };
+
+            let abs = crate::util::resolve_media_path(&req.file_path, &self.media_path)
+                .to_string_lossy()
+                .to_string();
+
+            if !Path::new(&abs).exists() {
+                tracing::warn!("Requested track missing on disk: {} — skipping", req.file_path);
+                continue;
+            }
+
+            return Some(CurrentTrack {
+                source: TrackSource::Request,
+                abs_path: abs,
+                rel_path: req.file_path,
+                duration_ms: req.duration_ms,
+                title: req.title,
+                artist: req.artist,
+                song_id: if req.song_id > 0 { Some(req.song_id) } else { None },
+            });
+        }
+
+        // Fall back to folder cycle.
+        let pl = self.play_queue.lock().unwrap();
+        if pl.is_empty() {
+            return None;
+        }
+        let pl_meta = self.play_queue_metadata.lock().unwrap();
+        let sz = pl.len();
+        let idx = self.current_track.load(Ordering::Relaxed) % sz;
+        let rel_path = pl[idx].clone();
+        let abs = crate::util::resolve_media_path(&rel_path, &self.media_path)
+            .to_string_lossy()
+            .to_string();
+
+        if !Path::new(&abs).exists() {
+            tracing::warn!("Folder track missing on disk: {} — advancing", rel_path);
+            drop(pl);
+            drop(pl_meta);
+            self.advance_folder(1);
+            return None;
+        }
+
+        let meta = pl_meta.get(idx).cloned().unwrap_or_default();
+        Some(CurrentTrack {
+            source: TrackSource::Folder(idx),
+            abs_path: abs,
+            rel_path,
+            duration_ms: meta.duration_ms,
+            title: if !meta.title.is_empty() {
+                meta.title
+            } else {
+                Path::new(&pl[idx])
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            },
+            artist: meta.artist,
+            song_id: None,
+        })
+    }
+
+    /// Advance the folder cursor by ±1, wrapping around.
+    fn advance_folder(&self, delta: i32) {
+        let pl = self.play_queue.lock().unwrap();
+        let sz = pl.len();
+        if sz == 0 {
+            return;
+        }
+        let cur = self.current_track.load(Ordering::Relaxed) % sz;
+        let next = if delta >= 0 {
+            (cur + delta as usize) % sz
+        } else {
+            // delta is -1
+            (cur + sz - ((-delta) as usize % sz)) % sz
+        };
+        self.current_track.store(next, Ordering::Relaxed);
+    }
+
+    /// Stream a single track until it ends naturally or a command interrupts it.
+    async fn stream_track(&mut self, track: &CurrentTrack) -> StreamOutcome {
         let ff_args = FfmpegArgs {
-            input_file: file_path.clone(),
+            input_file: track.abs_path.clone(),
             fade_in: false,
             start_offset_secs: None,
         };
 
-        let mut main_child = spawn_ffmpeg(&ff_args, duration_ms)
-            .await
-            .context("Failed to spawn main ffmpeg")?;
-        let mut main_stdout = main_child
-            .stdout
-            .take()
-            .context("Main ffmpeg stdout not available")?;
+        let mut main_child = match spawn_ffmpeg(&ff_args, track.duration_ms).await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Failed to spawn ffmpeg for {}: {}", track.rel_path, e);
+                return StreamOutcome::Natural;
+            }
+        };
+        let mut main_stdout = match main_child.stdout.take() {
+            Some(s) => s,
+            None => {
+                tracing::error!("ffmpeg stdout missing for {}", track.rel_path);
+                return StreamOutcome::Natural;
+            }
+        };
 
-        // Spawn a dedicated task to read from ffmpeg stdout so that
-        // `main_stdout.read()` never blocks the state-publish timer.
+        // Read ffmpeg stdout into a bounded channel so the streaming loop never
+        // blocks on `read()` while it should be polling commands.
         let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-        
         let ffmpeg_task = tokio::spawn(async move {
             let mut buf = vec![0u8; AUDIO_CHUNK_SIZE];
             loop {
@@ -305,231 +459,122 @@ impl Player {
                     Err(_) => break,
                 }
             }
-            
-            // 确保ffmpeg子进程被正确清理
-            match main_child.kill().await {
-                Ok(_) => tracing::debug!("FFmpeg process terminated cleanly"),
-                Err(e) => tracing::warn!("Failed to kill FFmpeg process: {}", e),
-            }
+            let _ = main_child.kill().await;
         });
 
-        let mut state = StreamState {
-            track_idx,
-            duration_ms,
-            track_start: Instant::now(),
-            track_start_system: chrono::Utc::now().timestamp_millis(),
-            total_bytes_sent: 0,
-        };
-
+        let track_start = Instant::now();
+        let track_start_system = chrono::Utc::now().timestamp_millis();
+        let mut total_bytes_sent: u64 = 0;
         let mut last_publish = Instant::now();
-        'stream: loop {
+
+        // Initial state publish so subscribers see the new track immediately.
+        self.publish_state(track, &track_start, track_start_system, total_bytes_sent);
+
+        let outcome = loop {
+            if self.stop_flag.load(Ordering::Relaxed) {
+                ffmpeg_task.abort();
+                break StreamOutcome::Stopped;
+            }
+
             if let Ok(cmd) = self.cmd_rx.try_recv() {
-                if let crate::types::AudioCommandType::ReloadQueue = cmd.cmd_type {
-                    self.init_play_queue().await;
-                } else if self.handle_command(&cmd) {
-                    // 立即取消 ffmpeg 任务，触发 kill_on_drop 清理子进程
-                    ffmpeg_task.abort();
-                    break 'stream;
+                match cmd.cmd_type {
+                    AudioCommandType::ReloadQueue => {
+                        self.init_play_queue().await;
+                    }
+                    AudioCommandType::Skip | AudioCommandType::Next => {
+                        ffmpeg_task.abort();
+                        self.buffer.clear();
+                        break StreamOutcome::Skipped;
+                    }
+                    AudioCommandType::Prev => {
+                        ffmpeg_task.abort();
+                        self.buffer.clear();
+                        break StreamOutcome::Prev;
+                    }
+                    AudioCommandType::Play => {
+                        if let Some(fp) = cmd.file_path {
+                            let rel = crate::util::relativize_media_path(&fp, &self.media_path);
+                            self.request_queue
+                                .lock()
+                                .unwrap()
+                                .push_front(RequestedTrack {
+                                    file_path: rel.clone(),
+                                    song_id: cmd.song_id.unwrap_or(0),
+                                    title: Path::new(&rel)
+                                        .file_stem()
+                                        .map(|s| s.to_string_lossy().to_string())
+                                        .unwrap_or_default(),
+                                    artist: String::new(),
+                                    duration_ms: 0,
+                                });
+                            ffmpeg_task.abort();
+                            self.buffer.clear();
+                            break StreamOutcome::Skipped;
+                        }
+                    }
+                    AudioCommandType::Stop => {
+                        self.stop_flag.store(true, Ordering::Relaxed);
+                        ffmpeg_task.abort();
+                        self.buffer.clear();
+                        break StreamOutcome::Stopped;
+                    }
                 }
             }
 
             match audio_rx.try_recv() {
                 Ok(d) => {
                     self.buffer.push(&d);
-                    state.total_bytes_sent += d.len() as u64;
+                    total_bytes_sent += d.len() as u64;
                 }
                 Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                    // ffmpeg 已自然结束，等待任务完成
                     let _ = ffmpeg_task.await;
-                    break 'stream;
+                    break StreamOutcome::Natural;
                 }
             }
 
             if last_publish.elapsed() >= Duration::from_millis(STATE_PUBLISH_INTERVAL_MS) {
-                self.publish_state_from_stream(&state);
+                self.publish_state(track, &track_start, track_start_system, total_bytes_sent);
                 last_publish = Instant::now();
             }
 
             tokio::time::sleep(Duration::from_millis(10)).await;
-        }
+        };
 
-        // Advance to next track (unless we stopped/skipped)
-        if !self.stop_flag.load(Ordering::Relaxed) {
-            let pl = self.play_queue.lock().unwrap();
-            let sz = pl.len();
-            if sz > 0 {
-                let current = self.current_track.load(Ordering::Relaxed);
-                self.current_track.store((current + 1) % sz, Ordering::Relaxed);
-            }
-        }
-
-        Ok(())
+        outcome
     }
 
-    /// Publish playback state using values from the stream loop.
-    fn publish_state_from_stream(&self, state: &StreamState) {
-        self.publish_state(
-            state.track_idx,
-            state.duration_ms,
-            &state.track_start,
-            state.track_start_system,
-            state.total_bytes_sent,
-            false,
-        );
-    }
-
-    /// Publish the current playback state to the shared state struct.
+    /// Publish playback state for the active track.
     fn publish_state(
         &self,
-        track_idx: usize,
-        duration_ms: i64,
+        track: &CurrentTrack,
         track_start: &Instant,
         track_start_system: i64,
         total_bytes_sent: u64,
-        preload_triggered: bool,
     ) {
-        let elapsed = track_start.elapsed();
-        let position_ms = elapsed.as_millis() as i64;
-        let clamped_pos = if duration_ms > 0 && position_ms > duration_ms {
-            duration_ms
+        let position_ms = track_start.elapsed().as_millis() as i64;
+        let clamped = if track.duration_ms > 0 && position_ms > track.duration_ms {
+            track.duration_ms
         } else {
             position_ms
         };
-    // publish_state logging removed for production
 
-    let file_path_rel = {
-        let pl = self.play_queue.lock().unwrap();
-        if track_idx < pl.len() {
-            pl[track_idx].clone()
-        } else {
-            String::new()
-        }
-    };
+        let playlist_index = match track.source {
+            TrackSource::Folder(idx) => idx as i64,
+            TrackSource::Request => -1,
+        };
 
         let mut state = self.state.lock().unwrap();
-        state.playlist_index = track_idx as i64;
-        state.file_path = file_path_rel;
-        state.position_ms = clamped_pos;
-        state.duration_ms = duration_ms;
-        state.status = if preload_triggered {
-            crate::types::PlaybackStatus::Crossfading
-        } else {
-            crate::types::PlaybackStatus::Playing
-        };
+        state.playlist_index = playlist_index;
+        state.file_path = track.rel_path.clone();
+        state.position_ms = clamped;
+        state.duration_ms = track.duration_ms;
+        state.status = crate::types::PlaybackStatus::Playing;
         state.total_bytes_sent = total_bytes_sent;
         state.track_start_timestamp_ms = track_start_system;
-    }
-
-    /// Peek at the next track without advancing.
-    fn peek_next_track(&self) -> Option<(String, usize, i64)> {
-        let pl = self.play_queue.lock().unwrap();
-        let pl_meta = self.play_queue_metadata.lock().unwrap();
-        let sz = pl.len();
-        if sz == 0 {
-            return None;
-        }
-        let current = self.current_track.load(Ordering::Relaxed) % sz;
-        let next_idx = (current + 1) % sz;
-        let filename = pl[next_idx].clone();
-        let full_path = Path::new(&self.media_path)
-            .join(&filename)
-            .to_string_lossy()
-            .to_string();
-        let duration = if next_idx < pl_meta.len() {
-            pl_meta[next_idx].duration_ms
-        } else {
-            0
-        };
-
-        if Path::new(&full_path).exists() {
-            Some((full_path, next_idx, duration))
-        } else {
-            None
-        }
-    }
-
-    /// Handle an audio command. Returns true if the current track should be skipped.
-    fn handle_command(&self, cmd: &AudioCommand) -> bool {
-        use crate::types::AudioCommandType::*;
-        match cmd.cmd_type {
-            Skip | Next => {
-                let pl = self.play_queue.lock().unwrap();
-                let sz = pl.len();
-                if sz > 0 {
-                    let current = self.current_track.load(Ordering::Relaxed);
-                    self.current_track
-                        .store((current + 1) % sz, Ordering::Relaxed);
-                    tracing::info!("Skip command received");
-                    return true;
-                }
-                false
-            }
-            Prev => {
-                let pl = self.play_queue.lock().unwrap();
-                let sz = pl.len();
-                if sz > 0 {
-                    let current = self.current_track.load(Ordering::Relaxed);
-                    self.current_track
-                        .store((current + sz - 1) % sz, Ordering::Relaxed);
-                    tracing::info!("Prev command received");
-                    return true;
-                }
-                false
-            }
-            Play => {
-                if let Some(ref fp) = cmd.file_path {
-                    self.play_file(fp);
-                    return true;
-                }
-                false
-            }
-            Stop => {
-                self.stop_flag.store(true, Ordering::Relaxed);
-                tracing::info!("Stop command received");
-                true
-            }
-            ReloadQueue => {
-                // Handled upstream in run() / stream_track(), this arm is a fallback.
-                false
-            }
-        }
-    }
-
-    /// Play a specific file by name (find in playlist or add it).
-    fn play_file(&self, file_path: &str) {
-        let mut pl = self.play_queue.lock().unwrap();
-        let mut pl_meta = self.play_queue_metadata.lock().unwrap();
-
-        // Normalize to relative path for consistent storage
-        let rel_path = crate::util::relativize_media_path(file_path, &self.media_path);
-
-        for (i, p) in pl.iter().enumerate() {
-            if p == &rel_path {
-                self.current_track.store(i, Ordering::Relaxed);
-                self.stop_flag.store(false, Ordering::Relaxed);
-                return;
-            }
-        }
-
-        pl.push(rel_path.clone());
-
-        let meta = TrackMetadata {
-            filename: Path::new(&rel_path)
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default(),
-            title: Path::new(&rel_path)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default(),
-            file_path: rel_path,
-            ..Default::default()
-        };
-        pl_meta.push(meta);
-
-        self.current_track.store(pl.len() - 1, Ordering::Relaxed);
-        self.stop_flag.store(false, Ordering::Relaxed);
+        state.title = track.title.clone();
+        state.artist = track.artist.clone();
+        state.song_id = track.song_id;
     }
 }
 
@@ -548,9 +593,35 @@ impl PlayerHandle {
     pub fn stop(&self) {
         self.stop_flag.store(true, Ordering::Relaxed);
         let _ = self.cmd_tx.send(AudioCommand {
-            cmd_type: crate::types::AudioCommandType::Stop,
+            cmd_type: AudioCommandType::Stop,
             song_id: None,
             file_path: None,
         });
+        self.wake.notify_waiters();
+    }
+
+    /// Append a user-requested track to the engine's request queue.
+    /// The player picks it up before the next folder-cycle track.
+    pub fn enqueue_request(&self, track: RequestedTrack) {
+        self.request_queue.lock().unwrap().push_back(track);
+        self.wake.notify_waiters();
+    }
+
+    /// Replace the request queue (used at startup to rehydrate from DB).
+    pub fn replace_request_queue(&self, tracks: Vec<RequestedTrack>) {
+        let mut q = self.request_queue.lock().unwrap();
+        q.clear();
+        q.extend(tracks);
+        drop(q);
+        self.wake.notify_waiters();
+    }
+
+    /// Remove a queued request by song_id (e.g. when an admin removes it from
+    /// the DB queue). Returns true if anything was removed.
+    pub fn remove_request_by_song_id(&self, song_id: i64) -> bool {
+        let mut q = self.request_queue.lock().unwrap();
+        let before = q.len();
+        q.retain(|r| r.song_id != song_id);
+        before != q.len()
     }
 }

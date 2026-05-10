@@ -7,6 +7,7 @@ pub mod upload;
 pub mod settings;
 pub mod playback;
 pub mod download;
+pub mod batch_download;
 pub mod ncm;
 pub mod logout;
 
@@ -49,9 +50,15 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         .route("/download", axum::routing::post(download::start_download))
         .route("/download/stream", axum::routing::get(download::download_stream))
         .route("/download/status", axum::routing::get(download::download_status))
+        // 批量下载（新版）
+        .route("/download/batch", axum::routing::post(batch_download::start_batch_download))
+        .route("/download/batch/stream", axum::routing::get(batch_download::batch_download_stream))
+        .route("/download/batch/status", axum::routing::get(batch_download::batch_download_status))
         // 网易云账号
         .route("/ncm", axum::routing::get(ncm::get_ncm_settings).post(ncm::save_ncm_settings))
         .route("/ncm/test", axum::routing::post(ncm::test_ncm_login))
+        .route("/ncm/playlist", axum::routing::post(ncm::import_playlist))
+        .route("/ncm/import", axum::routing::post(ncm::start_ncm_import))
         // 管理退出
         .route("/logout", axum::routing::post(logout::logout))
 }

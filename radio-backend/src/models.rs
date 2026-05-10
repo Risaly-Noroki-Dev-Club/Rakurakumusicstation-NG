@@ -54,7 +54,7 @@ pub struct Song {
 }
 
 /// 歌曲摘要，用于列表响应（出于安全考虑省略路径）。
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SongSummary {
     pub id: i64,
     pub title: String,
@@ -362,10 +362,62 @@ pub struct DownloadStatus {
 }
 
 /// SSE event payload for real-time download progress.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadEvent {
     pub log: String,
     pub done: bool,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub task_id: Option<String>,
+}
+
+// ─── 批量下载 ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchDownloadItem {
+    pub id: Option<String>,
+    pub url: Option<String>,
+    pub artist: Option<String>,
+    pub title: Option<String>,
+    pub save_as: Option<String>,
+    #[serde(default)]
+    pub override_lyrics: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchDownloadRequest {
+    pub source: String,
+    pub items: Vec<BatchDownloadItem>,
+    #[serde(default)]
+    pub lyrics_save_mode: String, // none | separate | overwrite
+    pub quality: Option<String>,
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchDownloadResultItem {
+    pub id: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub success: bool,
+    pub error: Option<String>,
+    pub file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchDownloadResponse {
+    pub task_id: String,
+    pub total: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BatchDownloadStatus {
+    pub task_id: String,
+    pub running: bool,
+    pub source: String,
+    pub total: usize,
+    pub success: usize,
+    pub failed: usize,
+    pub items: Vec<BatchDownloadResultItem>,
 }
 
 // ─── 网易云账号 ──────────────────────────────────────────
@@ -379,6 +431,32 @@ pub struct UserNcm {
     pub ncm_password: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+}
+
+// ─── 网易云导入任务 ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct NcmImportTask {
+    pub id: i64,
+    pub song_id: i64,
+    pub name: String,
+    pub artists: String,
+    pub status: String,
+    pub batch_id: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportPlaylistRequest {
+    pub link: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportPlaylistResponse {
+    pub total: usize,
+    pub batch_id: String,
+    pub message: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -12,6 +12,7 @@ mod models;
 mod queue_manager;
 mod routes;
 mod services;
+mod templates;
 mod websocket;
 
 use axum::{
@@ -86,6 +87,11 @@ async fn main() -> anyhow::Result<()> {
 
     // 初始化应用状态
     let state = Arc::new(AppState::new(config, ring_buffer, player_handle).await?);
+
+    // 把 DB 里 status='pending' 的曲子重新装回引擎请求队列（重启续播）。
+    if let Err(e) = queue_manager::rehydrate_engine_queue(&state).await {
+        tracing::error!("Failed to rehydrate engine queue from DB: {:?}", e);
+    }
 
     // 启动引擎状态轮询器，将播放状态转发给 WebSocket 客户端
     websocket::start_engine_state_poller(state.clone());

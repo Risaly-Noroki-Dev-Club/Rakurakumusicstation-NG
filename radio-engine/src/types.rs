@@ -78,6 +78,17 @@ pub struct PlaybackState {
     pub status: PlaybackStatus,
     pub total_bytes_sent: u64,
     pub track_start_timestamp_ms: i64,
+    /// Title from track metadata (filename stem if no tag).
+    /// Used as fallback when the file is not registered in the DB songs table.
+    #[serde(default)]
+    pub title: String,
+    /// Artist from track metadata (empty if unknown).
+    #[serde(default)]
+    pub artist: String,
+    /// DB song id of the currently-playing track if it came from the request queue,
+    /// or None if it came from the folder cycle.
+    #[serde(default)]
+    pub song_id: Option<i64>,
 }
 
 impl Default for PlaybackState {
@@ -90,8 +101,25 @@ impl Default for PlaybackState {
             status: PlaybackStatus::Stopped,
             total_bytes_sent: 0,
             track_start_timestamp_ms: 0,
+            title: String::new(),
+            artist: String::new(),
+            song_id: None,
         }
     }
+}
+
+/// A track requested by a user via the DB queue. Pushed onto the engine's
+/// request queue by the backend; consumed by the player's main loop, which
+/// prefers requests over the folder cycle.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RequestedTrack {
+    /// Path relative to media_root.
+    pub file_path: String,
+    /// DB song id (so the poller / mark_playing can find the row).
+    pub song_id: i64,
+    pub title: String,
+    pub artist: String,
+    pub duration_ms: i64,
 }
 
 /// Type of command sent to the audio engine.

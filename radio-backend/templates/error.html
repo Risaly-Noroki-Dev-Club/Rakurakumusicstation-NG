@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="text-align:center; padding: 48px 24px;">
+    <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+    <h2 style="margin-bottom: 8px;">出错了</h2>
+    <p style="color: var(--text-secondary);">{{ message }}</p>
+    <a href="/" style="margin-top: 16px; display: inline-block;">返回首页</a>
+</div>
+{% endblock %}

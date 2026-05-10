@@ -118,7 +118,7 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
             lyrics_lines: Option<Vec<crate::models::LyricsLineDto>>,
         }
 
-        let mut last_index: i64 = -1;
+        let mut last_file_path = String::new();
         let mut cached: Option<CachedSong> = None;
         // 记录已向客户端发送过全量歌词的歌曲 ID，避免重复克隆
         let mut lyrics_broadcast_song_id: Option<i64> = None;
@@ -128,13 +128,12 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
         loop {
             let ps = state_clone.player_handle.get_state();
 
-            let song_changed = (ps.playlist_index != last_index && ps.playlist_index >= 0)
-                || (cached.is_none() && !ps.file_path.is_empty());
+            // 切歌检测改用 file_path：playlist_index 对请求队列曲来说固定为 -1，
+            // 连着两首请求曲不会换 index，但 file_path 一定不同。
+            let song_changed = ps.file_path != last_file_path && !ps.file_path.is_empty();
 
             if song_changed {
-                if ps.playlist_index != last_index {
-                    last_index = ps.playlist_index;
-                }
+                last_file_path = ps.file_path.clone();
                 cached = None;
                 lyrics_broadcast_song_id = None;
 
@@ -182,9 +181,15 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
 
             // 仅在有活跃订阅者时才发送消息
             if state_clone.ws_tx.receiver_count() > 0 {
+                // 优先用 DB songs 里的 title/artist；查不到时回退到引擎自带的
+                // 元数据（PlaybackState.title / artist），这样文件夹里手动塞的、
+                // 或还没入库的歌也能正常显示，不会一直"等待播放"。
                 let (song_id, title, artist) = match cached.as_ref() {
                     Some(c) => (c.db_song_id, c.title.clone(), c.artist.clone()),
-                    None => (ps.playlist_index, String::new(), String::new()),
+                    None => {
+                        let id = ps.song_id.unwrap_or(-1);
+                        (id, ps.title.clone(), ps.artist.clone())
+                    }
                 };
 
                 let lyrics_lines_ref = cached.as_ref().and_then(|c| c.lyrics_lines.as_ref());

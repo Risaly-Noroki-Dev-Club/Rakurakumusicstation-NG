@@ -118,6 +118,15 @@ pub async fn add_to_queue(
     .execute(db)
     .await?;
 
+    // Push the request onto the engine queue so the player picks it up next.
+    state.player_handle.enqueue_request(radio_engine::types::RequestedTrack {
+        file_path: song.file_path.clone(),
+        song_id: song.id,
+        title: song.title.clone(),
+        artist: song.artist.clone(),
+        duration_ms: song.duration_ms,
+    });
+
     crate::websocket::broadcast(state, crate::models::WsMessage::QueueUpdate {
         action: "added".into(),
         song_title: Some(song.title.clone()),
@@ -222,7 +231,8 @@ pub async fn move_queue_item(
 }
 
 /// 删除队列项（仅限管理员）。
-pub async fn remove_queue_item(db: &SqlitePool, item_id: i64) -> Result<(), AppError> {
+pub async fn remove_queue_item(state: &Arc<AppState>, item_id: i64) -> Result<(), AppError> {
+    let db = &state.db;
     let item = sqlx::query_as::<_, QueueItem>("SELECT * FROM queue_items WHERE id = ?")
         .bind(item_id)
         .fetch_optional(db)
@@ -234,6 +244,7 @@ pub async fn remove_queue_item(db: &SqlitePool, item_id: i64) -> Result<(), AppE
     }
 
     let removed_position = item.position;
+    let removed_song_id = item.song_id;
 
     sqlx::query("UPDATE queue_items SET status = 'skipped' WHERE id = ?")
         .bind(item_id)
@@ -246,6 +257,9 @@ pub async fn remove_queue_item(db: &SqlitePool, item_id: i64) -> Result<(), AppE
     .bind(removed_position)
     .execute(db)
     .await?;
+
+    // Pull it out of the engine request queue too, otherwise it'd still play.
+    state.player_handle.remove_request_by_song_id(removed_song_id);
 
     Ok(())
 }
@@ -311,7 +325,41 @@ pub async fn mark_playing(
     Ok(())
 }
 
+/// 将数据库中所有 status='pending' 的队列项按 position 装回引擎请求队列。
+///
+/// 在服务启动时调用，让重启前用户已点的歌继续被播放。
+pub async fn rehydrate_engine_queue(state: &Arc<AppState>) -> Result<(), AppError> {
+    let rows = sqlx::query_as::<_, (String, i64, String, String, i64)>(
+        "SELECT s.file_path, s.id, s.title, s.artist, s.duration_ms
+         FROM queue_items q JOIN songs s ON s.id = q.song_id
+         WHERE q.status = 'pending' ORDER BY q.position ASC"
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let tracks: Vec<radio_engine::types::RequestedTrack> = rows
+        .into_iter()
+        .map(|(file_path, song_id, title, artist, duration_ms)| {
+            radio_engine::types::RequestedTrack {
+                file_path,
+                song_id,
+                title,
+                artist,
+                duration_ms,
+            }
+        })
+        .collect();
+
+    let n = tracks.len();
+    state.player_handle.replace_request_queue(tracks);
+    if n > 0 {
+        tracing::info!("Rehydrated engine request queue with {} pending track(s)", n);
+    }
+    Ok(())
+}
+
 /// 获取队列头部（下一首要播放的歌曲）。
+#[allow(dead_code)]
 pub async fn get_next_song(db: &SqlitePool) -> Result<Option<crate::models::Song>, AppError> {
     let item = sqlx::query_as::<_, QueueItem>(
         "SELECT * FROM queue_items WHERE status = 'pending' ORDER BY position ASC LIMIT 1"

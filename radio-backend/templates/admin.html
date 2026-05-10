@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="tabs">
+    <a href="/admin/stats" class="{% if tab == "stats" %}active{% endif %}">📊 统计</a>
+    <a href="/admin/users" class="{% if tab == "users" %}active{% endif %}">👥 用户</a>
+    <a href="/admin/songs" class="{% if tab == "songs" %}active{% endif %}">🎵 歌曲</a>
+    <a href="/admin/upload" class="{% if tab == "upload" %}active{% endif %}">⬆️ 上传</a>
+    <a href="/admin/download" class="{% if tab == "download" %}active{% endif %}">⬇️ 下载</a>
+    <a href="/admin/ncm" class="{% if tab == "ncm" %}active{% endif %}">☁️ 网易云</a>
+    <a href="/admin/settings" class="{% if tab == "settings" %}active{% endif %}">⚙️ 设置</a>
+</div>
+
+{% if tab == "stats" %}
+<div class="stat-grid">
+    <div class="stat-card"><div class="value">{{ stats.users }}</div><div class="label">用户</div></div>
+    <div class="stat-card"><div class="value">{{ stats.songs }}</div><div class="label">歌曲</div></div>
+    <div class="stat-card"><div class="value">{{ stats.queue_size }}</div><div class="label">队列</div></div>
+    <div class="stat-card"><div class="value">{{ stats.playlists }}</div><div class="label">歌单</div></div>
+</div>
+{% endif %}
+
+{% if tab == "users" %}
+<div class="card">
+    <div class="card-title">用户列表</div>
+    <table>
+        <thead><tr><th>ID</th><th>名称</th><th>角色</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.id }}</td>
+                <td>{{ u.display_name }}</td>
+                <td><span class="badge {% if u.role == "admin" %}primary{% endif %}">{% if u.role == "admin" %}管理员{% else %}用户{% endif %}</span></td>
+                <td>
+                    {% if u.is_banned() %}<span class="badge danger">已封禁</span>{% else %}<span class="badge success">正常</span>{% endif %}
+                </td>
+                <td>
+                    <div class="actions">
+                        {% if u.role != "admin" %}
+                        <form method="post" action="/api/admin/users/{{ u.id }}/role" style="display:inline">
+                            <input type="hidden" name="role" value="admin">
+                            <button type="submit" class="small">提权</button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="/api/admin/users/{{ u.id }}/role" style="display:inline">
+                            <input type="hidden" name="role" value="user">
+                            <button type="submit" class="small secondary">降权</button>
+                        </form>
+                        {% endif %}
+                        {% if u.is_banned() %}
+                        <form method="post" action="/api/admin/users/{{ u.id }}/unban" style="display:inline"><button type="submit" class="small secondary">解封</button></form>
+                        {% else %}
+                        <form method="post" action="/api/admin/users/{{ u.id }}/ban" style="display:inline"><button type="submit" class="small danger" onclick="return confirm('封禁?')">封禁</button></form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="card">
+    <div class="card-title">操作日志（最近100条）</div>
+    <div style="max-height: 300px; overflow-y: auto;">
+        {% for log in logs %}
+        <div style="padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px;">
+            <span style="color: var(--text-secondary);">[{{ log.created_at }}]</span> {{ log.action }} — {{ log.details }}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if tab == "songs" %}
+<div class="card">
+    <div class="actions" style="margin-bottom:16px;">
+        <form method="post" action="/api/admin/rescan-songs" style="display:inline"><button type="submit" class="small secondary">🔄 重新扫描</button></form>
+        <form method="post" action="/api/admin/playlist/prev" style="display:inline"><button type="submit" class="small secondary">⏮️ 上一首</button></form>
+        <form method="post" action="/api/admin/playlist/next" style="display:inline"><button type="submit" class="small secondary">⏭️ 下一首</button></form>
+    </div>
+    <table>
+        <thead><tr><th>标题</th><th>艺术家</th><th>操作</th></tr></thead>
+        <tbody>
+            {% for song in songs %}
+            <tr>
+                <td>{{ song.title }}</td>
+                <td>{{ song.artist }}</td>
+                <td>
+                    <form method="post" action="/api/admin/songs/{{ song.id }}" style="display:inline">
+                        <input type="hidden" name="_method" value="DELETE">
+                        <button type="submit" class="small danger" onclick="return confirm('删除 {{ song.title }}?')">删除</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if tab == "upload" %}
+<div class="card">
+    <div class="card-title">⬆️ 上传歌曲</div>
+    <form method="post" action="/api/admin/upload" enctype="multipart/form-data">
+        <div class="form-group">
+            <input type="file" name="file" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac" required>
+        </div>
+        <button type="submit">上传</button>
+    </form>
+</div>
+{% endif %}
+
+{% if tab == "download" %}
+<div class="card">
+    <div class="card-title">⬇️ 批量下载</div>
+    <form id="downloadForm" onsubmit="return startDownload(event)">
+        <div class="form-group">
+            <textarea name="playlist" rows="6" placeholder="每行一首，格式：艺术家 - 歌名"></textarea>
+        </div>
+        <div class="grid-2">
+            <div class="form-group">
+                <label>音质</label>
+                <select name="quality">
+                    <option value="exhigh">超高音质 (320k)</option>
+                    <option value="lossless">无损</option>
+                    <option value="high">高音质 (192k)</option>
+                    <option value="standard">标准 (128k)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>格式</label>
+                <select name="format">
+                    <option value="mp3">MP3</option>
+                    <option value="flac">FLAC</option>
+                    <option value="m4a">M4A</option>
+                    <option value="opus">Opus</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit">开始下载</button>
+    </form>
+    <div id="downloadStatus" class="alert info" style="display:none; margin-top:12px;"></div>
+    <pre id="downloadLog" style="display:none; margin-top:12px;"></pre>
+</div>
+{% endif %}
+
+{% if tab == "ncm" %}
+<div class="card">
+    <div class="card-title">☁️ 网易云账号配置</div>
+    {% if let Some(status) = ncm_status %}
+    <div class="alert info" style="margin-bottom:12px;">
+        {% if status.configured %}✅ 已配置{% else %}未配置{% endif %}
+    </div>
+    {% endif %}
+    <form method="post" action="/api/admin/ncm">
+        <div class="form-group">
+            <label>Cookie</label>
+            <textarea name="cookie" rows="3" placeholder="粘贴网易云 Cookie..."></textarea>
+        </div>
+        <div class="form-group">
+            <label>手机号</label>
+            <input type="text" name="phone" placeholder="186xxxxxxxx">
+        </div>
+        <div class="form-group">
+            <label>密码</label>
+            <input type="password" name="password" placeholder="留空则不修改">
+        </div>
+        <div class="actions">
+            <button type="submit" class="small">保存</button>
+            <button type="submit" formaction="/api/admin/ncm/test" class="small secondary">测试连接</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% if tab == "settings" %}
+<div class="card">
+    <div class="card-title">⚙️ 系统设置</div>
+    <form method="post" action="/api/admin/settings">
+        <div class="form-group">
+            <label>站点名称</label>
+            <input type="text" name="station_name" value="{{ settings.station_name }}">
+        </div>
+        <div class="form-group">
+            <label>副标题</label>
+            <input type="text" name="subtitle" value="{{ settings.subtitle }}">
+        </div>
+        <div class="grid-2">
+            <div class="form-group">
+                <label>主色</label>
+                <input type="color" name="primary_color" value="{{ settings.primary_color }}">
+            </div>
+            <div class="form-group">
+                <label>次色</label>
+                <input type="color" name="secondary_color" value="{{ settings.secondary_color }}">
+            </div>
+            <div class="form-group">
+                <label>背景色</label>
+                <input type="color" name="bg_color" value="{{ settings.bg_color }}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>管理员密码（留空则不修改）</label>
+            <input type="password" name="admin_password" placeholder="新密码">
+        </div>
+        <button type="submit">保存设置</button>
+    </form>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function startDownload(e) {
+    e.preventDefault();
+    const form = e.target;
+    const status = document.getElementById('downloadStatus');
+    const logEl = document.getElementById('downloadLog');
+    const data = {
+        playlist: form.playlist.value,
+        quality: form.quality.value,
+        format: form.format.value
+    };
+    status.style.display = 'block';
+    logEl.style.display = 'block';
+    status.textContent = '正在提交任务...';
+    status.className = 'alert info';
+    logEl.textContent = '';
+
+    fetch('/api/admin/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    }).then(r => r.json()).then(res => {
+        if (res.success) {
+            status.textContent = res.data || '任务已提交';
+            const es = new EventSource('/api/admin/download/stream');
+            es.onmessage = (ev) => {
+                try {
+                    const d = JSON.parse(ev.data);
+                    if (d.log) logEl.textContent += d.log + '\n';
+                    if (d.done) {
+                        es.close();
+                        status.textContent = '下载完成';
+                        status.className = 'alert success';
+                    }
+                } catch(err) { logEl.textContent += ev.data + '\n'; }
+            };
+        } else {
+            status.textContent = res.error || '启动失败';
+            status.className = 'alert error';
+        }
+    }).catch(() => {
+        status.textContent = '请求失败';
+        status.className = 'alert error';
+    });
+    return false;
+}
+</script>
+{% endblock %}

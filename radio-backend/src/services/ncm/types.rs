@@ -103,3 +103,11 @@ pub struct LyricContent {
     pub lyric: String,
     pub version: i32,
 }
+
+// ─── 歌单全部曲目 ────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlaylistTrackAllData {
+    pub songs: Vec<SongDetailData>,
+    pub code: i32,
+}

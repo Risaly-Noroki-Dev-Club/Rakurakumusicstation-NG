@@ -65,19 +65,13 @@ fn read_music_u() -> Option<String> {
     None
 }
 
-/// POST /api/admin/download — 启动批量下载
-pub async fn start_download(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(body): Json<DownloadRequest>,
-) -> Result<Json<ApiResponse<String>>, AppError> {
-    let _admin = get_admin(&state, &headers).await?;
-
-    let playlist = body.playlist.trim().to_string();
-    if playlist.is_empty() {
-        return Err(AppError::BadRequest("歌单内容不能为空".into()));
-    }
-
+/// 内部 helper：从歌单文本启动下载任务（可被 NCM import 复用）。
+pub fn spawn_download_job(
+    state: Arc<AppState>,
+    playlist: String,
+    quality: Option<String>,
+    format: Option<String>,
+) -> Result<(), AppError> {
     {
         let running = download_running().lock().unwrap_or_else(|e| e.into_inner());
         if *running {
@@ -85,8 +79,8 @@ pub async fn start_download(
         }
     }
 
-    let quality = body.quality.unwrap_or_else(|| "exhigh".into());
-    let _format = body.format.unwrap_or_else(|| "mp3".into());
+    let quality = quality.unwrap_or_else(|| "exhigh".into());
+    let _format = format.unwrap_or_else(|| "mp3".into());
     let media_path = state.config.audio_engine.media_path.clone();
     let device_id = if state.config.ncm.device_id.is_empty() {
         None
@@ -115,6 +109,7 @@ pub async fn start_download(
                 let ev = DownloadEvent {
                     log: line,
                     done: false,
+                    task_id: None,
                 };
                 let _ = broadcast_tx.send(ev);
             }
@@ -143,6 +138,7 @@ pub async fn start_download(
                 let _ = log_broadcast().send(DownloadEvent {
                     log: format!("❌ 下载任务异常: {}", e),
                     done: true,
+                    task_id: None,
                 });
             }
         }
@@ -151,6 +147,7 @@ pub async fn start_download(
         let _ = log_broadcast().send(DownloadEvent {
             log: "下载任务已结束".to_string(),
             done: true,
+            task_id: None,
         });
 
         // 触发播放队列重载
@@ -164,6 +161,24 @@ pub async fn start_download(
         let mut running = download_running().lock().unwrap_or_else(|e| e.into_inner());
         *running = false;
     });
+
+    Ok(())
+}
+
+/// POST /api/admin/download — 启动批量下载
+pub async fn start_download(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<DownloadRequest>,
+) -> Result<Json<ApiResponse<String>>, AppError> {
+    let _admin = get_admin(&state, &headers).await?;
+
+    let playlist = body.playlist.trim().to_string();
+    if playlist.is_empty() {
+        return Err(AppError::BadRequest("歌单内容不能为空".into()));
+    }
+
+    spawn_download_job(state, playlist, body.quality, body.format)?;
 
     Ok(Json(ApiResponse::ok("下载任务已启动".into())))
 }
@@ -189,6 +204,7 @@ pub async fn download_stream(
                     serde_json::to_string(&DownloadEvent {
                         log: "...".to_string(),
                         done: false,
+                        task_id: None,
                     })
                     .unwrap_or_default(),
                 )), rx))

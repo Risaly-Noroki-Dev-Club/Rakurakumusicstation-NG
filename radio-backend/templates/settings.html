@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-title">👤 用户信息</div>
+    <div style="display:flex; align-items:center; gap:16px; margin-bottom:16px;">
+        <div style="width:48px; height:48px; border-radius:50%; background:var(--primary); display:flex; align-items:center; justify-content:center; color:#fff; font-size:20px;">👤</div>
+        <div>
+            <div style="font-weight:700; font-size:18px;">{{ user.display_name }}</div>
+            <div class="badge {% if is_admin %}primary{% endif %}">{% if is_admin %}管理员{% else %}用户{% endif %}</div>
+        </div>
+    </div>
+    <form method="post" action="/api/auth/name" class="actions">
+        <input type="text" name="display_name" value="{{ user.display_name }}" placeholder="显示名称" maxlength="32" required style="flex:1;">
+        <button type="submit" class="small">修改名称</button>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-title">🎨 外观</div>
+    <div class="form-group">
+        <label>主题</label>
+        <div class="actions">
+            <button type="button" class="small secondary" onclick="setTheme('light')">☀️ 浅色</button>
+            <button type="button" class="small secondary" onclick="setTheme('dark')">🌙 深色</button>
+            <button type="button" class="small secondary" onclick="setTheme('auto')">⚙️ 自动</button>
+        </div>
+    </div>
+</div>
+
+{% if !is_admin %}
+<div class="card">
+    <div class="card-title">🛡️ 管理员</div>
+    <p style="color:var(--text-secondary); font-size:14px;">输入 config.toml 中设置的管理员令牌以获取管理员权限。</p>
+    <form method="post" action="/api/auth/claim-admin" class="actions" style="margin-top:12px;">
+        <input type="password" name="admin_setup_token" placeholder="管理员设置令牌" required style="flex:1;">
+        <button type="submit" class="small">申请权限</button>
+    </form>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-title">🛡️ 管理员</div>
+    <a href="/admin" class="btn">进入管理后台</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -236,6 +236,13 @@ pub async fn upload_song(
         return Err(AppError::BadRequest("未找到上传文件字段".into()));
     }
 
+    // 让引擎重扫媒体目录，否则空文件夹起服务时上传后引擎 play_queue 仍然是空的。
+    state.player_handle.send_command(radio_engine::types::AudioCommand {
+        cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
+        song_id: None,
+        file_path: None,
+    });
+
     Ok(Json(ApiResponse::ok(format!("上传成功: {}", uploaded_filename))))
 }
 

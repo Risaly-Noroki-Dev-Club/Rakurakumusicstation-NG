@@ -54,7 +54,7 @@ async fn remove_queue_item(
     let device = auth::require_device_auth(&headers, &state.db).await?;
     auth::require_admin(&device)?;
 
-    queue_manager::remove_queue_item(&state.db, item_id).await?;
+    queue_manager::remove_queue_item(&state, item_id).await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'remove_queue', ?)")
         .bind(device.id)
