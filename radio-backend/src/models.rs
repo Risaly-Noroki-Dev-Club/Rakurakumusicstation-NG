@@ -361,6 +361,13 @@ pub struct DownloadStatus {
     pub log: String,
 }
 
+/// SSE event payload for real-time download progress.
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadEvent {
+    pub log: String,
+    pub done: bool,
+}
+
 // ─── 网易云账号 ──────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -381,7 +388,7 @@ pub struct SaveNcmRequest {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NcmStatus {
     pub configured: bool,
     pub method: String,

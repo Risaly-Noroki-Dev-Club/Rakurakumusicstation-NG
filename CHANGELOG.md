@@ -1,5 +1,27 @@
 # 更新日志
 
+## v3.1.0 — 2026-05-10
+
+### 重大变更：原生 Rust 网易云下载（取代 music_dl.py）
+
+- **移除 Python 依赖** — 删除 `music_dl.py` 子进程调用，网易云批量下载完全内置于 Rust 后端。
+  - 新增 `radio-backend/src/services/ncm/` 模块，实现 Eapi 加密、HTTP 客户端、搜索、取 URL、下载、歌词获取全流程。
+  - 参考 [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) / [Music163Api-Go](https://github.com/XiaoMengXinX/Music163Api-Go)（GPL-3.0）的 Eapi 协议实现，用 Rust 重写 AES-ECB 加密、请求签名、Cookie 构造。
+- **SSE 实时进度推送** — `GET /api/admin/download/stream` 返回 `text/event-stream`，前端 `EventSource` 实时接收每行日志，取代原有 2 秒轮询。
+- **下载后自动刷新播放队列** — 批量下载完成后自动发送 `AudioCommandType::ReloadQueue` 给音频引擎，新歌曲立即进入播放列表（不 Rescan 数据库）。
+- **可配置并发** — `config.toml` `[ncm]` 段新增 `download_concurrency`（默认 1，最大 8）。
+- **可配置 device_id** — `config.toml` `[ncm]` 段新增 `device_id`（留空则每次启动生成）。
+- **移除 YouTube / Bilibili 降级** — 不再依赖 `yt-dlp`。
+
+### 架构变更
+
+- `radio-engine` 新增 `AudioCommandType::ReloadQueue`，支持运行时重载播放队列。
+- `Cargo.toml` 新增依赖：`reqwest`、`aes`、`cipher`、`md-5`、`rand`、`hex`、`id3`、`tokio-stream`。
+- 前端 `AdminDownload.vue` 从轮询改为 `EventSource` 监听 SSE。
+- `build_release.sh` 移除 Python / `music_dl.py` 相关说明。
+
+---
+
 ## v3.0.0 — 2026-05-05
 
 ### 重大架构变更：C++ 引擎被 Rust 重写替代

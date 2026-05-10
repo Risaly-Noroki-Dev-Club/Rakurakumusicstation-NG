@@ -1,38 +1,71 @@
-/// 批量下载路由。
+/// 批量下载路由 — 使用原生 Rust NCM 客户端 + SSE 实时推送。
 
 use crate::db::AppState;
 use crate::error::AppError;
-use crate::models::{ApiResponse, DownloadRequest, DownloadStatus};
+use crate::models::{ApiResponse, DownloadEvent, DownloadRequest};
 use crate::routes::admin::get_admin;
+use crate::services::ncm::{NcmClient, run_download};
 use axum::{
     extract::State,
     http::HeaderMap,
+    response::sse::{Event, Sse},
     Json,
 };
+use futures_util::stream::{unfold, Stream};
 use std::sync::{Arc, Mutex, OnceLock};
+use tokio::sync::broadcast;
 
-/// 全局下载状态，受 Mutex 保护
-fn download_state() -> &'static Mutex<DownloadStatus> {
-    static DL: OnceLock<Mutex<DownloadStatus>> = OnceLock::new();
-    DL.get_or_init(|| Mutex::new(DownloadStatus {
-        running: false,
-        log: String::new(),
-    }))
+/// 全局下载运行标志
+fn download_running() -> &'static Mutex<bool> {
+    static RUNNING: OnceLock<Mutex<bool>> = OnceLock::new();
+    RUNNING.get_or_init(|| Mutex::new(false))
 }
 
-pub fn ncm_secrets_path() -> std::path::PathBuf {
+/// 全局日志广播 channel（发送端）
+fn log_broadcast() -> &'static broadcast::Sender<DownloadEvent> {
+    static TX: OnceLock<broadcast::Sender<DownloadEvent>> = OnceLock::new();
+    TX.get_or_init(|| broadcast::channel(512).0)
+}
+
+fn ncm_secrets_path() -> std::path::PathBuf {
     std::env::var("NCM_SECRETS_PATH")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("secrets.json"))
 }
 
-pub fn music_dl_path() -> std::path::PathBuf {
-    std::env::var("MUSIC_DL_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("music_dl.py"))
+/// 从 secrets.json 读取 MUSIC_U cookie
+fn read_music_u() -> Option<String> {
+    let path = ncm_secrets_path();
+    if !path.exists() {
+        return None;
+    }
+    let content = std::fs::read_to_string(&path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    // 先尝试从 ncm_cookie 字符串中提取 MUSIC_U
+    if let Some(cookie) = json.get("ncm_cookie").and_then(|v| v.as_str()) {
+        for part in cookie.split(';') {
+            let part = part.trim();
+            if part.starts_with("MUSIC_U=") {
+                return Some(part.strip_prefix("MUSIC_U=").unwrap_or("").to_string());
+            }
+        }
+    }
+
+    // 如果没有 MUSIC_U 但有 phone，返回空字符串（由 MUSIC_A 兜底）
+    if json
+        .get("ncm_phone")
+        .and_then(|v| v.as_str())
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+    {
+        return Some(String::new());
+    }
+
+    None
 }
 
-/// POST /api/admin/download — 开始批量下载
+/// POST /api/admin/download — 启动批量下载
 pub async fn start_download(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -46,75 +79,141 @@ pub async fn start_download(
     }
 
     {
-        let status = download_state().lock().unwrap_or_else(|e| e.into_inner());
-        if status.running {
+        let running = download_running().lock().unwrap_or_else(|e| e.into_inner());
+        if *running {
             return Err(AppError::BadRequest("已有下载任务在运行中".into()));
         }
     }
 
     let quality = body.quality.unwrap_or_else(|| "exhigh".into());
-    let format = body.format.unwrap_or_else(|| "mp3".into());
-
-    let tmpdir = std::env::temp_dir();
-    let playlist_file = tmpdir.join("radio_download_playlist.txt");
-    std::fs::write(&playlist_file, &playlist)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("写入临时文件失败: {}", e)))?;
+    let _format = body.format.unwrap_or_else(|| "mp3".into());
+    let media_path = state.config.audio_engine.media_path.clone();
+    let device_id = if state.config.ncm.device_id.is_empty() {
+        None
+    } else {
+        Some(state.config.ncm.device_id.clone())
+    };
+    let music_u = read_music_u();
+    let concurrency = state.config.ncm.download_concurrency.max(1);
+    let client = NcmClient::new(device_id, music_u);
+    let player_handle = state.player_handle.clone();
 
     {
-        let mut status = download_state().lock().unwrap_or_else(|e| e.into_inner());
-        status.running = true;
-        status.log = format!("开始下载...\n音质: {}\n格式: {}\n", quality, format);
+        let mut running = download_running().lock().unwrap_or_else(|e| e.into_inner());
+        *running = true;
     }
 
-    let media_path = state.config.audio_engine.media_path.clone();
-    let quality_clone = quality.clone();
-    let format_clone = format.clone();
-    let playlist_path = playlist_file.clone();
-
-    let dl_path = music_dl_path();
-    let settings_path = ncm_secrets_path();
+    // 获取广播发送端
+    let broadcast_tx = log_broadcast().clone();
 
     tokio::spawn(async move {
-        let result = std::process::Command::new("python3")
-            .arg(&dl_path)
-            .arg(&playlist_path)
-            .arg("--output")
-            .arg(&media_path)
-            .arg("--quality")
-            .arg(&quality_clone)
-            .arg("--format")
-            .arg(&format_clone)
-            .arg("--non-interactive")
-            .arg("--settings")
-            .arg(&settings_path)
-            .output();
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel::<String>(256);
 
-        let mut status = download_state().lock().unwrap_or_else(|e| e.into_inner());
+        // 转发内部日志到广播 channel
+        let forwarder = tokio::spawn(async move {
+            while let Some(line) = log_rx.recv().await {
+                let ev = DownloadEvent {
+                    log: line,
+                    done: false,
+                };
+                let _ = broadcast_tx.send(ev);
+            }
+        });
+
+        let result = run_download(
+            client,
+            playlist,
+            quality,
+            _format,
+            media_path.clone(),
+            concurrency,
+            log_tx,
+        )
+        .await;
+
+        // 等待日志转发完成
+        forwarder.await.ok();
+
         match result {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                status.log = format!("{}\n{}", stdout, stderr);
-                status.running = false;
-                std::fs::remove_file(&playlist_path).ok();
+            Ok((success, failed)) => {
+                tracing::info!("Download complete: success={}, failed={}", success, failed);
             }
             Err(e) => {
-                status.log = format!("下载失败: {}", e);
-                status.running = false;
+                tracing::error!("Download error: {}", e);
+                let _ = log_broadcast().send(DownloadEvent {
+                    log: format!("❌ 下载任务异常: {}", e),
+                    done: true,
+                });
             }
         }
+
+        // 发送完成标记
+        let _ = log_broadcast().send(DownloadEvent {
+            log: "下载任务已结束".to_string(),
+            done: true,
+        });
+
+        // 触发播放队列重载
+        player_handle.send_command(radio_engine::types::AudioCommand {
+            cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
+            song_id: None,
+            file_path: None,
+        });
+        tracing::info!("Triggered play queue reload after download");
+
+        let mut running = download_running().lock().unwrap_or_else(|e| e.into_inner());
+        *running = false;
     });
 
     Ok(Json(ApiResponse::ok("下载任务已启动".into())))
 }
 
-/// GET /api/admin/download/status — 获取下载状态
+/// GET /api/admin/download/stream — SSE 实时下载日志
+pub async fn download_stream(
+    State(_state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, AppError> {
+    let _admin = get_admin(&_state, &headers).await?;
+
+    let rx = log_broadcast().subscribe();
+
+    let stream = unfold(rx, |mut rx| async {
+        match rx.recv().await {
+            Ok(ev) => {
+                let data = serde_json::to_string(&ev).unwrap_or_default();
+                Some((Ok::<_, std::convert::Infallible>(Event::default().data(data)), rx))
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                // 错过了一些消息，继续接收
+                Some((Ok::<_, std::convert::Infallible>(Event::default().data(
+                    serde_json::to_string(&DownloadEvent {
+                        log: "...".to_string(),
+                        done: false,
+                    })
+                    .unwrap_or_default(),
+                )), rx))
+            }
+            Err(broadcast::error::RecvError::Closed) => None,
+        }
+    });
+
+    Ok(Sse::new(stream))
+}
+
+/// GET /api/admin/download/status — 兼容旧版轮询（保留但降级）
 pub async fn download_status(
     State(_state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<ApiResponse<DownloadStatus>>, AppError> {
+) -> Result<Json<ApiResponse<crate::models::DownloadStatus>>, AppError> {
     let _admin = get_admin(&_state, &headers).await?;
 
-    let status = download_state().lock().unwrap_or_else(|e| e.into_inner());
-    Ok(Json(ApiResponse::ok(status.clone())))
+    let running = {
+        let running = download_running().lock().unwrap_or_else(|e| e.into_inner());
+        *running
+    };
+
+    Ok(Json(ApiResponse::ok(crate::models::DownloadStatus {
+        running,
+        log: "请使用 /api/admin/download/stream 获取实时进度".to_string(),
+    })))
 }

@@ -55,3 +55,13 @@ socket2 = { version = "0.5", features = ["all"] }
 
 # 音频引擎（本地 crate）
 radio-engine = { path = "../radio-engine" }
+
+# 网易云下载
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+aes = "0.8"
+cipher = "0.4"
+md-5 = "0.10"
+rand = "0.8"
+hex = "0.4"
+id3 = "1.15"
+tokio-stream = "0.1"

@@ -12,6 +12,8 @@ pub struct AppConfig {
     pub queue: QueueConfig,
     pub station: StationConfig,
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub ncm: NcmConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -129,6 +131,19 @@ pub struct LoggingConfig {
     pub level: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct NcmConfig {
+    /// 网易云设备 ID（32 位 hex，首次自动生成）
+    #[serde(default = "default_device_id")]
+    pub device_id: String,
+    /// 批量下载并发数（默认 1，最大 8）
+    #[serde(default = "default_download_concurrency")]
+    pub download_concurrency: usize,
+}
+
+fn default_device_id() -> String { String::new() }
+fn default_download_concurrency() -> usize { 1 }
+
 // ─── 默认值 ─────────────────────────────────────────────
 
 fn default_host() -> String { "0.0.0.0".into() }
@@ -162,6 +177,10 @@ impl AppConfig {
         if let Ok(v) = std::env::var("RADIO_STREAM_BASE") { config.audio_engine.stream_base = v; }
         if let Ok(v) = std::env::var("RADIO_STATION_NAME") { config.station.name = v; }
         if let Ok(v) = std::env::var("RADIO_ADMIN_SETUP_TOKEN") { config.device.admin_setup_token = v; }
+        if let Ok(v) = std::env::var("RADIO_NCM_DEVICE_ID") { config.ncm.device_id = v; }
+        if let Ok(v) = std::env::var("RADIO_NCM_DOWNLOAD_CONCURRENCY") {
+            config.ncm.download_concurrency = v.parse().unwrap_or(config.ncm.download_concurrency);
+        }
 
         Ok(config)
     }

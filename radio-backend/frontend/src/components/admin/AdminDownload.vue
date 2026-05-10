@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { onUnmounted } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { store, toast } from '../../store'
 import { getBackendUrl } from '../../api'
 import StatusMessage from '../StatusMessage.vue'
 
-let downloadPoller: ReturnType<typeof setInterval> | null = null
+let eventSource: EventSource | null = null
 
-async function startDownload() {
+function startDownload() {
   const playlist = store.downloadPlaylist.trim()
   if (!playlist) {
     store.downloadStatusMsg = '请输入歌单内容'
@@ -17,49 +17,74 @@ async function startDownload() {
   store.downloadLog = ''
   store.downloadStatusMsg = '正在提交任务...'
   store.downloadStatusType = 'info'
-  try {
-    const res = await fetch(getBackendUrl() + '/api/admin/download', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playlist, quality: store.downloadQuality, format: store.downloadFormat })
+
+  fetch(getBackendUrl() + '/api/admin/download', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ playlist, quality: store.downloadQuality, format: store.downloadFormat })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        store.downloadStatusMsg = data.data || '任务已提交'
+        store.downloadStatusType = 'info'
+        openEventSource()
+      } else {
+        store.downloadStatusMsg = '❌ ' + (data.error || '启动失败')
+        store.downloadStatusType = 'error'
+        store.downloadRunning = false
+      }
     })
-    const data = await res.json()
-    if (data.success) {
-      store.downloadStatusMsg = data.data || '任务已提交，正在下载中...'
-      store.downloadStatusType = 'info'
-      pollDownload()
-    } else {
-      store.downloadStatusMsg = '❌ ' + (data.error || '启动失败')
+    .catch(() => {
+      store.downloadStatusMsg = '❌ 请求失败'
       store.downloadStatusType = 'error'
       store.downloadRunning = false
+    })
+}
+
+function openEventSource() {
+  if (eventSource) {
+    eventSource.close()
+  }
+
+  const url = getBackendUrl() + '/api/admin/download/stream'
+  eventSource = new EventSource(url, { withCredentials: true })
+
+  eventSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data)
+      if (data.log) {
+        store.downloadLog += data.log + '\n'
+      }
+      if (data.done) {
+        store.downloadRunning = false
+        store.downloadStatusMsg = '下载完成'
+        store.downloadStatusType = 'success'
+        closeEventSource()
+        toast('下载完成，播放队列已刷新', 'success')
+      }
+    } catch {
+      store.downloadLog += e.data + '\n'
     }
-  } catch {
-    store.downloadStatusMsg = '❌ 请求失败'
-    store.downloadStatusType = 'error'
-    store.downloadRunning = false
+  }
+
+  eventSource.onerror = () => {
+    if (!store.downloadRunning) {
+      closeEventSource()
+    }
   }
 }
 
-function pollDownload() {
-  if (downloadPoller) clearInterval(downloadPoller)
-  downloadPoller = setInterval(async () => {
-    try {
-      const res = await fetch(getBackendUrl() + '/api/admin/download/status')
-      const data = await res.json()
-      if (data.success) {
-        const d = data.data
-        store.downloadStatusMsg = d.status || '运行中...'
-        store.downloadLog = d.log || ''
-        if (d.status && (d.status.includes('完成') || d.status.includes('错误'))) {
-          store.downloadRunning = false
-          store.downloadStatusType = d.status.includes('完成') ? 'success' : 'error'
-          if (downloadPoller) { clearInterval(downloadPoller); downloadPoller = null }
-        }
-      }
-    } catch { /* ignore */ }
-  }, 2000)
+function closeEventSource() {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
 }
 
-onUnmounted(() => { if (downloadPoller) clearInterval(downloadPoller) })
+onUnmounted(() => {
+  closeEventSource()
+})
 </script>
 
 <template>

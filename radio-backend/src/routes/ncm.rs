@@ -4,6 +4,7 @@ use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, NcmStatus, SaveNcmRequest};
+use crate::services::ncm::NcmClient;
 use axum::{
     extract::State,
     http::HeaderMap,
@@ -29,6 +30,21 @@ fn user_ncm_secrets(ncm: &crate::models::UserNcm) -> serde_json::Value {
         map.retain(|_, v| !v.as_str().map(|s| s.is_empty()).unwrap_or(false));
     }
     secrets
+}
+
+fn extract_music_u(ncm: &crate::models::UserNcm) -> Option<String> {
+    if !ncm.ncm_cookie.is_empty() {
+        for part in ncm.ncm_cookie.split(';') {
+            let part = part.trim();
+            if part.starts_with("MUSIC_U=") {
+                return Some(part.strip_prefix("MUSIC_U=").unwrap_or("").to_string());
+            }
+        }
+    }
+    if !ncm.ncm_phone.is_empty() {
+        return Some(String::new());
+    }
+    None
 }
 
 /// GET /api/ncm — 获取当前设备的网易云账号状态
@@ -135,45 +151,30 @@ pub async fn test_ncm(
         return Err(AppError::BadRequest("请先配置网易云账号".into()));
     }
 
-    let secrets = user_ncm_secrets(&ncm);
-    let tmp_path: std::path::PathBuf = std::env::temp_dir().join(format!("radio_ncm_test_{}.json", device.id));
-    let content = serde_json::to_string(&secrets)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("序列化失败: {}", e)))?;
-    std::fs::write(&tmp_path, content)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("写入失败: {}", e)))?;
-
-    let dl_path = std::env::var("MUSIC_DL_PATH")
-        .unwrap_or_else(|_| "music_dl.py".to_string());
-
-    let result = std::process::Command::new("python3")
-        .arg(&dl_path)
-        .arg("--verify-login")
-        .arg("--settings")
-        .arg(&tmp_path)
-        .output();
-
-    std::fs::remove_file(&tmp_path).ok();
-
-    match result {
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let combined = if stderr.trim().is_empty() {
-                stdout.trim().to_string()
-            } else {
-                format!("{}\n{}", stdout.trim(), stderr.trim())
-            };
-            let success = output.status.success();
-            Ok(Json(ApiResponse::ok(serde_json::json!({
-                "success": success,
-                "output": if combined.is_empty() {
-                    if success { "登录成功".to_string() } else { "登录失败".to_string() }
-                } else { combined },
-            }))))
+    let music_u = match extract_music_u(&ncm) {
+        Some(mu) => mu,
+        None => {
+            return Ok(Json(ApiResponse::ok(serde_json::json!({
+                "success": false,
+                "output": "无法提取有效的登录凭据",
+            }))));
         }
+    };
+
+    let client = NcmClient::new(None, Some(music_u));
+
+    match client.test_login().await {
+        Ok(true) => Ok(Json(ApiResponse::ok(serde_json::json!({
+            "success": true,
+            "output": "登录成功",
+        })))),
+        Ok(false) => Ok(Json(ApiResponse::ok(serde_json::json!({
+            "success": false,
+            "output": "登录失败，Cookie 可能已过期",
+        })))),
         Err(e) => Ok(Json(ApiResponse::ok(serde_json::json!({
             "success": false,
-            "output": format!("执行失败: {}", e),
+            "output": format!("请求失败: {}", e),
         })))),
     }
 }

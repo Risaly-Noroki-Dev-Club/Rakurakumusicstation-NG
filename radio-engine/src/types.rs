@@ -103,6 +103,8 @@ pub enum AudioCommandType {
     Prev,
     Play,
     Stop,
+    /// Re-scan the media directory and rebuild the play queue.
+    ReloadQueue,
 }
 
 /// Command sent to the audio engine (from backend/frontend)

@@ -103,7 +103,7 @@ VLC、mpv、ffplay 等可直接播放 `http://localhost:2241/stream`。
 | 👥 用户管理 | 查看设备列表、封禁/解封、提权/降权、操作日志 |
 | 🎵 歌曲管理 | 查看/删除歌曲、重新扫描 media/、切歌 |
 | 📤 上传 | 上传音频文件 |
-| ⬇️ 下载 | 批量下载歌单（通过 music_dl.py） |
+| ⬇️ 下载 | 批量下载歌单（原生 Rust 网易云下载，SSE 实时进度） |
 | 🎵 网易云 | 全局网易云账号配置 |
 | ⚙️ 设置 | 电台名称、副标题、主题色 |
 | 📊 统计 | 设备数、歌曲数、队列数、歌单数 |
@@ -256,6 +256,10 @@ cd radio-backend && cargo build --release
 
 MIT
 
+本项目包含以下第三方代码：
+
+- **网易云下载模块** (`radio-backend/src/services/ncm/`) 的 Eapi 加密逻辑与 API 调用参考自 [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go)（GPL-3.0 许可证）。相关代码在 Rust 中进行了重写和适配。
+
 ## Credits
 
 - 知夏 (Zhixia) — 项目协作者
@@ -264,5 +268,6 @@ MIT
 - [Vue 3](https://vuejs.org/) — 前端框架
 - [Vite](https://vitejs.dev/) — 前端构建工具
 - [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL 工具集
+- [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) / [Music163Api-Go](https://github.com/XiaoMengXinX/Music163Api-Go) — 网易云音乐 API 实现参考（GPL-3.0）
 
 灵感来源：《孤独摇滚！》— 伊地知虹夏

@@ -47,6 +47,7 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         .route("/playlist/prev", axum::routing::post(playback::skip_prev))
         // 批量下载
         .route("/download", axum::routing::post(download::start_download))
+        .route("/download/stream", axum::routing::get(download::download_stream))
         .route("/download/status", axum::routing::get(download::download_status))
         // 网易云账号
         .route("/ncm", axum::routing::get(ncm::get_ncm_settings).post(ncm::save_ncm_settings))

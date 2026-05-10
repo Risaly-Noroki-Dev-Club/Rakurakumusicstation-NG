@@ -16,6 +16,7 @@ This file provides guidance for OpenCode sessions working in this repository.
   - Static web UI in `radio-backend/static/` (Vue 3 SFC + Vite + TypeScript)
   - Admin routes split into `routes/admin/{users,stats,songs,upload,settings,playback,download,ncm,logout}.rs`
   - Shared metadata utilities in `services/metadata.rs` (reuses engine's `parse_artist_title`)
+  - **NCM download module** (`services/ncm/`) — native Rust implementation of NetEase Cloud Music Eapi protocol for batch downloading (search → get URL → download → lyrics). Replaces legacy `music_dl.py`.
 - **Legacy C++ Engine** (`legacy/cpp-engine/`) — archived, not built or used
 
 ## Build
@@ -67,7 +68,7 @@ cd dist
 - **Admin setup token** — configured in `config.toml` `[device].admin_setup_token`. Must be set before first run.
 - **Settings save but don't hot-reload** — `POST /api/admin/settings` writes `config.toml` but changes take effect only after restart.
 - **Rescan needs `ffprobe`** on PATH to extract audio duration metadata.
-- **Download feature needs `music_dl.py`** at a path configured via `MUSIC_DL_PATH` env var.
+- **Native Rust NCM download** — `services/ncm/` implements NetEase Cloud Music Eapi protocol (AES-ECB encryption, request signing, cookie auth) in pure Rust. Reference: [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) / [Music163Api-Go](https://github.com/XiaoMengXinX/Music163Api-Go) (GPL-3.0).
 - **SQLite-only** — migrations use `AUTOINCREMENT`, `datetime('now')`, `INSERT OR IGNORE`. PostgreSQL is noted in comments but requires migration rewrite.
 - **Migrations run automatically** at startup via `sqlx::migrate!`, no manual step needed.
 - **Static files are a fallback** (`ServeDir::new("static")` as `.fallback_service()`) — any unmatched route falls through to the SPA, enabling client-side routing.
@@ -78,6 +79,9 @@ cd dist
   - Absolute URL (e.g. `http://...`) — used directly.
 - **Missing cover art returns a placeholder SVG** — the `/api/songs/{id}/cover` endpoint returns a default music-note icon when no cover exists, rather than a 404 error.
 - **Backend pre-parses lyrics** — LRC files are parsed into `Vec<LyricsLineDto>` in the WebSocket poller and sent as `lyrics_lines`; the frontend no longer needs `parseLyrics()`.
+- **`/api/admin/download/stream` SSE endpoint** — real-time download logs via `text/event-stream`. The frontend uses `EventSource` instead of polling. Events are JSON `{log: string, done: bool}`.
+- **Download auto-reloads play queue** — after batch download completes, the backend sends `AudioCommandType::ReloadQueue` to the engine so new tracks appear in rotation immediately (without DB rescan).
+- **`[ncm]` config section** — `device_id` (persisted 32-char hex, auto-generated if empty) and `download_concurrency` (default 1, max 8).
 
 ## No tests / no CI
 

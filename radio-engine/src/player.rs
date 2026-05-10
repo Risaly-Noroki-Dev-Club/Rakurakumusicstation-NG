@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use tokio::io::AsyncReadExt;
-use tokio::process::{Child, ChildStdout, Command};
+use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
 use crate::config::{
@@ -145,7 +145,7 @@ impl Player {
         let mut new_queue = Vec::new();
         let mut new_metadata = Vec::new();
 
-        for (full_path, rel_path) in files {
+        for (_full_path, rel_path) in files {
             let filename = rel_path.clone();
 
             let meta = crate::metadata::extract_metadata(&rel_path, &self.media_path)
@@ -184,6 +184,15 @@ impl Player {
         loop {
             if self.stop_flag.load(Ordering::Relaxed) {
                 break;
+            }
+
+            // Drain pending commands before selecting a track.
+            while let Ok(cmd) = self.cmd_rx.try_recv() {
+                if let crate::types::AudioCommandType::ReloadQueue = cmd.cmd_type {
+                    self.init_play_queue().await;
+                } else if self.handle_command(&cmd) {
+                    // Stop or other interrupting command
+                }
             }
 
             let playlist_empty = {
@@ -315,7 +324,9 @@ impl Player {
         let mut last_publish = Instant::now();
         'stream: loop {
             if let Ok(cmd) = self.cmd_rx.try_recv() {
-                if self.handle_command(&cmd) {
+                if let crate::types::AudioCommandType::ReloadQueue = cmd.cmd_type {
+                    self.init_play_queue().await;
+                } else if self.handle_command(&cmd) {
                     // 立即取消 ffmpeg 任务，触发 kill_on_drop 清理子进程
                     ffmpeg_task.abort();
                     break 'stream;
@@ -477,6 +488,10 @@ impl Player {
                 self.stop_flag.store(true, Ordering::Relaxed);
                 tracing::info!("Stop command received");
                 true
+            }
+            ReloadQueue => {
+                // Handled upstream in run() / stream_track(), this arm is a fallback.
+                false
             }
         }
     }

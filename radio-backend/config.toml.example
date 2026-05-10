@@ -44,3 +44,10 @@ bg_color = "#f4f4f9"
 
 [logging]
 level = "info"
+
+[ncm]
+# 网易云设备 ID（32 位小写 hex，首次启动时自动生成并持久化）
+# 留空则每次启动生成新的 deviceId
+device_id = ""
+# 批量下载并发数（1 = 串行，最大 8）
+download_concurrency = 1
