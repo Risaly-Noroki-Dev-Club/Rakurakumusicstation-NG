@@ -79,6 +79,7 @@ print_success "radio-backend 二进制文件已复制"
 
 # 复制前端静态文件（如果存在）
 if [ -d "radio-backend/static" ]; then
+    rm -r dist/static
     cp -r radio-backend/static dist/
     print_success "前端静态文件已复制"
 fi
