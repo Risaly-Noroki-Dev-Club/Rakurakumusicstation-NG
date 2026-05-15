@@ -7,6 +7,9 @@
 - **原生子路径部署** — `[server] base_path` 支持将后端挂载到 `/radio` 等子路径；API、WebSocket、音频流、静态前端、设备 Cookie path 和播放文件 URL 会同步使用该前缀。
 - **子路径 PWA 支持** — 前端新增 `VITE_BASE_PATH` 构建前缀；Vue Router、manifest、service worker scope、PWA 图标与 API/WebSocket URL 都支持根路径和子路径。
 - **PWA 图标补齐** — 新增 `icon-192.png` 和 `icon-512.png`，提升浏览器安装兼容性。
+- **公开全站曲库** — 曲库页默认展示电台所有歌曲、总数和分页加载，搜索结果沿用同一列表体验。
+- **真实深浅色主题** — 自动/浅色/深色会同步 Vuetify 主题和自定义 CSS 变量，自动模式跟随系统主题变化。
+- **非线性动效** — 列表进入、迷你播放器、动态背景和主题切换使用强调曲线，并支持 reduced-motion 降级。
 
 ### 修复
 

@@ -77,7 +77,7 @@ watch(() => props.coverSrc, (src) => {
   bottom: 0;
   z-index: 0;
   opacity: 0.08;
-  transition: background-color 0.8s ease;
+  transition: background-color 0.9s var(--am-ease-emphasized);
   pointer-events: none;
 }
 </style>

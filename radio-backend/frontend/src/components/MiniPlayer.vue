@@ -86,11 +86,17 @@ function togglePlay(e: Event) {
   border-top: 1px solid var(--am-divider);
   box-shadow: var(--am-shadow-4);
   cursor: pointer;
-  transition: background 0.2s ease;
+  animation: am-mini-enter 0.52s var(--am-ease-emphasized) both;
+  transition:
+    background-color 0.28s var(--am-ease-emphasized),
+    box-shadow 0.28s var(--am-ease-emphasized),
+    transform 0.28s var(--am-ease-spring);
 }
 
 .am-mini-player:hover {
   background: var(--am-surface-2);
+  box-shadow: var(--am-shadow-8);
+  transform: translateY(-2px) scale(1.002);
 }
 
 @media (min-width: 960px) {
@@ -111,5 +117,26 @@ function togglePlay(e: Event) {
 
 .font-weight-semibold {
   font-weight: 600;
+}
+
+@keyframes am-mini-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-mini-player {
+    animation: none;
+  }
+
+  .am-mini-player:hover {
+    transform: none;
+  }
 }
 </style>

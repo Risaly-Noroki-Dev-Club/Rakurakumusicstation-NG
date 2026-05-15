@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { store, formatTime } from '../store'
 import {
   debouncedSearch, addToQueue, downloadSong, uploadSong,
   loadMyPlaylists, createPlaylist,
   deletePlaylist, loadPlaylistDetail, addSongToPlaylist, removeSongFromPlaylist,
-  onSearchInput
+  onSearchInput, loadLibrarySongs
 } from '../api'
 import NcmSettings from '../components/NcmSettings.vue'
 import type { PlaylistDetail, PlaylistSong } from '../api/playlists'
 
 onMounted(() => {
+  loadLibrarySongs(false)
   if (store.deviceUser) {
     loadMyPlaylists()
   }
@@ -86,6 +87,10 @@ async function handlePlayAll() {
 const showAddToPlaylistDialog = ref(false)
 const selectedSongId = ref<number | null>(null)
 
+const hasMoreSongs = computed(() => store.searchResults.length < store.searchTotal)
+const libraryTitle = computed(() => store.searchQuery.trim() ? '搜索结果' : '电台曲库')
+const librarySubtitle = computed(() => store.searchQuery.trim() ? '匹配歌曲' : '公开歌曲')
+
 function openAddToPlaylist(songId: number) {
   selectedSongId.value = songId
   showAddToPlaylistDialog.value = true
@@ -115,19 +120,34 @@ async function handleAddToPlaylist(playlistId: number) {
       </v-card-text>
     </v-card>
 
-    <!-- Search Results -->
-    <v-card v-if="store.searchQuery.trim() !== ''" class="mb-4" elevation="1">
-      <v-card-title class="text-subtitle-1 font-weight-bold">
-        搜索结果
+    <!-- Public Library / Search Results -->
+    <v-card class="mb-4" elevation="1">
+      <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center">
+        <div>
+          <div>{{ libraryTitle }}</div>
+          <div class="text-caption text-medium-emphasis font-weight-regular">
+            {{ librarySubtitle }} · 共 {{ store.searchTotal }} 首
+          </div>
+        </div>
+        <v-spacer />
+        <v-progress-circular
+          v-if="store.searchLoading"
+          indeterminate
+          size="22"
+          width="2"
+          color="primary"
+        />
       </v-card-title>
       <v-card-text class="pa-0">
-        <div v-if="store.searchResults.length === 0" class="text-center py-8 text-medium-emphasis">
-          未找到匹配的歌曲
+        <div v-if="!store.searchLoading && store.searchResults.length === 0" class="text-center py-8 text-medium-emphasis">
+          {{ store.searchQuery.trim() ? '未找到匹配的歌曲' : '曲库暂时为空' }}
         </div>
         <v-list v-else lines="two">
           <v-list-item
-            v-for="s in store.searchResults"
+            v-for="(s, index) in store.searchResults"
             :key="s.id"
+            class="am-song-item"
+            :style="{ '--am-stagger': Math.min(index, 24) * 18 + 'ms' }"
             :title="s.title"
             :subtitle="(s.artist || '') + ' · ' + (s.album || '') + ' · ' + formatTime(s.duration_ms)"
           >
@@ -166,6 +186,17 @@ async function handleAddToPlaylist(playlistId: number) {
             </template>
           </v-list-item>
         </v-list>
+        <div v-if="hasMoreSongs" class="pa-4 pt-2">
+          <v-btn
+            variant="outlined"
+            color="primary"
+            block
+            :loading="store.searchLoading"
+            @click="loadLibrarySongs(true)"
+          >
+            加载更多
+          </v-btn>
+        </div>
       </v-card-text>
     </v-card>
 
@@ -395,5 +426,40 @@ async function handleAddToPlaylist(playlistId: number) {
 
 .cursor-pointer {
   cursor: pointer;
+}
+
+.am-song-item {
+  animation: am-song-enter 0.46s var(--am-ease-emphasized) both;
+  animation-delay: var(--am-stagger);
+  transform-origin: 50% 65%;
+  transition:
+    background-color 0.24s var(--am-ease-emphasized),
+    transform 0.24s var(--am-ease-spring);
+}
+
+.am-song-item:hover {
+  transform: translateX(3px) scale(1.004);
+}
+
+@keyframes am-song-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-song-item {
+    animation: none;
+    transition: none;
+  }
+
+  .am-song-item:hover {
+    transform: none;
+  }
 }
 </style>

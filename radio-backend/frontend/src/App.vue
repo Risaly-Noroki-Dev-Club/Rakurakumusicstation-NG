@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed, watch, ref, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { store } from './store'
+import { useTheme } from 'vuetify'
+import { store, THEMES } from './store'
 import {
   loadStationInfo, loadDeviceUser,
   connectWebSocket, startPollers, stopPollers, getWs,
@@ -11,6 +12,7 @@ import MiniPlayer from './components/MiniPlayer.vue'
 
 const route = useRoute()
 const router = useRouter()
+const vuetifyTheme = useTheme()
 
 let queuePoller: ReturnType<typeof setInterval> | null = null
 
@@ -43,6 +45,16 @@ function startPlaybackFromGesture() {
   })
 }
 
+function preferredTheme(): 'light' | 'dark' {
+  const selected = THEMES[store.themeIdx]
+  if (selected === 'dark' || selected === 'light') return selected
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function syncTheme() {
+  vuetifyTheme.global.name.value = preferredTheme()
+}
+
 async function init() {
   // Start audio immediately in parallel — don't block on API calls
   initAudio()
@@ -56,7 +68,16 @@ async function init() {
 
 onMounted(init)
 
+const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+const onSystemThemeChange = () => {
+  if (THEMES[store.themeIdx] === 'auto') syncTheme()
+}
+
+watch(() => store.themeIdx, syncTheme, { immediate: true })
+mediaQuery.addEventListener('change', onSystemThemeChange)
+
 onUnmounted(() => {
+  mediaQuery.removeEventListener('change', onSystemThemeChange)
   if (queuePoller) stopPollers(queuePoller)
   if (getWs()) getWs()!.close()
   if (audioEl.value) {

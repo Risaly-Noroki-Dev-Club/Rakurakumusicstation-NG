@@ -40,6 +40,23 @@ const vuetify = createVuetify({
           'on-surface': 'rgba(0,0,0,0.87)',
         },
       },
+      dark: {
+        dark: true,
+        colors: {
+          background: '#101114',
+          surface: '#191B20',
+          'surface-variant': '#23262D',
+          primary: '#8AB4F8',
+          secondary: '#5FD0C3',
+          accent: '#FFB86B',
+          error: '#FFB4AB',
+          info: '#A8C7FA',
+          success: '#9BD59B',
+          warning: '#FDD663',
+          'on-background': 'rgba(255,255,255,0.92)',
+          'on-surface': 'rgba(255,255,255,0.92)',
+        },
+      },
     },
   },
   defaults: {

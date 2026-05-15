@@ -12,6 +12,9 @@
 - 后端现在支持 `server.base_path` 原生子路径挂载，前端可用 `VITE_BASE_PATH` 构建匹配路径。
 - PWA 的 `manifest.json`、`sw.js`、service worker scope 和图标路径已支持根路径与子路径部署。
 - 网易云下载遇到上游空响应、非 JSON 响应或风控页时，会返回更明确的错误，不再只暴露 `expected value at line 1 column 1`。
+- 设置页主题切换现在会同步 Vuetify 主题和自定义 CSS 变量，自动模式会跟随系统深浅色。
+- 曲库页不再只显示搜索结果，默认会公开展示全站歌曲总数和分页列表。
+- 前端增加非线性动效，并通过 `prefers-reduced-motion` 尊重系统减少动态效果设置。
 
 ## 构建顺序
 

@@ -1,15 +1,35 @@
 import { apiUrl } from './client'
 import { store, toast } from '../store'
 
-export async function onSearchInput(): Promise<void> {
+const SONG_PAGE_SIZE = 50
+
+export async function loadLibrarySongs(append = false): Promise<void> {
   const q = store.searchQuery.trim()
+  const offset = append ? store.searchOffset : 0
+  if (store.searchLoading) return
+  store.searchLoading = true
   try {
-    const res = await fetch(apiUrl('/api/songs?q=' + encodeURIComponent(q) + '&limit=50'))
+    const res = await fetch(apiUrl(
+      '/api/songs?q=' + encodeURIComponent(q) +
+      '&limit=' + SONG_PAGE_SIZE +
+      '&offset=' + offset
+    ))
     const data = await res.json()
     if (data.success) {
-      store.searchResults = data.data && data.data.data ? data.data.data : []
+      const page = data.data
+      const songs = page && page.data ? page.data : []
+      store.searchResults = append ? store.searchResults.concat(songs) : songs
+      store.searchTotal = page?.total || 0
+      store.searchOffset = offset + songs.length
     }
   } catch { /* ignore */ }
+  finally {
+    store.searchLoading = false
+  }
+}
+
+export async function onSearchInput(): Promise<void> {
+  await loadLibrarySongs(false)
 }
 
 export async function downloadSong(songId: number): Promise<void> {

@@ -46,6 +46,8 @@
 - **vue-router history 模式**：URL 驱动导航（`/`, `/library`, `/up-next`, `/settings`, `/admin/:subtab`），`/queue` 兼容跳转到 `/up-next`
 - **Rust 后端 SPA 回退**：`ServeDir::new("static").fallback(ServeFile::new("static/index.html"))`；`/api/*` 单独注册 JSON fallback，避免 API 404 返回 HTML
 - **Base path aware**：`VITE_BASE_PATH` 控制 Vite base、Vue Router history、API URL、WebSocket、PWA manifest 和 service worker scope
+- **Theme aware**：设置页的自动/浅色/深色会同步 Vuetify `useTheme()` 与 `data-theme` CSS 变量，自动模式跟随系统偏好
+- **Motion system**：全局 easing token 使用非线性曲线，列表/迷你播放器/背景过渡有动效，并通过 `prefers-reduced-motion` 降级
 
 ### 关键文件结构
 
@@ -82,6 +84,7 @@ reactive({
 - WebSocket：自动重连（指数退避，最多 20 次）
 - 轮询：队列 5s、播放状态 2s（WebSocket 断开时兜底）
 - 播放控制：推流模式为主，文件播放模式作为内部备份
+- 曲库：`GET /api/songs?q=&limit=&offset=` 同时服务公开全站列表和搜索结果；前端分页追加并显示总数
 
 **`src/router.ts`** — 路由配置
 ```
@@ -144,6 +147,14 @@ App.vue
 ```
 
 `--primary`, `--secondary`, `--bg` 在运行时由 `/api/station` 接口动态覆盖。
+
+### 主题与动效
+
+- 主题状态存储在 `localStorage.radio_theme`，取值为 `auto`、`light`、`dark`。
+- `auto` 通过 `prefers-color-scheme` 选择 Vuetify 主题，并监听系统变化。
+- `style.css` 中的 `[data-theme="dark"]` 覆盖自定义布局变量，避免 Vuetify 深色但自定义容器仍浅色。
+- 动效使用 `--am-ease-emphasized`、`--am-ease-spring`、`--am-ease-exit`，避免线性机械感。
+- `prefers-reduced-motion: reduce` 会显著降低动画和过渡。
 
 ---
 

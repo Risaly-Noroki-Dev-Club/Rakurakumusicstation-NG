@@ -26,6 +26,9 @@ export interface Store {
   history: QueueItem[]
   searchQuery: string
   searchResults: Song[]
+  searchTotal: number
+  searchOffset: number
+  searchLoading: boolean
   myPlaylists: Playlist[]
   newPlaylistName: string
   users: DeviceUser[]
@@ -95,6 +98,9 @@ export const store: Store = reactive({
   history: [] as QueueItem[],
   searchQuery: '',
   searchResults: [] as Song[],
+  searchTotal: 0,
+  searchOffset: 0,
+  searchLoading: false,
   myPlaylists: [] as Playlist[],
   newPlaylistName: '',
   users: [] as DeviceUser[],

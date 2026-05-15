@@ -49,6 +49,6 @@ const progressPct = computed(() =>
   height: 100%;
   background: var(--am-primary);
   border-radius: 2px;
-  transition: width 0.3s linear;
+  transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 </style>
