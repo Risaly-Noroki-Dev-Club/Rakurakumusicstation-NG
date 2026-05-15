@@ -2,7 +2,7 @@
 import { computed, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { store } from '../store'
-import { getBackendUrl } from '../api'
+import { apiUrl } from '../api'
 
 const router = useRouter()
 const audioEl = inject<import('vue').Ref<HTMLAudioElement | null>>('audioEl')
@@ -10,7 +10,7 @@ const audioEl = inject<import('vue').Ref<HTMLAudioElement | null>>('audioEl')
 const coverSrc = computed(() => {
   if (store.playbackState.cover_url) return store.playbackState.cover_url
   if (store.playbackState.song_id > 0)
-    return getBackendUrl() + '/api/songs/' + store.playbackState.song_id + '/cover'
+    return apiUrl('/api/songs/' + store.playbackState.song_id + '/cover')
   return ''
 })
 

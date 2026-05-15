@@ -171,7 +171,7 @@ pub async fn now_playing(
 
     let song_summary = song.as_ref().map(|s| s.clone().into());
     let file_url = song.as_ref().map(|s| {
-        state.config.audio_engine.resolve_file_url(s.id)
+        state.config.audio_engine.resolve_file_url(s.id, &state.config.server.base_path)
     });
 
     Ok(Json(ApiResponse::ok(NowPlaying {
@@ -181,7 +181,11 @@ pub async fn now_playing(
         lyrics_line,
         lyrics_text,
         started_at,
-        stream_url: state.config.audio_engine.resolve_stream_url(Some(&headers), state.config.server.port),
+        stream_url: state.config.audio_engine.resolve_stream_url(
+            Some(&headers),
+            state.config.server.port,
+            &state.config.server.base_path,
+        ),
         file_url,
     })))
 }

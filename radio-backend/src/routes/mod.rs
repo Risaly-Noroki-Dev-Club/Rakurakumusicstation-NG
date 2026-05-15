@@ -8,6 +8,7 @@ pub mod admin;
 pub mod favorites;
 pub mod ncm;
 
+use crate::config::join_base_path;
 use crate::db::AppState;
 use axum::{
     Json,
@@ -32,12 +33,28 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/now-playing", get(queue::now_playing))
         .fallback(api_not_found);
 
-    Router::new()
+    let app_routes = Router::new()
         .route("/ws", get(crate::websocket::ws_handler))
         .route("/stream", get(stream_handler))
         .nest("/api", api_routes)
-        .with_state(state)
-        .fallback_service(ServeDir::new("static").fallback(ServeFile::new("static/index.html")))
+        .fallback_service(ServeDir::new("static").fallback(ServeFile::new("static/index.html")));
+
+    let base_path = state.config.server.base_path.clone();
+    let router = if base_path == "/" {
+        app_routes
+    } else {
+        Router::new()
+            .nest(&base_path, app_routes)
+            .route("/", get(redirect_to_base_path))
+    };
+
+    router.with_state(state)
+}
+
+async fn redirect_to_base_path(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::response::Redirect {
+    axum::response::Redirect::temporary(&join_base_path(&state.config.server.base_path, "/"))
 }
 
 async fn api_not_found() -> (StatusCode, Json<serde_json::Value>) {
@@ -135,7 +152,11 @@ async fn station_info(
         "primary_color": station.primary_color,
         "secondary_color": station.secondary_color,
         "bg_color": station.bg_color,
-        "stream_url": state.config.audio_engine.resolve_stream_url(Some(&headers), state.config.server.port),
+        "stream_url": state.config.audio_engine.resolve_stream_url(
+            Some(&headers),
+            state.config.server.port,
+            &state.config.server.base_path,
+        ),
         "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
         "needs_setup": !has_admin,
     }))

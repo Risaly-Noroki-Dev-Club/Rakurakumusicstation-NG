@@ -1,4 +1,4 @@
-import { apiBase, getStreamUrl } from './client'
+import { apiUrl, appPath, getStreamUrl } from './client'
 import { store, toast } from '../store'
 import { refreshQueue } from './queue'
 import { onSearchInput } from './songs'
@@ -48,7 +48,7 @@ function updateAnchor(positionMs: number): void {
 
 function getWsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss://' : 'ws://'
-  let url = proto + window.location.host + '/ws'
+  let url = proto + window.location.host + appPath('/ws')
   if (store.deviceUser?.device_token) {
     url += '?device_token=' + encodeURIComponent(store.deviceUser.device_token)
   }
@@ -132,7 +132,7 @@ function handleWsMessage(msg: WsMessage): void {
 
 export function refreshPlaybackPoll(): void {
   if (ws && ws.readyState === WebSocket.OPEN) return
-  fetch(apiBase + '/api/now-playing')
+  fetch(apiUrl('/api/now-playing'))
     .then(r => r.json())
     .then(resp => {
       if (!resp.success || !resp.data || !resp.data.song) return
@@ -260,7 +260,7 @@ function onSourceBufferUpdateEnd(): void {
 async function fetchNextFileChunk(): Promise<void> {
   if (!fileFetchActive || store.playbackState.song_id <= 0) return
   try {
-    const res = await fetch(apiBase + '/api/songs/' + store.playbackState.song_id + '/file', {
+    const res = await fetch(apiUrl('/api/songs/' + store.playbackState.song_id + '/file'), {
       headers: { 'Range': 'bytes=' + fileOffset + '-' }
     })
     if (!res.ok) {

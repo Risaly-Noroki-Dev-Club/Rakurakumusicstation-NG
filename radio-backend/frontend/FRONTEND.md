@@ -45,6 +45,7 @@
 - **类型安全**：所有状态、API 响应、WebSocket 消息均有 TypeScript 接口定义（`src/types.ts`）
 - **vue-router history 模式**：URL 驱动导航（`/`, `/library`, `/up-next`, `/settings`, `/admin/:subtab`），`/queue` 兼容跳转到 `/up-next`
 - **Rust 后端 SPA 回退**：`ServeDir::new("static").fallback(ServeFile::new("static/index.html"))`；`/api/*` 单独注册 JSON fallback，避免 API 404 返回 HTML
+- **Base path aware**：`VITE_BASE_PATH` 控制 Vite base、Vue Router history、API URL、WebSocket、PWA manifest 和 service worker scope
 
 ### 关键文件结构
 
@@ -75,6 +76,8 @@ reactive({
 
 **`src/api.ts`** — API 聚合导出
 - 具体实现拆在 `src/api/{client,station,auth,queue,songs,playlists,admin,ncm,websocket}.ts`
+- 所有 HTTP URL 通过 `apiUrl('/api/...')` 拼接，避免硬编码域名根路径
+- WebSocket 通过 `appPath('/ws')` 拼接，支持 `/radio/ws` 之类的子路径部署
 - HTTP：fetch + httpOnly `device_token` cookie
 - WebSocket：自动重连（指数退避，最多 20 次）
 - 轮询：队列 5s、播放状态 2s（WebSocket 断开时兜底）
@@ -164,6 +167,28 @@ proxy: {
 }
 ```
 
+### 子路径与 PWA
+
+根路径部署使用默认构建：
+
+```bash
+npm run build
+```
+
+子路径部署必须显式设置 Vite base，并与后端 `[server].base_path` 一致：
+
+```bash
+VITE_BASE_PATH=/radio/ npm run build
+```
+
+相关约定：
+
+- `src/router.ts` 使用 `createWebHistory(import.meta.env.BASE_URL)`。
+- `src/main.ts` 使用 `navigator.serviceWorker.register(BASE_URL + 'sw.js', { scope: BASE_URL })`。
+- `public/manifest.json` 使用相对 `id`、`start_url`、`scope` 和 icon 路径。
+- `public/sw.js` 通过 `self.registration.scope` 计算当前部署前缀，API、WebSocket、音频流不缓存。
+- `public/icon.svg`、`icon-192.png`、`icon-512.png` 会复制到 `radio-backend/static/`，用于 PWA 安装。
+
 ### WebSocket 消息
 
 JSON，用 `type` 字段区分：`playback_state`, `queue_update`, `notice`, `ping`。
@@ -197,6 +222,9 @@ npm run dev
 npm run build
 # → 生成 radio-backend/static/index.html + assets/*
 
+# 子路径生产构建（需与后端 server.base_path 一致）
+VITE_BASE_PATH=/radio/ npm run build
+
 # Rust 后端构建
 cd .. && cargo build
 # 或从项目根目录
@@ -210,14 +238,15 @@ cd .. && cargo build
 - `build.outDir: '../static'` — 输出到 `radio-backend/static/`
 - `build.emptyOutDir: true` — 每次构建清空旧产物
 - 默认 `publicDir: 'public'` — `public/` 下的文件（sw.js, manifest.json）原样复制到输出
+- `base: process.env.VITE_BASE_PATH || '/'` — 控制静态资源、router、PWA 在子路径部署时的前缀
 
 ### 开发规范 / Conventions
 
 - **TypeScript 优先** — 所有新增代码使用 `.ts` / `.vue` SFC
 - **SFC `<script setup lang="ts">`** — 使用 Composition API + `<script setup>` 语法
 - **响应式全局 store** — 新增状态到 `store.ts` 的 `reactive()` 对象
-- **API 封装** — 新增接口调用到 `api.ts`
-- **不硬编码端口** — 用 `window.location.origin` 计算
+- **API 封装** — 新增接口调用到 `src/api/*.ts`，并通过 `src/api.ts` 聚合导出
+- **不硬编码端口或根路径** — HTTP 用 `apiUrl()`，应用内路径用 `appPath()`，避免破坏子路径部署
 - **CSS 变量** — 所有颜色通过 CSS 自定义属性
 - **组件拆分** — 按功能视图拆分，提取可复用共享组件；管理面板每个子标签独立组件
 - **状态提示** — 使用 `<StatusMessage>` 组件，不重复内联样式

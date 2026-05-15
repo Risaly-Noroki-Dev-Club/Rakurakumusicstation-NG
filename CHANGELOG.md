@@ -1,5 +1,22 @@
 # 更新日志
 
+## Unreleased
+
+### 新功能
+
+- **原生子路径部署** — `[server] base_path` 支持将后端挂载到 `/radio` 等子路径；API、WebSocket、音频流、静态前端、设备 Cookie path 和播放文件 URL 会同步使用该前缀。
+- **子路径 PWA 支持** — 前端新增 `VITE_BASE_PATH` 构建前缀；Vue Router、manifest、service worker scope、PWA 图标与 API/WebSocket URL 都支持根路径和子路径。
+- **PWA 图标补齐** — 新增 `icon-192.png` 和 `icon-512.png`，提升浏览器安装兼容性。
+
+### 修复
+
+- **修复 PWA 安装脆弱性** — service worker 预缓存改为逐项容错，导航请求改为 network-first，避免单个资源失败导致安装失败或长期使用旧页面。
+- **修复图标对齐** — 统一 Vuetify/MDI 图标 `line-height` 与 flex 对齐，修正桌面 rail 导航和底部导航图标偏移。
+- **改善网易云下载错误** — 空响应、非 JSON 响应、HTTP 下载失败和空文件会给出明确日志，避免只显示 `expected value at line 1 column 1`。
+- **改善管理下载请求错误提示** — 前端下载启动不再假设响应一定是 JSON，反代错误页会显示 HTTP 状态和响应摘要。
+
+---
+
 ## v3.1.0 — 2026-05-10
 
 ### 重大变更：原生 Rust 网易云下载（取代 music_dl.py）

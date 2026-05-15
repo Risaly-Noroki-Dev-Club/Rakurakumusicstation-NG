@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
 import { store, toast } from '../../store'
-import { getBackendUrl } from '../../api'
+import { apiUrl } from '../../api'
 
 let eventSource: EventSource | null = null
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -18,12 +18,12 @@ function startDownload() {
   store.downloadStatusMsg = '正在提交任务...'
   store.downloadStatusType = 'info'
 
-  fetch(getBackendUrl() + '/api/admin/download', {
+  fetch(apiUrl('/api/admin/download'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ playlist, quality: store.downloadQuality, format: store.downloadFormat })
   })
-    .then(res => res.json())
+    .then(readJsonResponse)
     .then(data => {
       if (data.success) {
         store.downloadStatusMsg = data.data || '任务已提交'
@@ -35,16 +35,32 @@ function startDownload() {
         store.downloadRunning = false
       }
     })
-    .catch(() => {
-      store.downloadStatusMsg = '请求失败'
+    .catch((err) => {
+      store.downloadStatusMsg = err instanceof Error ? err.message : '请求失败'
       store.downloadStatusType = 'error'
       store.downloadRunning = false
     })
 }
 
+async function readJsonResponse(res: Response) {
+  const text = await res.text()
+  let data: any = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      const excerpt = text.replace(/\s+/g, ' ').slice(0, 180)
+      throw new Error(`请求失败 HTTP ${res.status}: ${excerpt || '非 JSON 响应'}`)
+    }
+  }
+  if (!res.ok && data?.error) throw new Error(data.error)
+  if (!res.ok) throw new Error(`请求失败 HTTP ${res.status}`)
+  return data || { success: false, error: '空响应' }
+}
+
 function openEventSource() {
   if (eventSource) eventSource.close()
-  const url = getBackendUrl() + '/api/admin/download/stream'
+  const url = apiUrl('/api/admin/download/stream')
   eventSource = new EventSource(url, { withCredentials: true })
   eventSource.onmessage = (e) => {
     try {

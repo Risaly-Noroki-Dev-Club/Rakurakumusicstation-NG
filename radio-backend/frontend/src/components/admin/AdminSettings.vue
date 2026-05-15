@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { store } from '../../store'
-import { getBackendUrl } from '../../api'
+import { apiUrl } from '../../api'
 
 async function loadSettings() {
   try {
-    const res = await fetch(getBackendUrl() + '/api/admin/settings')
+    const res = await fetch(apiUrl('/api/admin/settings'))
     const data = await res.json()
     if (!data.success) { store.settingsResult = data.error || '加载失败'; store.settingsResultType = 'error'; return }
     const s = data.data
@@ -34,7 +34,7 @@ async function saveSettings() {
     if (store.settingsAdminPassword.trim()) {
       settings.admin_password = store.settingsAdminPassword.trim()
     }
-    const res = await fetch(getBackendUrl() + '/api/admin/settings', {
+    const res = await fetch(apiUrl('/api/admin/settings'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)

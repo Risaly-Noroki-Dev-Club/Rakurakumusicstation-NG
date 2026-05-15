@@ -168,6 +168,7 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 | **请求队列** | 用户点歌优先级高于文件夹循环；Wake/Notify 机制即时响应 |
 | **批量下载** | 管理面板粘贴歌单批量下载，SSE 推送实时进度 |
 | **stream_base** | 自动检测反代(X-Forwarded-*)构建流地址，也支持相对/绝对路径 |
+| **base_path** | 后端可原生挂载到子路径（如 `/radio`），前端路由、PWA、API、WebSocket、音频流同步适配 |
 | **路径标准化** | engine 内部统一相对路径存储，`resolve_media_path` 处理绝对/相对 |
 | **歌词预解析** | 后端 LRC → 结构化数组 WebSocket 推送，前端零解析 |
 | **NCM 导入任务** | 网易云下载状态持久化到 SQLite，支持掉线恢复 |
@@ -203,7 +204,7 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 ## 配置文件 (`config.toml`)
 
 ```toml
-[server]          # host、port（默认 2241）
+[server]          # host、port（默认 2241）、base_path（默认 /）
 [database]        # SQLite URL
 [audio_engine]    # media_path、stream_base（auto / 相对路径 / 绝对 URL）
 [device]          # cookie_max_age_days、admin_setup_token
@@ -212,6 +213,29 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 [logging]         # level
 ```
 
+### 子路径部署 (`base_path`)
+
+默认根路径部署无需额外配置：
+
+```toml
+[server]
+base_path = "/"
+```
+
+如果要部署在 `https://example.com/radio/`，后端配置和前端构建路径必须一致：
+
+```toml
+[server]
+base_path = "/radio"
+```
+
+```bash
+cd radio-backend/frontend
+VITE_BASE_PATH=/radio/ npm run build
+```
+
+此模式下后端原生服务 `/radio/`、`/radio/api/*`、`/radio/ws`、`/radio/stream`，反向代理应保留 `/radio` 前缀转发给后端，不要剥离前缀。
+
 ### `stream_base` 三种模式
 
 | 值 | 场景 |
@@ -219,6 +243,17 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 | `"auto"` | **推荐。** 自动根据 `Host` / `X-Forwarded-*` 请求头推断流地址，适用于大多数部署（含反向代理）。 |
 | `"/stream"` | 相对路径。前端用 `window.location.origin` 解析，适用于简单的内网直连。 |
 | `"http://cdn.example.com/stream"` | 强制绝对 URL。适用于 CDN 或独立流服务器。 |
+
+当 `stream_base = "auto"` 或 `stream_base = "/stream"` 时，后端会自动叠加 `server.base_path`。
+
+### PWA
+
+前端已支持根路径和子路径 PWA：`manifest.json`、`sw.js`、service worker scope、Vue Router base 都由 `VITE_BASE_PATH` 控制。反代 HTTPS 域名下应确认：
+
+- `/manifest.json` 或 `<base_path>/manifest.json` 返回 JSON。
+- `/sw.js` 或 `<base_path>/sw.js` 返回 JavaScript，不应被反代改写成 HTML。
+- `icon.svg`、`icon-192.png`、`icon-512.png` 可访问。
+- 如果更换 `base_path`，必须重新运行对应 `VITE_BASE_PATH` 的前端构建。
 
 ---
 
@@ -229,6 +264,10 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 
 # 前端生产构建（会更新 radio-backend/static/）
 cd radio-backend/frontend && npm run build
+cd ../..
+
+# 子路径部署示例（需与 [server].base_path 一致）
+cd radio-backend/frontend && VITE_BASE_PATH=/radio/ npm run build
 cd ../..
 
 # 一键打包发布目录（复制现有 static/，不会自动运行 Vite）

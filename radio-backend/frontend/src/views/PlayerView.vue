@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { store, formatTime } from '../store'
-import { getBackendUrl, getStreamUrl, volumeDown, volumeUp } from '../api'
+import { apiUrl, getStreamUrl, volumeDown, volumeUp } from '../api'
 
 const audioEl = ref<HTMLAudioElement | null>(null)
 const lyricsBoxRef = ref<HTMLElement | null>(null)
@@ -9,7 +9,7 @@ const lyricsBoxRef = ref<HTMLElement | null>(null)
 const coverSrc = computed(() => {
   if (store.playbackState.cover_url) return store.playbackState.cover_url
   if (store.playbackState.song_id > 0)
-    return getBackendUrl() + '/api/songs/' + store.playbackState.song_id + '/cover'
+    return apiUrl('/api/songs/' + store.playbackState.song_id + '/cover')
   return ''
 })
 

@@ -7,7 +7,7 @@ import SettingsView from './views/SettingsView.vue'
 import AdminView from './views/AdminView.vue'
 
 const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'now-playing', component: NowPlayingView },
     { path: '/library', name: 'library', component: LibraryView },

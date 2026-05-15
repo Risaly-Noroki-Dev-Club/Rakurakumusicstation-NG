@@ -1,13 +1,24 @@
 import { store } from '../store'
 
 export const apiBase = window.location.origin
+export const appBase = import.meta.env.BASE_URL
 
-let streamUrl = '/stream'
+let streamUrl = appPath('/stream')
 export let audioEngineUrl = ''
 
 export function getStreamUrl(): string { return streamUrl }
 export function getAudioEngineUrl(): string { return audioEngineUrl }
 export function getBackendUrl(): string { return apiBase }
+
+export function appPath(path: string): string {
+  const base = appBase.endsWith('/') ? appBase : appBase + '/'
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path
+  return base + cleanPath
+}
+
+export function apiUrl(path: string): string {
+  return apiBase + appPath(path)
+}
 
 export function setStreamUrl(url: string): void {
   streamUrl = url

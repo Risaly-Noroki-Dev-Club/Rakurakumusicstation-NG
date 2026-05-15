@@ -1,9 +1,9 @@
-import { apiBase, setStreamUrl, setAudioEngineUrl } from './client'
+import { apiUrl, setStreamUrl, setAudioEngineUrl } from './client'
 import { store, applyStationColors, toast } from '../store'
 
 export async function loadStationInfo(): Promise<void> {
   try {
-    const res = await fetch(apiBase + '/api/station')
+    const res = await fetch(apiUrl('/api/station'))
     const data = await res.json()
     if (data) {
       const info = data.data || data

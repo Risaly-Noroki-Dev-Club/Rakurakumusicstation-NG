@@ -9,6 +9,9 @@
 - `/`、`/library`、`/up-next`、`/settings`、`/admin/*` 等页面路径都会返回 `static/index.html`，由前端路由接管。
 - 旧的 `/queue` 入口会兼容跳转到 `/up-next`。
 - `/api/*` 路由仍返回 JSON；不存在的 API 不会回退到 HTML 页面。
+- 后端现在支持 `server.base_path` 原生子路径挂载，前端可用 `VITE_BASE_PATH` 构建匹配路径。
+- PWA 的 `manifest.json`、`sw.js`、service worker scope 和图标路径已支持根路径与子路径部署。
+- 网易云下载遇到上游空响应、非 JSON 响应或风控页时，会返回更明确的错误，不再只暴露 `expected value at line 1 column 1`。
 
 ## 构建顺序
 
@@ -22,6 +25,42 @@ cd ../..
 ```
 
 注意：`./build_release.sh` 只复制现有的 `radio-backend/static/` 到 `dist/static/`，不会自动运行 Vite。
+
+## 子路径部署
+
+根路径部署保持默认：
+
+```toml
+[server]
+base_path = "/"
+```
+
+如果要部署到 `https://example.com/radio/`：
+
+```toml
+[server]
+base_path = "/radio"
+```
+
+前端构建必须使用相同前缀，并保留结尾斜杠：
+
+```bash
+cd radio-backend/frontend
+VITE_BASE_PATH=/radio/ npm run build
+cd ../..
+./build_release.sh
+```
+
+后端会原生服务 `/radio/`、`/radio/api/*`、`/radio/ws`、`/radio/stream`。反向代理应把 `/radio` 前缀原样转发给后端，不要剥离前缀。
+
+## PWA 检查
+
+HTTPS 反代下建议检查：
+
+- 根路径部署：`/manifest.json`、`/sw.js`、`/icon-192.png`、`/icon-512.png`。
+- 子路径部署：`/radio/manifest.json`、`/radio/sw.js`、`/radio/icon-192.png`、`/radio/icon-512.png`。
+- `sw.js` 必须返回 JavaScript，不能由 SPA fallback 返回 `index.html`。
+- 更新前端后，如浏览器仍使用旧 UI，可在 DevTools Application 面板 unregister 旧 service worker 后刷新。
 
 ## 后端单独构建
 
@@ -59,6 +98,7 @@ cd dist
 - 访问 `/queue` 应跳转到 `/up-next`。
 - 访问 `/api/station` 应返回 JSON。
 - 访问不存在的 `/api/...` 应返回 JSON 404，而不是前端 HTML。
+- 如果设置了 `base_path = "/radio"`，以上路径都应带 `/radio` 前缀，例如 `/radio/api/station`。
 
 ## 首次认证变化
 

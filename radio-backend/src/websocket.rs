@@ -219,10 +219,15 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
                     lyrics_lines: lyrics_lines_payload,
                     status: ps.status.clone(),
                     stream_url: state_clone.config.audio_engine.resolve_stream_url(
-                        None, state_clone.config.server.port
+                        None,
+                        state_clone.config.server.port,
+                        &state_clone.config.server.base_path,
                     ),
                     file_url: if song_id > 0 {
-                        Some(state_clone.config.audio_engine.resolve_file_url(song_id))
+                        Some(state_clone.config.audio_engine.resolve_file_url(
+                            song_id,
+                            &state_clone.config.server.base_path,
+                        ))
                     } else {
                         None
                     },

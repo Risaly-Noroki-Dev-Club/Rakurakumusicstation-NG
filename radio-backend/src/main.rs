@@ -64,9 +64,10 @@ async fn device_cookie_middleware(
 
     if let Some(new_token) = new_token {
         let max_age = state.config.device.cookie_max_age_days * 86400;
+        let cookie_path = state.config.server.base_path.as_str();
         let cookie_value = format!(
-            "device_token={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
-            new_token, max_age
+            "device_token={}; Path={}; HttpOnly; SameSite=Strict; Max-Age={}",
+            new_token, cookie_path, max_age
         );
 
         if let Ok(val) = header::HeaderValue::from_str(&cookie_value) {
@@ -88,9 +89,10 @@ async fn main() -> anyhow::Result<()> {
 
     let config = config::AppConfig::load_default()?;
     tracing::info!(
-        "Starting {} on port {}",
+        "Starting {} on port {} with base path {}",
         config.station.name,
-        config.server.port
+        config.server.port,
+        config.server.base_path
     );
 
     // 初始化音频引擎

@@ -6,6 +6,9 @@
 # HTTP 监听地址
 host = "0.0.0.0"
 port = 2241
+# Public URL prefix. Use "/" for root deployments or "/radio" when the
+# backend is served at https://example.com/radio/.
+base_path = "/"
 
 [database]
 # SQLite（默认，无需外部依赖）

@@ -1,6 +1,6 @@
 // 聚合导出：所有 API 模块通过此文件统一暴露，保持向后兼容。
 
-export { apiBase, getStreamUrl, getAudioEngineUrl, getBackendUrl } from './api/client'
+export { apiBase, appBase, appPath, apiUrl, getStreamUrl, getAudioEngineUrl, getBackendUrl } from './api/client'
 
 export { loadStationInfo } from './api/station'
 

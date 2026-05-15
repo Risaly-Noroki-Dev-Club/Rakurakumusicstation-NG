@@ -22,6 +22,8 @@ pub struct ServerConfig {
     pub host: String,
     #[serde(default = "default_port")]
     pub port: u16,
+    #[serde(default = "default_base_path")]
+    pub base_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,20 +51,22 @@ impl AudioEngineConfig {
         &self,
         headers: Option<&axum::http::HeaderMap>,
         server_port: u16,
+        base_path: &str,
     ) -> String {
         match self.stream_base.as_str() {
             "auto" => match headers {
-                Some(h) => Self::infer_from_headers(h, server_port),
-                None => "/stream".to_string(),
+                Some(h) => Self::infer_from_headers(h, server_port, base_path),
+                None => join_base_path(base_path, "/stream"),
             },
             url if url.starts_with("http://") || url.starts_with("https://") => {
                 url.to_string()
             }
+            path if path.starts_with('/') => join_base_path(base_path, path),
             path => path.to_string(),
         }
     }
 
-    fn infer_from_headers(headers: &axum::http::HeaderMap, server_port: u16) -> String {
+    fn infer_from_headers(headers: &axum::http::HeaderMap, server_port: u16, base_path: &str) -> String {
         let proto = headers
             .get("x-forwarded-proto")
             .and_then(|v| v.to_str().ok())
@@ -73,20 +77,22 @@ impl AudioEngineConfig {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("localhost");
 
+        let stream_path = join_base_path(base_path, "/stream");
+
         if host.contains(':') {
-            format!("{}://{}/stream", proto, host)
+            format!("{}://{}{}", proto, host, stream_path)
         } else if (proto == "https" && server_port != 443)
             || (proto == "http" && server_port != 80)
         {
-            format!("{}://{}:{}/stream", proto, host, server_port)
+            format!("{}://{}:{}{}", proto, host, server_port, stream_path)
         } else {
-            format!("{}://{}/stream", proto, host)
+            format!("{}://{}{}", proto, host, stream_path)
         }
     }
 
     /// 构建当前播放曲目的文件 URL。
-    pub fn resolve_file_url(&self, song_id: i64) -> String {
-        format!("/api/songs/{}/file", song_id)
+    pub fn resolve_file_url(&self, song_id: i64, base_path: &str) -> String {
+        join_base_path(base_path, &format!("/api/songs/{}/file", song_id))
     }
 }
 
@@ -150,6 +156,7 @@ fn default_download_concurrency() -> usize { 1 }
 
 fn default_host() -> String { "0.0.0.0".into() }
 fn default_port() -> u16 { 2241 }
+fn default_base_path() -> String { "/".into() }
 fn default_sqlite_url() -> String { "sqlite://data/radio.db?mode=rwc".into() }
 fn default_media_path() -> String { "./media".into() }
 fn default_stream_base() -> String { "auto".into() }
@@ -175,6 +182,7 @@ impl AppConfig {
         if let Ok(v) = std::env::var("RADIO_SERVER_PORT") {
             config.server.port = v.parse().unwrap_or(config.server.port);
         }
+        if let Ok(v) = std::env::var("RADIO_BASE_PATH") { config.server.base_path = v; }
         if let Ok(v) = std::env::var("RADIO_LOG_LEVEL") { config.logging.level = v; }
         if let Ok(v) = std::env::var("RADIO_MEDIA_PATH") { config.audio_engine.media_path = v; }
         if let Ok(v) = std::env::var("RADIO_STREAM_BASE") { config.audio_engine.stream_base = v; }
@@ -185,6 +193,8 @@ impl AppConfig {
             config.ncm.download_concurrency = v.parse().unwrap_or(config.ncm.download_concurrency);
         }
 
+        config.server.base_path = normalize_base_path(&config.server.base_path);
+
         Ok(config)
     }
 
@@ -192,5 +202,24 @@ impl AppConfig {
         let path = std::env::var("RADIO_CONFIG")
             .unwrap_or_else(|_| "config.toml".to_string());
         Self::load(&path)
+    }
+}
+
+pub fn normalize_base_path(path: &str) -> String {
+    let trimmed = path.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", trimmed)
+    }
+}
+
+pub fn join_base_path(base_path: &str, path: &str) -> String {
+    let base = normalize_base_path(base_path);
+    let path = if path.starts_with('/') { path } else { &format!("/{}", path) };
+    if base == "/" {
+        path.to_string()
+    } else {
+        format!("{}{}", base, path)
     }
 }

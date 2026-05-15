@@ -152,6 +152,14 @@ audio.visually-hidden {
   font-weight: 600 !important;
 }
 
+.v-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  vertical-align: middle !important;
+}
+
 .v-card {
   border-radius: var(--am-radius-md) !important;
 }

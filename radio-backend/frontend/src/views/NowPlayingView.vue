@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import { store } from '../store'
-import { volumeDown, volumeUp, adminSkipNext, adminSkipPrev } from '../api'
+import { apiUrl, volumeDown, volumeUp, adminSkipNext, adminSkipPrev } from '../api'
 import AmProgressBar from '../components/AmProgressBar.vue'
 import LyricsView from '../components/LyricsView.vue'
 import DynamicBackground from '../components/DynamicBackground.vue'
@@ -11,7 +11,7 @@ const audioEl = inject<import('vue').Ref<HTMLAudioElement | null>>('audioEl')
 const coverSrc = computed(() => {
   if (store.playbackState.cover_url) return store.playbackState.cover_url
   if (store.playbackState.song_id > 0)
-    return (window.location.origin) + '/api/songs/' + store.playbackState.song_id + '/cover'
+    return apiUrl('/api/songs/' + store.playbackState.song_id + '/cover')
   return ''
 })
 

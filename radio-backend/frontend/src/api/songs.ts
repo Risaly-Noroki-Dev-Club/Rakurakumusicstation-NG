@@ -1,10 +1,10 @@
-import { apiBase } from './client'
+import { apiUrl } from './client'
 import { store, toast } from '../store'
 
 export async function onSearchInput(): Promise<void> {
   const q = store.searchQuery.trim()
   try {
-    const res = await fetch(apiBase + '/api/songs?q=' + encodeURIComponent(q) + '&limit=50')
+    const res = await fetch(apiUrl('/api/songs?q=' + encodeURIComponent(q) + '&limit=50'))
     const data = await res.json()
     if (data.success) {
       store.searchResults = data.data && data.data.data ? data.data.data : []
@@ -14,7 +14,7 @@ export async function onSearchInput(): Promise<void> {
 
 export async function downloadSong(songId: number): Promise<void> {
   try {
-    const res = await fetch(apiBase + '/api/songs/' + songId + '/download')
+    const res = await fetch(apiUrl('/api/songs/' + songId + '/download'))
     if (!res.ok) {
       const data = await res.json().catch(() => ({ error: '下载失败' }))
       toast(data.error || '下载失败', 'error')
@@ -44,7 +44,7 @@ export async function uploadSong(file: File): Promise<boolean> {
   const formData = new FormData()
   formData.append('file', file)
   try {
-    const res = await fetch(apiBase + '/api/songs/upload', {
+    const res = await fetch(apiUrl('/api/songs/upload'), {
       method: 'POST',
       body: formData
     })

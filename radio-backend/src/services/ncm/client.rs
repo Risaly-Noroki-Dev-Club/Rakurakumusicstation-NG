@@ -103,12 +103,37 @@ impl NcmClient {
         let bytes = response.bytes().await?;
         let decrypted = eapi_decrypt(&bytes);
         let text = String::from_utf8_lossy(&decrypted);
+        let text = text.trim().to_string();
 
         if !status.is_success() {
             anyhow::bail!("Eapi request failed: HTTP {} -> {}", status, text);
         }
 
-        Ok(text.to_string())
+        if text.is_empty() {
+            anyhow::bail!(
+                "网易云接口返回空响应: {} ({})，可能是 Cookie 过期、触发风控或接口格式变化",
+                path,
+                status,
+            );
+        }
+
+        let looks_like_json = text.starts_with('{') || text.starts_with('[');
+        if !looks_like_json {
+            let raw = String::from_utf8_lossy(&bytes);
+            let excerpt = if text.chars().all(|c| c.is_control()) {
+                raw.trim().chars().take(240).collect::<String>()
+            } else {
+                text.chars().take(240).collect::<String>()
+            };
+            anyhow::bail!(
+                "网易云接口返回非 JSON 响应: {} ({})，可能是 Cookie 过期、触发风控或接口变更。响应片段: {}",
+                path,
+                status,
+                excerpt.replace('\n', " "),
+            );
+        }
+
+        Ok(text)
     }
 
     pub async fn test_login(&self) -> Result<bool> {

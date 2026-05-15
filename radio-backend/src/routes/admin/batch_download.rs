@@ -473,7 +473,14 @@ async fn ncm_download_one(
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
     let resp = http.get(&url_data.url).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        anyhow::bail!("音频文件下载失败: HTTP {}", status);
+    }
     let bytes = resp.bytes().await?;
+    if bytes.is_empty() {
+        anyhow::bail!("音频文件下载失败: 返回空文件");
+    }
 
     // MD5 check
     if !url_data.md5.is_empty() {

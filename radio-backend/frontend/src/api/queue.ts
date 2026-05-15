@@ -1,9 +1,9 @@
-import { apiBase } from './client'
+import { apiUrl } from './client'
 import { store, toast } from '../store'
 
 export async function refreshQueue(): Promise<void> {
   try {
-    const res = await fetch(apiBase + '/api/queue')
+    const res = await fetch(apiUrl('/api/queue'))
     const data = await res.json()
     if (!data.success) return
     store.queue = data.data || []
@@ -13,7 +13,7 @@ export async function refreshQueue(): Promise<void> {
 
 export async function refreshHistory(): Promise<void> {
   try {
-    const res = await fetch(apiBase + '/api/queue/history')
+    const res = await fetch(apiUrl('/api/queue/history'))
     const data = await res.json()
     if (data.success) store.history = (data.data || []).slice(0, 20)
   } catch { /* ignore */ }
@@ -21,14 +21,14 @@ export async function refreshHistory(): Promise<void> {
 
 export async function removeQueueItem(id: number): Promise<void> {
   try {
-    await fetch(apiBase + '/api/queue/' + id, { method: 'DELETE' })
+    await fetch(apiUrl('/api/queue/' + id), { method: 'DELETE' })
     refreshQueue()
   } catch { toast('移除失败', 'error') }
 }
 
 export async function addToQueue(songId: number): Promise<void> {
   try {
-    const res = await fetch(apiBase + '/api/queue', {
+    const res = await fetch(apiUrl('/api/queue'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ song_id: songId })

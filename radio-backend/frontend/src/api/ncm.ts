@@ -1,9 +1,9 @@
-import { apiBase } from './client'
+import { apiUrl } from './client'
 import { store } from '../store'
 
 export async function loadUserNcmStatus(): Promise<void> {
   try {
-    const res = await fetch(apiBase + '/api/ncm')
+    const res = await fetch(apiUrl('/api/ncm'))
     if (!res.ok) return
     const d = await res.json()
     if (!d.success) return
@@ -34,7 +34,7 @@ export async function saveUserNcmSettings(): Promise<void> {
     return
   }
   try {
-    const res = await fetch(apiBase + '/api/ncm', {
+    const res = await fetch(apiUrl('/api/ncm'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -58,7 +58,7 @@ export async function testUserNcmLogin(): Promise<void> {
   store.userNcmResult = '测试中...'
   store.userNcmResultType = 'info'
   try {
-    const res = await fetch(apiBase + '/api/ncm/test', {
+    const res = await fetch(apiUrl('/api/ncm/test'), {
       method: 'POST'
     })
     const data = await res.json()

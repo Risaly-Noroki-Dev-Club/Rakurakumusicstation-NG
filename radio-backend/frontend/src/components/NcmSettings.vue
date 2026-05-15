@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { store, toast } from '../store'
-import { getBackendUrl } from '../api'
+import { apiUrl } from '../api'
 
 const props = defineProps<{
   apiPrefix?: string
@@ -56,7 +56,7 @@ function showResult(msg: string, type: string) {
 
 async function loadStatus() {
   try {
-    const res = await fetch(getBackendUrl() + prefix)
+    const res = await fetch(apiUrl(prefix))
     if (!res.ok) return
     const d = await res.json()
     if (!d.success) return
@@ -85,7 +85,7 @@ async function saveNcm() {
   if (activeTab.value === 'phone' && (!payload.phone || !payload.password))
     return showResult('请填写手机号和密码', 'error')
   try {
-    const res = await fetch(getBackendUrl() + prefix, {
+    const res = await fetch(apiUrl(prefix), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -99,7 +99,7 @@ async function saveNcm() {
 async function testNcm() {
   showResult('测试中...', 'info')
   try {
-    const res = await fetch(getBackendUrl() + prefix + '/test', { method: 'POST' })
+    const res = await fetch(apiUrl(prefix + '/test'), { method: 'POST' })
     const data = await res.json()
     if (data.success) {
       const d = data.data

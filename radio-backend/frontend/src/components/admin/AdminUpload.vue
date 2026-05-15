@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { toast } from '../../store'
-import { getBackendUrl } from '../../api'
+import { apiUrl } from '../../api'
 
 const uploadFile = ref<File | null>(null)
 const uploadFileName = ref('')
@@ -29,7 +29,7 @@ async function uploadSong() {
   uploadStatus.value = '上传中...'
   uploadStatusType.value = 'info'
   try {
-    const res = await fetch(getBackendUrl() + '/api/admin/upload', {
+    const res = await fetch(apiUrl('/api/admin/upload'), {
       method: 'POST',
       body: formData
     })

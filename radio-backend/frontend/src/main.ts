@@ -88,7 +88,8 @@ app.mount('#app')
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
+    const base = import.meta.env.BASE_URL
+    navigator.serviceWorker.register(base + 'sw.js', { scope: base })
       .then(reg => {
         console.log('[PWA] Service Worker registered:', reg.scope)
       })

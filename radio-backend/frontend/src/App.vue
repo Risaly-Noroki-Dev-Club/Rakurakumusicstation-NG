@@ -249,6 +249,25 @@ watch(() => store.showSnackbar, (val) => {
   border-right: 1px solid var(--am-divider);
 }
 
+.am-drawer :deep(.v-list-item) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.am-drawer :deep(.v-list-item__prepend) {
+  width: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.am-drawer :deep(.v-list-item__spacer),
+.am-drawer :deep(.v-list-item__content) {
+  display: none;
+}
+
 .am-main {
   background: var(--am-bg);
   transition: padding 0.3s ease;
@@ -273,6 +292,13 @@ watch(() => store.showSnackbar, (val) => {
   z-index: 100;
   background: var(--am-surface) !important;
   border-top: 1px solid var(--am-divider);
+}
+
+.am-bottom-nav :deep(.v-btn__content) {
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  line-height: 1.1;
 }
 
 /* Desktop content padding for rail drawer */
