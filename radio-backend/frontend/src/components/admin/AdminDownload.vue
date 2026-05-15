@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
 import { store, toast } from '../../store'
-import { apiUrl } from '../../api'
+import { apiFetch, apiUrl } from '../../api'
 
 let eventSource: EventSource | null = null
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -18,7 +18,7 @@ function startDownload() {
   store.downloadStatusMsg = '正在提交任务...'
   store.downloadStatusType = 'info'
 
-  fetch(apiUrl('/api/admin/download'), {
+  apiFetch('/api/admin/download', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ playlist, quality: store.downloadQuality, format: store.downloadFormat })

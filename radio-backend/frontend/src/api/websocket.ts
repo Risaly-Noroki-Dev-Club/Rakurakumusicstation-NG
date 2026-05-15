@@ -1,4 +1,4 @@
-import { apiUrl, appPath, getStreamUrl } from './client'
+import { apiFetch, appPath, getStreamUrl } from './client'
 import { store, toast } from '../store'
 import { refreshQueue } from './queue'
 import { onSearchInput } from './songs'
@@ -132,7 +132,7 @@ function handleWsMessage(msg: WsMessage): void {
 
 export function refreshPlaybackPoll(): void {
   if (ws && ws.readyState === WebSocket.OPEN) return
-  fetch(apiUrl('/api/now-playing'))
+  apiFetch('/api/now-playing')
     .then(r => r.json())
     .then(resp => {
       if (!resp.success || !resp.data || !resp.data.song) return
@@ -260,7 +260,7 @@ function onSourceBufferUpdateEnd(): void {
 async function fetchNextFileChunk(): Promise<void> {
   if (!fileFetchActive || store.playbackState.song_id <= 0) return
   try {
-    const res = await fetch(apiUrl('/api/songs/' + store.playbackState.song_id + '/file'), {
+    const res = await apiFetch('/api/songs/' + store.playbackState.song_id + '/file', {
       headers: { 'Range': 'bytes=' + fileOffset + '-' }
     })
     if (!res.ok) {

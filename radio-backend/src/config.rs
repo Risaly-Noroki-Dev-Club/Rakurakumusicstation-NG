@@ -123,14 +123,16 @@ pub struct QueueConfig {
 pub struct StationConfig {
     #[serde(default = "default_station_name")]
     pub name: String,
+    #[serde(default = "default_station_short_name")]
+    pub short_name: String,
     #[serde(default = "default_subtitle")]
     pub subtitle: String,
-    #[serde(default = "default_primary_color")]
-    pub primary_color: String,
-    #[serde(default = "default_secondary_color")]
-    pub secondary_color: String,
-    #[serde(default = "default_bg_color")]
-    pub bg_color: String,
+    #[serde(default = "default_station_description")]
+    pub description: String,
+    #[serde(default)]
+    pub icon_url: String,
+    #[serde(default)]
+    pub icon_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -167,10 +169,9 @@ fn default_max_user_submissions() -> usize { 3 }
 fn default_rate_limit_window() -> u64 { 300 }
 fn default_request_cooldown() -> u64 { 0 }
 fn default_station_name() -> String { "Rakuraku Music Station".into() }
+fn default_station_short_name() -> String { "RakurakuRadio".into() }
 fn default_subtitle() -> String { "A Community Radio".into() }
-fn default_primary_color() -> String { "#764ba2".into() }
-fn default_secondary_color() -> String { "#667eea".into() }
-fn default_bg_color() -> String { "#f4f4f9".into() }
+fn default_station_description() -> String { "Community Radio - Low Latency Audio Streaming".into() }
 fn default_log_level() -> String { "info".into() }
 
 impl AppConfig {

@@ -1,18 +1,22 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { store } from '../../store'
-import { apiUrl } from '../../api'
+import { apiFetch } from '../../api'
+
+const iconInput = ref<HTMLInputElement | null>(null)
 
 async function loadSettings() {
   try {
-    const res = await fetch(apiUrl('/api/admin/settings'))
+    const res = await apiFetch('/api/admin/settings')
     const data = await res.json()
     if (!data.success) { store.settingsResult = data.error || '加载失败'; store.settingsResultType = 'error'; return }
     const s = data.data
     store.settingsStationName = s.station_name || 'Rakuraku Music Station'
+    store.settingsShortName = s.short_name || 'RakurakuRadio'
     store.settingsSubtitle = s.subtitle || ''
-    store.settingsPrimaryColor = s.primary_color || '#003D99'
-    store.settingsSecondaryColor = s.secondary_color || '#00897B'
-    store.settingsBgColor = s.bg_color || '#FAFAFA'
+    store.settingsDescription = s.description || ''
+    store.settingsIconUrl = s.icon_url || ''
+    store.settingsResolvedIconUrl = s.resolved_icon_url || ''
     store.settingsAdminPassword = ''
     store.settingsResult = '设置已加载'
     store.settingsResultType = 'info'
@@ -26,15 +30,15 @@ async function saveSettings() {
   try {
     const settings: Record<string, string> = {
       station_name: store.settingsStationName.trim(),
+      short_name: store.settingsShortName.trim(),
       subtitle: store.settingsSubtitle.trim(),
-      primary_color: store.settingsPrimaryColor,
-      secondary_color: store.settingsSecondaryColor,
-      bg_color: store.settingsBgColor,
+      description: store.settingsDescription.trim(),
+      icon_url: store.settingsIconUrl.trim(),
     }
     if (store.settingsAdminPassword.trim()) {
       settings.admin_password = store.settingsAdminPassword.trim()
     }
-    const res = await fetch(apiUrl('/api/admin/settings'), {
+    const res = await apiFetch('/api/admin/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
@@ -53,6 +57,38 @@ async function saveSettings() {
   }
 }
 
+async function uploadIcon(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  store.settingsResult = '正在上传图标...'
+  store.settingsResultType = 'info'
+  try {
+    const res = await apiFetch('/api/admin/settings/icon/', {
+      method: 'POST',
+      body: form,
+    })
+    const data = await res.json()
+    if (data.success) {
+      store.settingsResult = data.data || '图标已上传'
+      store.settingsResultType = 'success'
+      store.settingsIconFileName = file.name
+      await loadSettings()
+    } else {
+      store.settingsResult = '上传失败: ' + (data.error || '')
+      store.settingsResultType = 'error'
+    }
+  } catch (e: any) {
+    store.settingsResult = '上传失败: ' + (e && e.message)
+    store.settingsResultType = 'error'
+  }
+}
+
+function onIconSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) uploadIcon(file)
+}
+
 loadSettings()
 </script>
 
@@ -65,37 +101,47 @@ loadSettings()
       class="mb-3"
     />
     <v-text-field
+      v-model="store.settingsShortName"
+      label="短名称"
+      placeholder="RakurakuRadio"
+      hint="用于 PWA 安装名称等较短展示场景"
+      class="mb-3"
+    />
+    <v-text-field
       v-model="store.settingsSubtitle"
       label="副标题"
       placeholder="A Community Radio"
       class="mb-3"
     />
-
-    <div class="d-flex flex-wrap gap-4 align-center mb-3">
-      <div class="d-flex align-center">
-        <input
-          v-model="store.settingsPrimaryColor"
-          type="color"
-          class="am-color-picker mr-2"
-        >
-        <span class="text-body-2">主色</span>
-      </div>
-      <div class="d-flex align-center">
-        <input
-          v-model="store.settingsSecondaryColor"
-          type="color"
-          class="am-color-picker mr-2"
-        >
-        <span class="text-body-2">次色</span>
-      </div>
-      <div class="d-flex align-center">
-        <input
-          v-model="store.settingsBgColor"
-          type="color"
-          class="am-color-picker mr-2"
-        >
-        <span class="text-body-2">背景色</span>
-      </div>
+    <v-textarea
+      v-model="store.settingsDescription"
+      label="描述"
+      placeholder="Community Radio - Low Latency Audio Streaming"
+      rows="2"
+      class="mb-3"
+    />
+    <v-text-field
+      v-model="store.settingsIconUrl"
+      label="图标 URL"
+      placeholder="https://example.com/icon.png"
+      hint="留空则使用上传图标或默认图标"
+      class="mb-3"
+    />
+    <div class="d-flex flex-wrap gap-3 align-center mb-4">
+      <v-avatar v-if="store.settingsResolvedIconUrl" size="48" rounded="lg" class="am-icon-preview">
+        <v-img :src="store.settingsResolvedIconUrl" cover />
+      </v-avatar>
+      <input
+        ref="iconInput"
+        type="file"
+        accept="image/png,image/svg+xml,image/webp,image/jpeg"
+        style="display: none"
+        @change="onIconSelected"
+      >
+      <v-btn variant="outlined" prepend-icon="mdi-image" @click="iconInput?.click()">
+        上传图标
+      </v-btn>
+      <span class="text-caption text-medium-emphasis">PNG / SVG / WebP / JPEG，最大 2MB</span>
     </div>
 
     <v-text-field
@@ -128,21 +174,11 @@ loadSettings()
 </template>
 
 <style scoped>
-.am-color-picker {
-  width: 40px;
-  height: 40px;
-  border: 2px solid var(--am-border);
-  border-radius: 6px;
-  cursor: pointer;
-  padding: 2px;
-  background: var(--am-surface);
-}
-
-.gap-4 {
-  gap: 16px;
-}
-
 .gap-3 {
   gap: 12px;
+}
+
+.am-icon-preview {
+  border: 1px solid var(--am-divider);
 }
 </style>

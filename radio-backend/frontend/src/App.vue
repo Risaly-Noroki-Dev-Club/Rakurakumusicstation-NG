@@ -89,7 +89,6 @@ onUnmounted(() => {
 const navItems = [
   { name: 'now-playing', path: '/', label: '正在播放', icon: 'mdi-play-circle' },
   { name: 'library', path: '/library', label: '曲库', icon: 'mdi-music-box' },
-  { name: 'up-next', path: '/up-next', label: '待播清单', icon: 'mdi-playlist-music' },
   { name: 'settings', path: '/settings', label: '设置', icon: 'mdi-cog' },
 ]
 

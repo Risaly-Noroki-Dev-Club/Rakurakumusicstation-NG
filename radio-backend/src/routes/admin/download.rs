@@ -27,44 +27,6 @@ fn log_broadcast() -> &'static broadcast::Sender<DownloadEvent> {
     TX.get_or_init(|| broadcast::channel(512).0)
 }
 
-fn ncm_secrets_path() -> std::path::PathBuf {
-    std::env::var("NCM_SECRETS_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("secrets.json"))
-}
-
-/// 从 secrets.json 读取 MUSIC_U cookie
-fn read_music_u() -> Option<String> {
-    let path = ncm_secrets_path();
-    if !path.exists() {
-        return None;
-    }
-    let content = std::fs::read_to_string(&path).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    // 先尝试从 ncm_cookie 字符串中提取 MUSIC_U
-    if let Some(cookie) = json.get("ncm_cookie").and_then(|v| v.as_str()) {
-        for part in cookie.split(';') {
-            let part = part.trim();
-            if part.starts_with("MUSIC_U=") {
-                return Some(part.strip_prefix("MUSIC_U=").unwrap_or("").to_string());
-            }
-        }
-    }
-
-    // 如果没有 MUSIC_U 但有 phone，返回空字符串（由 MUSIC_A 兜底）
-    if json
-        .get("ncm_phone")
-        .and_then(|v| v.as_str())
-        .map(|s| !s.is_empty())
-        .unwrap_or(false)
-    {
-        return Some(String::new());
-    }
-
-    None
-}
-
 /// 内部 helper：从歌单文本启动下载任务（可被 NCM import 复用）。
 pub fn spawn_download_job(
     state: Arc<AppState>,
@@ -87,9 +49,9 @@ pub fn spawn_download_job(
     } else {
         Some(state.config.ncm.device_id.clone())
     };
-    let music_u = read_music_u();
+    let ncm_cookie = crate::routes::admin::ncm::read_admin_ncm_cookie();
     let concurrency = state.config.ncm.download_concurrency.max(1);
-    let client = NcmClient::new(device_id, music_u);
+    let client = NcmClient::new(device_id, ncm_cookie);
     let player_handle = state.player_handle.clone();
 
     {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { store, toast } from '../store'
-import { apiUrl } from '../api'
+import { store } from '../store'
+import { apiFetch } from '../api'
 
 const props = defineProps<{
   apiPrefix?: string
@@ -13,8 +13,6 @@ const isUser = props.userMode || false
 
 const activeTab = ref('cookie')
 const cookie = ref('')
-const phone = ref('')
-const password = ref('')
 const badge = ref('')
 const badgeClass = ref('none')
 const result = ref('')
@@ -28,8 +26,6 @@ function syncFromStore() {
   const p = getStorePrefix()
   activeTab.value = (store as any)[p + 'ActiveTab'] || 'cookie'
   cookie.value = (store as any)[p + 'Cookie'] || ''
-  phone.value = (store as any)[p + 'Phone'] || ''
-  password.value = (store as any)[p + 'Password'] || ''
   badge.value = (store as any)[p + 'Badge'] || '未配置'
   badgeClass.value = (store as any)[p + 'BadgeClass'] || 'none'
   result.value = (store as any)[p + 'Result'] || ''
@@ -40,8 +36,6 @@ function syncToStore() {
   const p = getStorePrefix()
   ;(store as any)[p + 'ActiveTab'] = activeTab.value
   ;(store as any)[p + 'Cookie'] = cookie.value
-  ;(store as any)[p + 'Phone'] = phone.value
-  ;(store as any)[p + 'Password'] = password.value
 }
 
 onMounted(() => { syncFromStore(); loadStatus() })
@@ -56,13 +50,13 @@ function showResult(msg: string, type: string) {
 
 async function loadStatus() {
   try {
-    const res = await fetch(apiUrl(prefix))
+    const res = await apiFetch(prefix)
     if (!res.ok) return
     const d = await res.json()
     if (!d.success) return
     const data = d.data
     if (data.configured) {
-      const label = data.method === 'cookie' ? 'Cookie 已配置' : '手机号 ' + (data.phone_hint || '') + ' 已配置'
+      const label = 'Cookie 已配置'
       badge.value = label
       badgeClass.value = 'ok'
     } else {
@@ -77,15 +71,13 @@ async function loadStatus() {
 
 async function saveNcm() {
   syncToStore()
-  const payload = activeTab.value === 'cookie'
-    ? { cookie: cookie.value.trim(), phone: '', password: '' }
-    : { phone: phone.value.trim(), password: password.value, cookie: '' }
-  if (activeTab.value === 'cookie' && !payload.cookie)
+  const payload = { cookie: cookie.value.trim() }
+  if (!payload.cookie)
     return showResult('请填写 Cookie', 'error')
-  if (activeTab.value === 'phone' && (!payload.phone || !payload.password))
-    return showResult('请填写手机号和密码', 'error')
+  if (!payload.cookie.includes('MUSIC_U='))
+    return showResult('Cookie 缺少 MUSIC_U，请粘贴完整 Request Headers Cookie', 'error')
   try {
-    const res = await fetch(apiUrl(prefix), {
+    const res = await apiFetch(prefix, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -99,12 +91,12 @@ async function saveNcm() {
 async function testNcm() {
   showResult('测试中...', 'info')
   try {
-    const res = await fetch(apiUrl(prefix + '/test'), { method: 'POST' })
+    const res = await apiFetch(prefix + '/test', { method: 'POST' })
     const data = await res.json()
     if (data.success) {
       const d = data.data
       showResult(d.output || (d.success ? '登录成功' : '登录失败'), d.success ? 'success' : 'error')
-    } else showResult('请求失败', 'error')
+    } else showResult(data.error || '请求失败', 'error')
   } catch { showResult('请求失败', 'error') }
 }
 </script>
@@ -125,42 +117,18 @@ async function testNcm() {
 
     <v-card-text>
       <p v-if="isUser" class="text-body-2 text-medium-emphasis mb-4">
-        登录后可下载 VIP 歌曲。Cookie 方式更稳定，手机号方式可能触发验证码。
+        登录后可下载 VIP 歌曲。请粘贴完整 Request Headers Cookie，不要只填 MUSIC_U。
       </p>
 
-      <v-tabs v-model="activeTab" color="primary" class="mb-4">
-        <v-tab value="cookie">Cookie（推荐）</v-tab>
-        <v-tab value="phone">手机号 + 密码</v-tab>
-      </v-tabs>
-
-      <v-window v-model="activeTab">
-        <v-window-item value="cookie">
-          <v-textarea
-            v-model="cookie"
-            rows="4"
-            placeholder="粘贴网易云 Cookie 字符串..."
-            hide-details
-          />
-          <p class="text-caption text-medium-emphasis mt-2">
-            获取方式：浏览器打开 <b>music.163.com</b> 并登录 → F12 → Network → 任意请求 → Request Headers → Cookie
-          </p>
-        </v-window-item>
-
-        <v-window-item value="phone">
-          <v-text-field
-            v-model="phone"
-            label="手机号"
-            placeholder="186xxxxxxxx"
-            class="mb-3"
-          />
-          <v-text-field
-            v-model="password"
-            label="密码"
-            placeholder="网易云密码"
-            type="password"
-          />
-        </v-window-item>
-      </v-window>
+      <v-textarea
+        v-model="cookie"
+        rows="5"
+        placeholder="粘贴完整网易云 Cookie 字符串，需包含 MUSIC_U=..."
+        hide-details
+      />
+      <p class="text-caption text-medium-emphasis mt-2">
+        获取方式：浏览器打开 <b>music.163.com</b> 并登录 → F12 → Network → 任意请求 → Request Headers → Cookie
+      </p>
 
       <div class="d-flex gap-3 mt-4">
         <v-btn color="primary" prepend-icon="mdi-content-save" @click="saveNcm">

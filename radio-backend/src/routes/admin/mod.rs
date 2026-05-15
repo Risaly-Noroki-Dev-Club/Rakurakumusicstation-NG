@@ -43,6 +43,10 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         )
         // 系统设置
         .route("/settings", axum::routing::get(settings::get_settings).post(settings::save_settings))
+        .nest("/settings/icon", Router::new()
+            .route("/", axum::routing::post(settings::upload_icon))
+            .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+        )
         // 播放控制
         .route("/playlist/next", axum::routing::post(playback::skip_next))
         .route("/playlist/prev", axum::routing::post(playback::skip_prev))

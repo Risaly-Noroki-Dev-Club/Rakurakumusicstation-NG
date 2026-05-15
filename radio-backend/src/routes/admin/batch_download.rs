@@ -45,41 +45,6 @@ fn generate_task_id() -> String {
         .collect()
 }
 
-fn ncm_secrets_path() -> std::path::PathBuf {
-    std::env::var("NCM_SECRETS_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| std::path::PathBuf::from("secrets.json"))
-}
-
-fn read_music_u() -> Option<String> {
-    let path = ncm_secrets_path();
-    if !path.exists() {
-        return None;
-    }
-    let content = std::fs::read_to_string(&path).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    if let Some(cookie) = json.get("ncm_cookie").and_then(|v| v.as_str()) {
-        for part in cookie.split(';') {
-            let part = part.trim();
-            if part.starts_with("MUSIC_U=") {
-                return Some(part.strip_prefix("MUSIC_U=").unwrap_or("").to_string());
-            }
-        }
-    }
-
-    if json
-        .get("ncm_phone")
-        .and_then(|v| v.as_str())
-        .map(|s| !s.is_empty())
-        .unwrap_or(false)
-    {
-        return Some(String::new());
-    }
-
-    None
-}
-
 fn sanitize_filename(name: &str) -> String {
     name.chars()
         .map(|c| match c {
@@ -155,8 +120,8 @@ pub async fn start_batch_download(
             } else {
                 Some(state.config.ncm.device_id.clone())
             };
-            let music_u = read_music_u();
-            let client = NcmClient::new(device_id, music_u);
+            let ncm_cookie = crate::routes::admin::ncm::read_admin_ncm_cookie();
+            let client = NcmClient::new(device_id, ncm_cookie);
             let quality = body.quality.unwrap_or_else(|| "exhigh".into());
             let lyrics_mode = if body.lyrics_save_mode.is_empty() {
                 "separate".to_string()

@@ -63,10 +63,11 @@ export interface ApiResponse<T = unknown> {
 
 export interface StationInfo {
   name: string
+  short_name?: string
   subtitle?: string
-  primary_color?: string
-  secondary_color?: string
-  bg_color?: string
+  description?: string
+  icon_url?: string
+  manifest_url?: string
   stream_url?: string
   ws_url?: string
   needs_setup: boolean
@@ -142,10 +143,12 @@ export interface AdminStats {
 
 export interface SettingsData {
   station_name: string
+  short_name: string
   subtitle: string
-  primary_color: string
-  secondary_color: string
-  bg_color: string
+  description: string
+  icon_url: string
+  icon_path: string
+  resolved_icon_url: string
 }
 
 export type ThemeName = 'auto' | 'light' | 'dark'

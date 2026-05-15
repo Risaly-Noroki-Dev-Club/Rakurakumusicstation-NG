@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 /// Rakuraku Music Station NG - Rust 业务后端
 ///
 /// 处理 HTTP API、WebSocket 广播、设备身份验证（基于 Cookie）、
@@ -31,6 +33,7 @@ async fn device_cookie_middleware(
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
+    let is_secure = request_is_secure(request.headers());
     let device_token = auth::extract_device_token(request.headers());
     let new_token = if device_token.is_none() {
         let new_token = auth::generate_device_token();
@@ -65,9 +68,10 @@ async fn device_cookie_middleware(
     if let Some(new_token) = new_token {
         let max_age = state.config.device.cookie_max_age_days * 86400;
         let cookie_path = state.config.server.base_path.as_str();
+        let secure_attr = if is_secure { "; Secure" } else { "" };
         let cookie_value = format!(
-            "device_token={}; Path={}; HttpOnly; SameSite=Strict; Max-Age={}",
-            new_token, cookie_path, max_age
+            "device_token={}; Path={}; HttpOnly; SameSite=Lax; Max-Age={}{}",
+            new_token, cookie_path, max_age, secure_attr
         );
 
         if let Ok(val) = header::HeaderValue::from_str(&cookie_value) {
@@ -76,6 +80,14 @@ async fn device_cookie_middleware(
     }
 
     response
+}
+
+fn request_is_secure(headers: &axum::http::HeaderMap) -> bool {
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("https"))
+        .unwrap_or(false)
 }
 
 #[tokio::main]

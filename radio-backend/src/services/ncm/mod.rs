@@ -1,4 +1,5 @@
 pub mod crypto;
+pub mod cookie;
 pub mod types;
 pub mod client;
 pub mod api;

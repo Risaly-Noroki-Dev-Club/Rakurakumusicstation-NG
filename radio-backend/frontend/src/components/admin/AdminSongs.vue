@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { store, toast } from '../../store'
-import { apiUrl } from '../../api'
+import { apiFetch } from '../../api'
 
 async function adminRescanSongs() {
   toast('正在重新扫描...', 'info')
   try {
-    await fetch(apiUrl('/api/admin/rescan-songs'), { method: 'POST' })
+    await apiFetch('/api/admin/rescan-songs', { method: 'POST' })
     toast('扫描完成', 'success')
     loadSongs()
   } catch { toast('扫描失败', 'error') }
@@ -13,14 +13,14 @@ async function adminRescanSongs() {
 
 async function adminPlayNext() {
   try {
-    await fetch(apiUrl('/api/admin/playlist/next'), { method: 'POST' })
+    await apiFetch('/api/admin/playlist/next', { method: 'POST' })
     toast('已切到下一首', 'success')
   } catch { toast('请求失败', 'error') }
 }
 
 async function adminPlayPrev() {
   try {
-    await fetch(apiUrl('/api/admin/playlist/prev'), { method: 'POST' })
+    await apiFetch('/api/admin/playlist/prev', { method: 'POST' })
     toast('已切到上一首', 'success')
   } catch { toast('请求失败', 'error') }
 }
@@ -28,7 +28,7 @@ async function adminPlayPrev() {
 async function adminDeleteSong(id: number) {
   if (!confirm('确定删除此歌曲？')) return
   try {
-    const r = await fetch(apiUrl('/api/admin/songs/' + id), { method: 'DELETE' })
+    const r = await apiFetch('/api/admin/songs/' + id, { method: 'DELETE' })
     const d = await r.json()
     toast(d.success ? '已删除' : (d.error || '删除失败'), d.success ? 'success' : 'error')
     if (d.success) loadSongs()
@@ -37,7 +37,7 @@ async function adminDeleteSong(id: number) {
 
 async function loadSongs() {
   try {
-    const r = await fetch(apiUrl('/api/admin/songs'))
+    const r = await apiFetch('/api/admin/songs')
     const d = await r.json()
     if (d.success) store.adminSongs = d.data || []
   } catch { /* ignore */ }

@@ -1,9 +1,9 @@
-import { apiUrl } from './client'
+import { apiFetch } from './client'
 import { toast } from '../store'
 
 export async function adminSkipNext(): Promise<void> {
   try {
-    const res = await fetch(apiUrl('/api/admin/playlist/next'), { method: 'POST' })
+    const res = await apiFetch('/api/admin/playlist/next', { method: 'POST' })
     const data = await res.json()
     if (data.success) {
       toast('已切到下一首', 'success')
@@ -17,7 +17,7 @@ export async function adminSkipNext(): Promise<void> {
 
 export async function adminSkipPrev(): Promise<void> {
   try {
-    const res = await fetch(apiUrl('/api/admin/playlist/prev'), { method: 'POST' })
+    const res = await apiFetch('/api/admin/playlist/prev', { method: 'POST' })
     const data = await res.json()
     if (data.success) {
       toast('已切到上一首', 'success')

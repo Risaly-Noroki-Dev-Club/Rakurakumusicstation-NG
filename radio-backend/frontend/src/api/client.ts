@@ -20,6 +20,14 @@ export function apiUrl(path: string): string {
   return apiBase + appPath(path)
 }
 
+export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(apiUrl(path), {
+    credentials: 'same-origin',
+    ...init,
+    headers: init.headers,
+  })
+}
+
 export function setStreamUrl(url: string): void {
   streamUrl = url
 }

@@ -1,4 +1,5 @@
 use super::crypto::{eapi_decrypt, eapi_encrypt};
+use super::cookie::cookie_value;
 use anyhow::Result;
 use rand::Rng;
 use reqwest::Client;
@@ -17,12 +18,12 @@ fn generate_device_id() -> String {
 #[derive(Debug, Clone)]
 pub struct NcmClient {
     pub device_id: String,
-    pub music_u: Option<String>,
+    pub cookie: Option<String>,
     http_client: Client,
 }
 
 impl NcmClient {
-    pub fn new(device_id: Option<String>, music_u: Option<String>) -> Self {
+    pub fn new(device_id: Option<String>, cookie: Option<String>) -> Self {
         let device_id = device_id.unwrap_or_else(generate_device_id);
         let http_client = Client::builder()
             .timeout(Duration::from_secs(60))
@@ -30,36 +31,46 @@ impl NcmClient {
             .unwrap_or_else(|_| Client::new());
         Self {
             device_id,
-            music_u,
+            cookie,
             http_client,
         }
     }
 
     fn build_cookie_header(&self) -> String {
-        let mut cookies = vec![
-            format!("deviceId={}", self.device_id),
-            format!("appver=9.3.40"),
-            format!(
+        let mut cookies: Vec<String> = self.cookie.as_deref()
+            .unwrap_or("")
+            .split(';')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+
+        let has = |items: &[String], name: &str| {
+            let prefix = format!("{}=", name);
+            items.iter().any(|c| c.starts_with(&prefix))
+        };
+
+        if !has(&cookies, "deviceId") {
+            cookies.push(format!("deviceId={}", self.device_id));
+        }
+        if !has(&cookies, "appver") {
+            cookies.push("appver=9.3.40".to_string());
+        }
+        if !has(&cookies, "buildver") {
+            cookies.push(format!(
                 "buildver={}",
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs()
-            ),
-            format!("resolution=1920x1080"),
-            format!("os=Android"),
-        ];
-
-        if let Some(mu) = &self.music_u {
-            if !mu.is_empty() {
-                cookies.push(format!("MUSIC_U={}", mu));
-            } else {
-                cookies.push(format!("MUSIC_A=4ee5f776c9ed1e4d5f031b09e084c6cb333e43ee4a841afeebbef9bbf4b7e4152b51ff20ecb9e8ee9e89ab23044cf50d1609e4781e805e73a138419e5583bc7fd1e5933c52368d9127ba9ce4e2f233bf5a77ba40ea6045ae1fc612ead95d7b0e0edf70a74334194e1a190979f5fc12e9968c3666a981495b33a649814e309366"));
-            }
-        } else {
-            cookies.push(format!("MUSIC_A=4ee5f776c9ed1e4d5f031b09e084c6cb333e43ee4a841afeebbef9bbf4b7e4152b51ff20ecb9e8ee9e89ab23044cf50d1609e4781e805e73a138419e5583bc7fd1e5933c52368d9127ba9ce4e2f233bf5a77ba40ea6045ae1fc612ead95d7b0e0edf70a74334194e1a190979f5fc12e9968c3666a981495b33a649814e309366"));
+            ));
         }
-
+        if !has(&cookies, "resolution") {
+            cookies.push("resolution=1920x1080".to_string());
+        }
+        if !has(&cookies, "os") {
+            cookies.push("os=Android".to_string());
+        }
         cookies.join("; ")
     }
 
@@ -86,13 +97,25 @@ impl NcmClient {
     }
 
     pub async fn eapi_request(&self, path: &str, url: &str, json_body: &str) -> Result<String> {
-        let splice = Self::splice_str(path, json_body);
+        let mut body_json: serde_json::Value = serde_json::from_str(json_body)
+            .unwrap_or_else(|_| serde_json::json!({}));
+        if let Some(csrf) = self.cookie.as_deref().and_then(|c| cookie_value(c, "__csrf")) {
+            if let Some(map) = body_json.as_object_mut() {
+                map.entry("csrf_token".to_string()).or_insert(serde_json::Value::String(csrf));
+            }
+        }
+        let json_body = body_json.to_string();
+        let splice = Self::splice_str(path, &json_body);
         let body = Self::format_params(&splice);
 
         let response = self
             .http_client
             .post(url)
             .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Accept", "*/*")
+            .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            .header("Origin", "https://music.163.com")
+            .header("Referer", "https://music.163.com/")
             .header("User-Agent", Self::choose_user_agent())
             .header("Cookie", self.build_cookie_header())
             .body(body)
@@ -137,14 +160,32 @@ impl NcmClient {
     }
 
     pub async fn test_login(&self) -> Result<bool> {
-        let result = self
-            .eapi_request(
+        let probes = [
+            (
+                "/api/nuser/account/get",
+                "https://music.163.com/eapi/nuser/account/get",
+            ),
+            (
                 "/api/w/user/setting",
                 "https://music.163.com/eapi/w/user/setting",
-                "{}",
-            )
-            .await?;
-        let json: serde_json::Value = serde_json::from_str(&result)?;
-        Ok(json.get("code").and_then(|c| c.as_i64()) == Some(200))
+            ),
+        ];
+        let mut last_error = None;
+        for (path, url) in probes {
+            match self.eapi_request(path, url, "{}").await {
+                Ok(result) => {
+                    let json: serde_json::Value = serde_json::from_str(&result)?;
+                    if json.get("code").and_then(|c| c.as_i64()) == Some(200) {
+                        return Ok(true);
+                    }
+                    last_error = Some(format!("{} 返回 code={:?}", path, json.get("code")));
+                }
+                Err(e) => last_error = Some(e.to_string()),
+            }
+        }
+        if let Some(e) = last_error {
+            anyhow::bail!(e);
+        }
+        Ok(false)
     }
 }

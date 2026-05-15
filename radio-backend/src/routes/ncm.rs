@@ -4,7 +4,7 @@ use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, NcmStatus, SaveNcmRequest};
-use crate::services::ncm::NcmClient;
+use crate::services::ncm::{cookie, NcmClient};
 use axum::{
     extract::State,
     http::HeaderMap,
@@ -17,34 +17,6 @@ pub fn ncm_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/", get(get_ncm).post(save_ncm))
         .route("/test", post(test_ncm))
-}
-
-/// 临时 secrets.json 路径（用于测试登录时传递给 music_dl.py）
-fn user_ncm_secrets(ncm: &crate::models::UserNcm) -> serde_json::Value {
-    let mut secrets = serde_json::json!({
-        "ncm_cookie": ncm.ncm_cookie,
-        "ncm_phone": ncm.ncm_phone,
-        "ncm_password": ncm.ncm_password,
-    });
-    if let Some(map) = secrets.as_object_mut() {
-        map.retain(|_, v| !v.as_str().map(|s| s.is_empty()).unwrap_or(false));
-    }
-    secrets
-}
-
-fn extract_music_u(ncm: &crate::models::UserNcm) -> Option<String> {
-    if !ncm.ncm_cookie.is_empty() {
-        for part in ncm.ncm_cookie.split(';') {
-            let part = part.trim();
-            if part.starts_with("MUSIC_U=") {
-                return Some(part.strip_prefix("MUSIC_U=").unwrap_or("").to_string());
-            }
-        }
-    }
-    if !ncm.ncm_phone.is_empty() {
-        return Some(String::new());
-    }
-    None
 }
 
 /// GET /api/ncm — 获取当前设备的网易云账号状态
@@ -63,17 +35,12 @@ pub async fn get_ncm(
 
     match ncm {
         Some(record) => {
-            let configured = !record.ncm_cookie.is_empty() || !record.ncm_phone.is_empty();
-            let method = if !record.ncm_cookie.is_empty() {
-                "cookie"
-            } else if configured { "phone" } else { "none" };
-            let phone = &record.ncm_phone;
+            let configured = cookie::has_cookie(&record.ncm_cookie, "MUSIC_U");
+            let method = if configured { "cookie" } else { "none" };
             Ok(Json(ApiResponse::ok(NcmStatus {
                 configured,
                 method: method.to_string(),
-                phone_hint: if phone.len() > 4 {
-                    format!("{}...{}", &phone[..3], &phone[phone.len()-2..])
-                } else { phone.clone() },
+                phone_hint: String::new(),
             })))
         }
         None => Ok(Json(ApiResponse::ok(NcmStatus {
@@ -99,21 +66,16 @@ pub async fn save_ncm(
     .fetch_optional(&state.db)
     .await?;
 
-    let ncm_cookie = body.cookie.unwrap_or_default().trim().to_string();
-    let ncm_phone = body.phone.unwrap_or_default().trim().to_string();
-    let ncm_password = body.password.unwrap_or_default().trim().to_string();
+    let ncm_cookie = cookie::validate_login_cookie(&body.cookie.unwrap_or_default())
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
-    if let Some(record) = existing {
-        let cookie = if !ncm_cookie.is_empty() { &ncm_cookie } else { &record.ncm_cookie };
-        let phone = if !ncm_phone.is_empty() { &ncm_phone } else { &record.ncm_phone };
-        let pwd = if !ncm_password.is_empty() { &ncm_password } else { &record.ncm_password };
-
+    if existing.is_some() {
         sqlx::query(
             "UPDATE user_ncm SET ncm_cookie = ?, ncm_phone = ?, ncm_password = ?, updated_at = datetime('now') WHERE device_user_id = ?"
         )
-        .bind(cookie)
-        .bind(phone)
-        .bind(pwd)
+        .bind(&ncm_cookie)
+        .bind("")
+        .bind("")
         .bind(device.id)
         .execute(&state.db)
         .await?;
@@ -123,8 +85,8 @@ pub async fn save_ncm(
         )
         .bind(device.id)
         .bind(&ncm_cookie)
-        .bind(&ncm_phone)
-        .bind(&ncm_password)
+        .bind("")
+        .bind("")
         .execute(&state.db)
         .await?;
     }
@@ -147,21 +109,11 @@ pub async fn test_ncm(
     .await?
     .ok_or_else(|| AppError::BadRequest("请先配置网易云账号".into()))?;
 
-    if ncm.ncm_cookie.is_empty() && ncm.ncm_phone.is_empty() {
+    if !cookie::has_cookie(&ncm.ncm_cookie, "MUSIC_U") {
         return Err(AppError::BadRequest("请先配置网易云账号".into()));
     }
 
-    let music_u = match extract_music_u(&ncm) {
-        Some(mu) => mu,
-        None => {
-            return Ok(Json(ApiResponse::ok(serde_json::json!({
-                "success": false,
-                "output": "无法提取有效的登录凭据",
-            }))));
-        }
-    };
-
-    let client = NcmClient::new(None, Some(music_u));
+    let client = NcmClient::new(None, Some(ncm.ncm_cookie));
 
     match client.test_login().await {
         Ok(true) => Ok(Json(ApiResponse::ok(serde_json::json!({

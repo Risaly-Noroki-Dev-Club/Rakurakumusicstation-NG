@@ -36,6 +36,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let app_routes = Router::new()
         .route("/ws", get(crate::websocket::ws_handler))
         .route("/stream", get(stream_handler))
+        .route("/manifest.json", get(manifest))
+        .route("/site-icon", get(admin::settings::site_icon))
         .nest("/api", api_routes)
         .fallback_service(ServeDir::new("static").fallback(ServeFile::new("static/index.html")));
 
@@ -148,10 +150,11 @@ async fn station_info(
 
     axum::Json(serde_json::json!({
         "name": station.name,
+        "short_name": station.short_name,
         "subtitle": station.subtitle,
-        "primary_color": station.primary_color,
-        "secondary_color": station.secondary_color,
-        "bg_color": station.bg_color,
+        "description": station.description,
+        "icon_url": resolved_icon_url(&station, &state.config.server.base_path),
+        "manifest_url": join_base_path(&state.config.server.base_path, "/manifest.json"),
         "stream_url": state.config.audio_engine.resolve_stream_url(
             Some(&headers),
             state.config.server.port,
@@ -159,5 +162,41 @@ async fn station_info(
         ),
         "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
         "needs_setup": !has_admin,
+    }))
+}
+
+fn resolved_icon_url(station: &crate::config::StationConfig, base_path: &str) -> String {
+    if !station.icon_path.trim().is_empty() {
+        join_base_path(base_path, "/site-icon")
+    } else if !station.icon_url.trim().is_empty() {
+        station.icon_url.clone()
+    } else {
+        join_base_path(base_path, "/icon.svg")
+    }
+}
+
+async fn manifest(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::Json<serde_json::Value> {
+    let station = state.station.read().unwrap_or_else(|e| e.into_inner());
+    let icon_url = resolved_icon_url(&station, &state.config.server.base_path);
+    axum::Json(serde_json::json!({
+        "name": station.name,
+        "short_name": station.short_name,
+        "description": station.description,
+        "id": join_base_path(&state.config.server.base_path, "/"),
+        "start_url": join_base_path(&state.config.server.base_path, "/"),
+        "scope": join_base_path(&state.config.server.base_path, "/"),
+        "display": "standalone",
+        "background_color": "#FAFAFA",
+        "theme_color": "#003D99",
+        "icons": [
+            {
+                "src": icon_url,
+                "sizes": "any",
+                "type": "image/png",
+                "purpose": "any maskable"
+            }
+        ]
     }))
 }

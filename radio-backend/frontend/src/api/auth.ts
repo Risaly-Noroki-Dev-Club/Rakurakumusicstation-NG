@@ -1,11 +1,11 @@
-import { apiUrl } from './client'
+import { apiFetch } from './client'
 import { store, toast } from '../store'
 import { loadMyPlaylists } from './playlists'
 import { loadUserNcmStatus } from './ncm'
 
 export async function loadDeviceUser(): Promise<void> {
   try {
-    const res = await fetch(apiUrl('/api/auth/me'))
+    const res = await apiFetch('/api/auth/me')
     const data = await res.json()
     if (data.success && data.data) {
       store.deviceUser = {
@@ -22,7 +22,7 @@ export async function loadDeviceUser(): Promise<void> {
 
 export async function setDisplayName(name: string): Promise<boolean> {
   try {
-    const res = await fetch(apiUrl('/api/auth/name'), {
+    const res = await apiFetch('/api/auth/name', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ display_name: name })
@@ -44,7 +44,7 @@ export async function setDisplayName(name: string): Promise<boolean> {
 
 export async function claimAdmin(token: string): Promise<boolean> {
   try {
-    const res = await fetch(apiUrl('/api/auth/claim-admin'), {
+    const res = await apiFetch('/api/auth/claim-admin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ admin_setup_token: token })

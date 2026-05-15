@@ -1,15 +1,15 @@
-import { apiUrl } from './client'
+import { apiFetch } from './client'
 import { store } from '../store'
 
 export async function loadUserNcmStatus(): Promise<void> {
   try {
-    const res = await fetch(apiUrl('/api/ncm'))
+    const res = await apiFetch('/api/ncm')
     if (!res.ok) return
     const d = await res.json()
     if (!d.success) return
     const data = d.data
     if (data.configured) {
-      const label = data.method === 'cookie' ? 'Cookie 已配置' : '手机号 ' + (data.phone_hint || '') + ' 已配置'
+      const label = 'Cookie 已配置'
       store.userNcmBadge = '✓ ' + label
       store.userNcmBadgeClass = 'ok'
     } else {
@@ -20,21 +20,19 @@ export async function loadUserNcmStatus(): Promise<void> {
 }
 
 export async function saveUserNcmSettings(): Promise<void> {
-  const payload = store.userNcmActiveTab === 'cookie'
-    ? { cookie: store.userNcmCookie.trim(), phone: '', password: '' }
-    : { phone: store.userNcmPhone.trim(), password: store.userNcmPassword, cookie: '' }
-  if (store.userNcmActiveTab === 'cookie' && !payload.cookie) {
+  const payload = { cookie: store.userNcmCookie.trim() }
+  if (!payload.cookie) {
     store.userNcmResult = '请填写 Cookie'
     store.userNcmResultType = 'error'
     return
   }
-  if (store.userNcmActiveTab === 'phone' && (!payload.phone || !payload.password)) {
-    store.userNcmResult = '请填写手机号和密码'
+  if (!payload.cookie.includes('MUSIC_U=')) {
+    store.userNcmResult = 'Cookie 缺少 MUSIC_U'
     store.userNcmResultType = 'error'
     return
   }
   try {
-    const res = await fetch(apiUrl('/api/ncm'), {
+    const res = await apiFetch('/api/ncm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -58,7 +56,7 @@ export async function testUserNcmLogin(): Promise<void> {
   store.userNcmResult = '测试中...'
   store.userNcmResultType = 'info'
   try {
-    const res = await fetch(apiUrl('/api/ncm/test'), {
+    const res = await apiFetch('/api/ncm/test', {
       method: 'POST'
     })
     const data = await res.json()

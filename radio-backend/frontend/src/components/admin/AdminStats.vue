@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { store } from '../../store'
-import { apiUrl } from '../../api'
+import { apiFetch } from '../../api'
 
 async function loadStats() {
   try {
-    const r = await fetch(apiUrl('/api/admin/stats'))
+    const r = await apiFetch('/api/admin/stats')
     const d = await r.json()
     if (d.success) store.adminStats = d.data
   } catch { /* ignore */ }

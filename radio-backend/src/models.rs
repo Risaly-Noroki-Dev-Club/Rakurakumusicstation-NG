@@ -330,20 +330,21 @@ pub type SimpleResponse = ApiResponse<serde_json::Value>;
 #[derive(Debug, Deserialize)]
 pub struct SaveSettingsRequest {
     pub station_name: Option<String>,
+    pub short_name: Option<String>,
     pub subtitle: Option<String>,
-    pub primary_color: Option<String>,
-    pub secondary_color: Option<String>,
-    pub bg_color: Option<String>,
-    pub admin_password: Option<String>,
+    pub description: Option<String>,
+    pub icon_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct SettingsResponse {
     pub station_name: String,
+    pub short_name: String,
     pub subtitle: String,
-    pub primary_color: String,
-    pub secondary_color: String,
-    pub bg_color: String,
+    pub description: String,
+    pub icon_url: String,
+    pub icon_path: String,
+    pub resolved_icon_url: String,
 }
 
 // ─── 下载状态 ────────────────────────────────────────────────
@@ -462,8 +463,6 @@ pub struct ImportPlaylistResponse {
 #[derive(Debug, Deserialize)]
 pub struct SaveNcmRequest {
     pub cookie: Option<String>,
-    pub phone: Option<String>,
-    pub password: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

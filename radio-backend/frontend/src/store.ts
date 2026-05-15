@@ -55,10 +55,12 @@ export interface Store {
   ncmResult: string
   ncmResultType: string
   settingsStationName: string
+  settingsShortName: string
   settingsSubtitle: string
-  settingsPrimaryColor: string
-  settingsSecondaryColor: string
-  settingsBgColor: string
+  settingsDescription: string
+  settingsIconUrl: string
+  settingsResolvedIconUrl: string
+  settingsIconFileName: string
   settingsAdminPassword: string
   settingsResult: string
   settingsResultType: string
@@ -127,10 +129,12 @@ export const store: Store = reactive({
   ncmResult: '',
   ncmResultType: '',
   settingsStationName: '',
+  settingsShortName: '',
   settingsSubtitle: '',
-  settingsPrimaryColor: '#003D99',
-  settingsSecondaryColor: '#00897B',
-  settingsBgColor: '#FAFAFA',
+  settingsDescription: '',
+  settingsIconUrl: '',
+  settingsResolvedIconUrl: '',
+  settingsIconFileName: '',
   settingsAdminPassword: '',
   settingsResult: '',
   settingsResultType: '',
@@ -190,19 +194,6 @@ export function cycleTheme(): void {
 }
 
 applyTheme()
-
-export function applyStationColors(info: {
-  primary_color?: string
-  secondary_color?: string
-  bg_color?: string
-}): void {
-  if (info.primary_color)
-    ROOT.style.setProperty('--am-primary', info.primary_color)
-  if (info.secondary_color)
-    ROOT.style.setProperty('--am-secondary', info.secondary_color)
-  if (info.bg_color)
-    ROOT.style.setProperty('--am-bg', info.bg_color)
-}
 
 // Responsive listener
 window.addEventListener('resize', () => {

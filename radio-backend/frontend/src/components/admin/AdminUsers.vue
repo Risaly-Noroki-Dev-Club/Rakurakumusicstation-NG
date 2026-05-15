@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { store, toast } from '../../store'
-import { apiUrl } from '../../api'
+import { apiFetch } from '../../api'
 
 const loading = ref(false)
 
 async function loadUsers() {
   loading.value = true
   try {
-    const r = await fetch(apiUrl('/api/admin/users'))
+    const r = await apiFetch('/api/admin/users')
     const d = await r.json()
     if (d.success) store.users = d.data || []
   } catch { /* ignore */ }
   try {
-    const r = await fetch(apiUrl('/api/admin/logs'))
+    const r = await apiFetch('/api/admin/logs')
     const d = await r.json()
     if (d.success) store.adminLogs = d.data || []
   } catch { /* ignore */ }
@@ -22,7 +22,7 @@ async function loadUsers() {
 
 async function adminPromote(id: number) {
   try {
-    const r = await fetch(apiUrl('/api/admin/users/' + id + '/role'), {
+    const r = await apiFetch('/api/admin/users/' + id + '/role', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'admin' })
     })
@@ -34,7 +34,7 @@ async function adminPromote(id: number) {
 
 async function adminDemote(id: number) {
   try {
-    const r = await fetch(apiUrl('/api/admin/users/' + id + '/role'), {
+    const r = await apiFetch('/api/admin/users/' + id + '/role', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: 'user' })
     })
@@ -46,7 +46,7 @@ async function adminDemote(id: number) {
 
 async function adminBan(id: number) {
   try {
-    const r = await fetch(apiUrl('/api/admin/users/' + id + '/ban'), { method: 'POST' })
+    const r = await apiFetch('/api/admin/users/' + id + '/ban', { method: 'POST' })
     const d = await r.json()
     if (d.success) { loadUsers(); toast('用户已封禁', 'success') }
     else toast('操作失败: ' + d.error, 'error')
@@ -55,7 +55,7 @@ async function adminBan(id: number) {
 
 async function adminUnban(id: number) {
   try {
-    const r = await fetch(apiUrl('/api/admin/users/' + id + '/unban'), { method: 'POST' })
+    const r = await apiFetch('/api/admin/users/' + id + '/unban', { method: 'POST' })
     const d = await r.json()
     if (d.success) { loadUsers(); toast('用户已解封', 'success') }
     else toast('操作失败: ' + d.error, 'error')

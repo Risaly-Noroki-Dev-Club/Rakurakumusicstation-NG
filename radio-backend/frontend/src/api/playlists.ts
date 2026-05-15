@@ -1,9 +1,9 @@
-import { apiUrl } from './client'
+import { apiFetch } from './client'
 import { store, toast } from '../store'
 
 export async function loadMyPlaylists(): Promise<void> {
   try {
-    const res = await fetch(apiUrl('/api/playlists'))
+    const res = await apiFetch('/api/playlists')
     const data = await res.json()
     if (data.success) store.myPlaylists = data.data || []
   } catch { /* ignore */ }
@@ -12,7 +12,7 @@ export async function loadMyPlaylists(): Promise<void> {
 export async function createPlaylist(): Promise<void> {
   if (!store.newPlaylistName.trim()) return
   try {
-    const res = await fetch(apiUrl('/api/playlists'), {
+    const res = await apiFetch('/api/playlists', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: store.newPlaylistName.trim() })
@@ -31,7 +31,7 @@ export async function createPlaylist(): Promise<void> {
 export async function deletePlaylist(id: number): Promise<void> {
   if (!confirm('确定删除此歌单？')) return
   try {
-    const res = await fetch(apiUrl('/api/playlists/' + id), { method: 'DELETE' })
+    const res = await apiFetch('/api/playlists/' + id, { method: 'DELETE' })
     const data = await res.json()
     if (data.success) {
       toast('歌单已删除', 'success')
@@ -60,7 +60,7 @@ export interface PlaylistDetail {
 
 export async function loadPlaylistDetail(id: number): Promise<PlaylistDetail | null> {
   try {
-    const res = await fetch(apiUrl('/api/playlists/' + id))
+    const res = await apiFetch('/api/playlists/' + id)
     const data = await res.json()
     if (data.success) return data.data
   } catch { /* ignore */ }
@@ -69,7 +69,7 @@ export async function loadPlaylistDetail(id: number): Promise<PlaylistDetail | n
 
 export async function addSongToPlaylist(playlistId: number, songId: number): Promise<boolean> {
   try {
-    const res = await fetch(apiUrl('/api/playlists/' + playlistId + '/songs'), {
+    const res = await apiFetch('/api/playlists/' + playlistId + '/songs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ song_id: songId })
@@ -87,7 +87,7 @@ export async function addSongToPlaylist(playlistId: number, songId: number): Pro
 
 export async function removeSongFromPlaylist(playlistId: number, songId: number): Promise<boolean> {
   try {
-    const res = await fetch(apiUrl('/api/playlists/' + playlistId + '/songs'), {
+    const res = await apiFetch('/api/playlists/' + playlistId + '/songs', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ song_id: songId })

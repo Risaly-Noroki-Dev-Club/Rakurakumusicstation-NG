@@ -443,16 +443,16 @@ impl Player {
             }
         };
 
-        // Read ffmpeg stdout into a bounded channel so the streaming loop never
-        // blocks on `read()` while it should be polling commands.
-        let (audio_tx, mut audio_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        // Bound the ffmpeg handoff so slow consumers backpressure stdout reads
+        // instead of accumulating unbounded MP3 chunks in memory.
+        let (audio_tx, mut audio_rx) = mpsc::channel::<Vec<u8>>(16);
         let ffmpeg_task = tokio::spawn(async move {
             let mut buf = vec![0u8; AUDIO_CHUNK_SIZE];
             loop {
                 match main_stdout.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if audio_tx.send(buf[..n].to_vec()).is_err() {
+                        if audio_tx.send(buf[..n].to_vec()).await.is_err() {
                             break;
                         }
                     }
