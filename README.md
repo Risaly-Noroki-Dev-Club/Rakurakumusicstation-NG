@@ -1,11 +1,11 @@
-# Rakuraku Music Station NG — v3.0.0
+# Rakuraku Music Station NG — v3 Adventure Island
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)
 
 > Rust 全栈：嵌入式音频引擎 + Web 后端 + Vue 单页面前端。
 > 一个自托管的网络电台，设备免密认证，WebSocket 实时同步，内嵌 Rust 音频引擎。
 
-**v3.0.0 正式版 "it's never meant"**
+**v3 大版本 "Adventure Island"**
 
 ---
 
