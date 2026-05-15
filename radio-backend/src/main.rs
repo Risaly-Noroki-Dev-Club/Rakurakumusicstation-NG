@@ -12,11 +12,10 @@ mod models;
 mod queue_manager;
 mod routes;
 mod services;
-mod templates;
 mod websocket;
 
 use axum::{
-    http::{header, HeaderMap, Method, Request},
+    http::{header, Method, Request},
     middleware::{self, Next},
     response::Response,
     extract::State,
@@ -24,25 +23,46 @@ use axum::{
 use db::AppState;
 use radio_engine::config::BUFFER_CAPACITY;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 /// 中间件：确保每个请求都有一个 device_token Cookie。
 async fn device_cookie_middleware(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    request: Request<axum::body::Body>,
+    mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
-    let device_token = auth::extract_device_token(&headers);
-    let mut response = next.run(request).await;
-
-    if device_token.is_none() {
+    let device_token = auth::extract_device_token(request.headers());
+    let new_token = if device_token.is_none() {
         let new_token = auth::generate_device_token();
 
         if let Err(e) = auth::ensure_device_user(&state.db, &new_token).await {
             tracing::error!("Failed to create device user: {:?}", e);
         }
 
+        let mut cookie_header = request
+            .headers()
+            .get(header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        if !cookie_header.is_empty() {
+            cookie_header.push_str("; ");
+        }
+        cookie_header.push_str("device_token=");
+        cookie_header.push_str(&new_token);
+
+        if let Ok(val) = header::HeaderValue::from_str(&cookie_header) {
+            request.headers_mut().insert(header::COOKIE, val);
+        }
+
+        Some(new_token)
+    } else {
+        None
+    };
+
+    let mut response = next.run(request).await;
+
+    if let Some(new_token) = new_token {
         let max_age = state.config.device.cookie_max_age_days * 86400;
         let cookie_value = format!(
             "device_token={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",

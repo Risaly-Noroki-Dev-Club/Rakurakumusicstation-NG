@@ -11,6 +11,7 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'now-playing', component: NowPlayingView },
     { path: '/library', name: 'library', component: LibraryView },
+    { path: '/queue', redirect: '/up-next' },
     { path: '/up-next', name: 'up-next', component: UpNextView },
     { path: '/settings', name: 'settings', component: SettingsView },
     { path: '/admin', redirect: '/admin/users' },

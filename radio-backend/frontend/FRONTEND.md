@@ -43,8 +43,8 @@
 - **SFC 组件**：每个功能模块是独立的 `.vue` 单文件组件（template + script + style）
 - **响应式全局状态**：所有 UI 状态存储在 `reactive()` 单例 `store` 中（`src/store.ts`）
 - **类型安全**：所有状态、API 响应、WebSocket 消息均有 TypeScript 接口定义（`src/types.ts`）
-- **vue-router history 模式**：URL 驱动导航（`/player`, `/queue`, `/library`, `/admin/:subtab`）
-- **Rust 后端 SPA 回退**：`ServeDir::new("static").not_found_service(ServeFile::new("static/index.html"))`
+- **vue-router history 模式**：URL 驱动导航（`/`, `/library`, `/up-next`, `/settings`, `/admin/:subtab`），`/queue` 兼容跳转到 `/up-next`
+- **Rust 后端 SPA 回退**：`ServeDir::new("static").fallback(ServeFile::new("static/index.html"))`；`/api/*` 单独注册 JSON fallback，避免 API 404 返回 HTML
 
 ### 关键文件结构
 
@@ -58,8 +58,8 @@ createApp(App).use(router).mount('#app')
 ```
 
 **`src/App.vue`** — 根组件
-- App layout：HeaderBar + NavTabs + `<router-view>` + ToastContainer
-- 生命周期：loadStationInfo → connectWebSocket → loadDeviceUser → 轮询
+- App layout：Vuetify 侧边栏/底部导航 + `<router-view>` + 全局音频元素 + MiniPlayer
+- 生命周期：initAudio → loadStationInfo → connectWebSocket → loadDeviceUser → 轮询
 
 **`src/store.ts`** — 全局状态
 ```
@@ -71,35 +71,38 @@ reactive({
   // ... 管理面板状态
 })
 ```
-导出工具函数：`formatTime`, `toast`, `applyTheme`, `cycleTheme`, `applyStationColors`, `parseLyrics`
+导出工具函数：`formatTime`, `toast`, `applyTheme`, `cycleTheme`, `applyStationColors`
 
-**`src/api.ts`** — API 层
-- HTTP：fetch + httpOnly device_token cookie
+**`src/api.ts`** — API 聚合导出
+- 具体实现拆在 `src/api/{client,station,auth,queue,songs,playlists,admin,ncm,websocket}.ts`
+- HTTP：fetch + httpOnly `device_token` cookie
 - WebSocket：自动重连（指数退避，最多 20 次）
 - 轮询：队列 5s、播放状态 2s（WebSocket 断开时兜底）
-- 播放控制：推流模式 / 推文件模式切换
+- 播放控制：推流模式为主，文件播放模式作为内部备份
 
 **`src/router.ts`** — 路由配置
 ```
-/            → redirect /player
-/player      → PlayerView
-/queue       → QueueView
+/            → NowPlayingView
 /library     → LibraryView
+/up-next     → UpNextView
+/queue       → redirect /up-next
+/settings    → SettingsView
 /admin       → redirect /admin/users
 /admin/:subtab → AdminView (meta: requiresAdmin)
 ```
-导航守卫：`/admin/*` 需要 `role === 'admin'`，否则重定向到 `/player`。
+导航守卫：`/admin/*` 需要 `role === 'admin'`，否则重定向到 `/`。
 
 ### 组件树 / Component Tree
 
 ```
 App.vue
-├── HeaderBar.vue              # 站名、主题切换、设备信息、管理员提权
-├── NavTabs.vue                # 导航标签栏（router-link）
+├── Vuetify navigation         # 桌面侧边栏 / 移动端底部导航
+├── audio                      # 全局音频元素，使用 /stream
 ├── <router-view>
-│   ├── PlayerView.vue         # 播放页面（封面、进度条、audio、歌词）
-│   ├── QueueView.vue          # 队列 + 播放历史
+│   ├── NowPlayingView.vue     # 播放页面（封面、进度条、歌词、管理员切歌）
+│   ├── UpNextView.vue         # 待播队列 + 播放历史
 │   ├── LibraryView.vue        # 曲库搜索 + 我的歌单 + NCM 用户配置
+│   ├── SettingsView.vue       # 显示名称、主题、管理员提权
 │   └── AdminView.vue          # 管理页面壳（router-view 分配子标签）
 │       ├── AdminUsers.vue     # 👥 用户管理（提权/降权/封禁/日志）
 │       ├── AdminSongs.vue     # 🎵 歌曲管理（删除/重新扫描/切歌）
@@ -108,8 +111,7 @@ App.vue
 │       ├── AdminNcm.vue       # 🎵 网易云（复用 NcmSettings 组件）
 │       ├── AdminSettings.vue  # ⚙️ 系统设置
 │       └── AdminStats.vue     # 📊 统计
-├── ToastContainer.vue         # 通知提示
-├── StatusMessage.vue          # 通用状态提示（替换内联样式）
+├── MiniPlayer.vue             # 非播放页底部/侧边迷你播放器
 └── NcmSettings.vue            # 网易云配置（管理员 + 用户复用）
 ```
 
@@ -173,9 +175,9 @@ JSON，用 `type` 字段区分：`playback_state`, `queue_update`, `notice`, `pi
 | `GET` | `/api/station` | — | 电台名、主题色、流地址 |
 | `GET` | `/api/now-playing` | — | 当前曲目（HTTP 兜底） |
 | `GET` | `/api/songs?q=&limit=50` | — | 曲库搜索 |
-| `GET` | `/api/user/me` | Device | 当前设备信息 |
-| `POST` | `/api/user/display-name` | Device | 设置显示名称 |
-| `POST` | `/api/user/promote` | — | 通过 admin_setup_token 提权 |
+| `GET` | `/api/auth/me` | Device | 当前设备信息 |
+| `POST` | `/api/auth/name` | Device | 设置显示名称 |
+| `POST` | `/api/auth/claim-admin` | — | 通过 admin_setup_token 提权 |
 | `GET` `POST` | `/api/queue` | Device/— | 队列 |
 | `GET` `POST` `DELETE` | `/api/playlists` | Device | 歌单 |
 | `*` | `/api/admin/*` | Admin | 管理操作 |
@@ -199,6 +201,7 @@ npm run build
 cd .. && cargo build
 # 或从项目根目录
 ./build_release.sh
+# 注意：build_release.sh 只复制现有 radio-backend/static/，不会自动运行 Vite。
 ```
 
 ### 构建集成
@@ -206,7 +209,7 @@ cd .. && cargo build
 `vite.config.ts` 配置：
 - `build.outDir: '../static'` — 输出到 `radio-backend/static/`
 - `build.emptyOutDir: true` — 每次构建清空旧产物
-- `publicDir: 'public'` — `public/` 下的文件（sw.js, manifest.json）原样复制到输出
+- 默认 `publicDir: 'public'` — `public/` 下的文件（sw.js, manifest.json）原样复制到输出
 
 ### 开发规范 / Conventions
 

@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)
 
-> Rust 全栈：嵌入式音频引擎 + Web 后端 + SSR 页面。
+> Rust 全栈：嵌入式音频引擎 + Web 后端 + Vue 单页面前端。
 > 一个自托管的网络电台，设备免密认证，WebSocket 实时同步，内嵌 Rust 音频引擎。
 
 **v3.0.0 正式版 "it's never meant"**
@@ -17,7 +17,11 @@
 # 依赖 (Debian/Ubuntu)
 apt install ffmpeg
 
-# 构建 (需要 Rust toolchain)
+# 构建前端静态文件 (需要 Node.js)
+cd radio-backend/frontend && npm run build
+cd ../..
+
+# 构建发布包 (需要 Rust toolchain)
 ./build_release.sh
 
 # 放入音乐
@@ -57,7 +61,7 @@ cd dist && ./stop.sh
 |------|------|------|
 | **播放器** | `/` | 封面、进度条、同步歌词、音量 / 播放控制 |
 | **曲库** | `/library` | 搜索歌曲、点歌、上传、歌单、网易云账号绑定 |
-| **队列** | `/queue` | 待播队列与播放历史 |
+| **队列** | `/up-next` | 待播队列与播放历史；`/queue` 会兼容跳转到此页 |
 | **设置** | `/settings` | 显示名称、亮色/暗色/自动主题、管理员提权 |
 
 页面顶部有音频进度条常驻，曲目封面、歌词通过 WebSocket 实时同步。
@@ -145,7 +149,7 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
              │  WebSocket + 歌词 + 队列管理   │
              └──────────────────────────────┘
                              │
-                     Askama SSR 模板 (服务端渲染)
+                      Vue SPA 静态文件 (`radio-backend/static/`)
 ```
 
 ### 服务划分
@@ -153,14 +157,14 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 | 组件 | 语言 | 说明 |
 |------|------|------|
 | 音频引擎 | Rust | `radio-engine/`，ffmpeg 解码 → 环形缓冲 → async 推流 |
-| 业务后端 | Rust | `radio-backend/`，REST API、WebSocket、SQLite、SSR 页面 |
-| Web 前端 | HTML+JS | Askama 服务端模板 + 少量 vanilla JS，无 SPA 框架 |
+| 业务后端 | Rust | `radio-backend/`，REST API、WebSocket、SQLite、静态文件服务 |
+| Web 前端 | Vue 3 + TypeScript | `radio-backend/frontend/`，Vite 构建到 `radio-backend/static/` |
 
 ### v3.0.0 主要特性
 
 | 特性 | 说明 |
 |------|------|
-| **SSR 页面** | 服务端渲染 Askama 模板，无前端构建步骤，首屏秒开 |
+| **单页面前端** | Vue SPA 由后端静态托管；页面路径通过 `static/index.html` fallback 进入前端路由 |
 | **请求队列** | 用户点歌优先级高于文件夹循环；Wake/Notify 机制即时响应 |
 | **批量下载** | 管理面板粘贴歌单批量下载，SSE 推送实时进度 |
 | **stream_base** | 自动检测反代(X-Forwarded-*)构建流地址，也支持相对/绝对路径 |
@@ -174,7 +178,7 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| `GET` | `/` `/:page` | Device | SSR 页面（播放器/曲库/队列/设置/管理） |
+| `GET` | `/` `/library` `/up-next` `/queue` `/settings` `/admin/*` | 无 | Vue SPA 入口（`/queue` 兼容跳转到 `/up-next`） |
 | `GET` | `/api/station` | 无 | 电台信息 |
 | `GET` | `/api/now-playing` | 无 | 当前曲目 |
 | `GET` | `/api/songs?q=` | 无 | 搜索歌曲 |
@@ -223,7 +227,11 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 ```bash
 # 依赖: ffmpeg, Rust toolchain
 
-# 一键构建
+# 前端生产构建（会更新 radio-backend/static/）
+cd radio-backend/frontend && npm run build
+cd ../..
+
+# 一键打包发布目录（复制现有 static/，不会自动运行 Vite）
 ./build_release.sh
 
 # 仅 Rust
@@ -247,7 +255,7 @@ MIT
 - 知夏 (Zhixia) — 项目协作者
 - [FFmpeg](https://ffmpeg.org/) — 音频解码
 - [Axum](https://github.com/tokio-rs/axum) — Rust HTTP 框架
-- [Askama](https://github.com/djc/askama) — 模板引擎
+- [Vue](https://vuejs.org/) / [Vite](https://vite.dev/) — Web 前端
 - [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL 工具集
 - [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) — 网易云 API 参考 (GPL-3.0)
 

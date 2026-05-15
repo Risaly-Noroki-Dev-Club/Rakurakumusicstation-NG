@@ -1,91 +1,48 @@
 # AGENTS.md
 
-This file provides guidance for OpenCode sessions working in this repository.
+## Shape
 
-## Architecture (v3.1-beta)
+- Main app is a single Rust binary: `radio-backend` serves REST, WebSocket `/ws`, audio stream `/stream`, and static files on port `2241`.
+- `radio-engine` is a local Rust library embedded by `radio-backend`; do not reintroduce a separate audio process, Redis, or HTTP IPC for engine control.
+- `radio-backend/frontend` is Vue 3 + Vite + TypeScript; `npm run build` writes production assets to `radio-backend/static/`, which the backend serves via `ServeDir::new("static")` fallback.
+- `legacy/cpp-engine/`, `audio-engine/`, root `music_dl.py`, and `deploy/Makefile` are legacy/deploy leftovers and are not part of the normal root build.
 
-- **Radio Engine** (`radio-engine/` crate) — embedded Rust audio engine
-  - Audio pipeline: ffmpeg → `RingBuffer` → stream (TCP clients)
-  - Provides: `RingBuffer`, `Player`, `play_queue`, metadata extraction, `util` helpers
-  - Embedded as a local crate inside `radio-backend` (no separate process)
-  - **Key design**: all paths stored in `play_queue` are **relative to `media_path`**; use `util::resolve_media_path` / `relativize_media_path` for path normalization
-- **Rust Backend** (`radio-backend/`) — single binary, port 2241
-  - Device-based auth (httpOnly `device_token` cookie), admin via `admin_setup_token`
-  - SQLite, play_queue/queue management, WebSocket, lyrics
-  - Embeds `radio-engine` — no external C++ process, no HTTP inter-process communication
-  - Static web UI in `radio-backend/static/` (Vue 3 SFC + Vite + TypeScript)
-  - Admin routes split into `routes/admin/{users,stats,songs,upload,settings,playback,download,ncm,logout}.rs`
-  - Shared metadata utilities in `services/metadata.rs` (reuses engine's `parse_artist_title`)
-  - **NCM download module** (`services/ncm/`) — native Rust implementation of NetEase Cloud Music Eapi protocol for batch downloading (search → get URL → download → lyrics). Replaces legacy `music_dl.py`.
-- **Legacy C++ Engine** (`legacy/cpp-engine/`) — archived, not built or used
+## Commands
 
-## Build
+- Full release package from repo root: `./build_release.sh`. It runs `cargo build --release` in `radio-backend`, copies the binary to `dist/`, copies existing `radio-backend/static/`, seeds `dist/config.toml` only if missing, and preserves `dist/media/`.
+- Backend-only debug build: `cd radio-backend && cargo build`.
+- Engine tests: `cd radio-engine && cargo test ring_buffer`. These are the only checked-in Rust unit tests.
+- Frontend dev server: `cd radio-backend/frontend && npm run dev`; Vite listens on `5173` and proxies `/api`, `/ws`, and `/stream` to `localhost:2241`.
+- Frontend production check/build: `cd radio-backend/frontend && npm run build`; this runs `vue-tsc -b && vite build` and updates `radio-backend/static/`.
+- Runtime after release build: `cd dist && ./start.sh` and `cd dist && ./stop.sh`; logs go to `dist/server.log` and lifecycle uses `dist/.server.pid`.
 
-```bash
-./build_release.sh               # Full build (Rust backend + engine)
-```
+## Runtime Config
 
-- Source files: `radio-engine/src/*.rs` (8 modules) + `radio-backend/src/*.rs` (10+ modules).
-- The build script requires `cargo` and `ffmpeg` (runtime dependency, not build-time).
-- Build output: `dist/radio-backend` (single binary), `dist/static/`, `dist/start.sh`, `dist/stop.sh`.
-- `dist/config.toml` is seeded from `radio-backend/config.toml.example` on first build.
-- `dist/media/` and `dist/playlist_order.json` are preserved across rebuilds.
+- The backend loads `config.toml` from the current working directory unless `RADIO_CONFIG` is set, so normal runtime is from inside `dist/`.
+- Required runtime tools are `ffmpeg` for playback and `ffprobe` for duration/tag scanning.
+- SQLite is the only supported DB path in practice; migrations are embedded with `sqlx::migrate!("./migrations")` and run on startup.
+- `RADIO_DATABASE_URL`, `RADIO_SERVER_PORT`, `RADIO_LOG_LEVEL`, `RADIO_MEDIA_PATH`, `RADIO_STREAM_BASE`, `RADIO_STATION_NAME`, `RADIO_ADMIN_SETUP_TOKEN`, `RADIO_NCM_DEVICE_ID`, and `RADIO_NCM_DOWNLOAD_CONCURRENCY` override TOML values.
+- Settings saved through `/api/admin/settings` write `config.toml` but are not hot-reloaded; restart the server.
 
-## Runtime
+## Engine Invariants
 
-```bash
-cd dist
-./start.sh         # starts radio-backend (nohup), writes .server.pid
-./stop.sh          # stops the service, reads PID file, pgrep fallback
-```
+- Paths stored in `play_queue`, request tracks, and `PlaybackState.file_path` are relative to `media_path`; use `radio_engine::util::{resolve_media_path, relativize_media_path}` at filesystem/ffmpeg boundaries.
+- `Player.play_queue` and `Player.play_queue_metadata` are parallel vectors; mutate them together under the queue lock.
+- `PlaybackState.playlist_index` is a `play_queue` index, not a `songs.id`; requested tracks may have `playlist_index == -1`, so song-change logic should key on `file_path` or DB song id as appropriate.
+- `RingBuffer` capacity must be a nonzero power of two.
+- `/stream` uses a bounded channel (`STREAM_CHANNEL_CAPACITY = 4`) so dead clients surface via backpressure; do not switch it to an unbounded channel.
+- `main.rs` binds with `bind_with_keepalive()` rather than `tokio::net::TcpListener::bind`; this is intentional to clean up dead streaming connections.
+- `extract_metadata()` intentionally leaves `embedded_lyrics` and `cover_data` empty to avoid startup subprocess and memory blowups.
 
-- The server must run from inside `dist/` (or any dir containing `media/`).
-- `.server.pid` is the daemon lifecycle mechanism (single process, single PID file).
-- `playlist_order.json` is created at runtime on first run; no seed file exists.
+## Backend/Frontend Contracts
 
-## Key invariants
+- Device auth is cookie-based. `device_cookie_middleware` creates/refreshes httpOnly `device_token`; protected handlers explicitly call `require_device_auth()` / `require_admin_auth()` or use `AuthUser` helpers, not Axum auth middleware.
+- `/api/now-playing` is DB-oriented and not the source for smooth real-time position; WebSocket playback messages are the realtime path.
+- WebSocket `playback_state` sends full `lyrics_lines` only once per song change; later 500ms updates send `lyrics_line` and `lyrics_lines: null`. The frontend caches lyrics in `store.lyricsLines`.
+- `stream_base = "auto"` derives `/stream` URLs from `Host` / `X-Forwarded-*`; it can also be a relative path like `/stream` or an absolute URL.
+- Uploads/downloads/rescans that add media should send `AudioCommandType::ReloadQueue` so the embedded engine sees new files without a server restart.
 
-- `play_queue` (filenames) and `play_queue_metadata` (`TrackMetadata`) are parallel vectors in the radio-engine player; any mutation must be mirrored under the play_queue lock.
-- All paths in `play_queue` and `PlaybackState.file_path` are **relative to `media_path`**. Use `radio_engine::util::resolve_media_path()` when ffmpeg needs an absolute path.
-- `RingBuffer` capacity must be a power of two (enforced at construction).
-- All core engine types (`RingBuffer`, `Player`, `StreamServer`) live in `radio-engine/src/`.
-- The backend uses a `device_cookie_middleware` that auto-creates device users on first visit — every HTTP response sets or refreshes the httpOnly cookie.
-- `PlaybackState.playlist_index` is the array index into `play_queue`, **not** a DB `songs.id`.
-- `PlaybackStatus` is a strongly-typed enum (`Playing` / `Stopped` / `Crossfading`); serde serializes to snake_case strings for frontend compatibility.
+## Local Verification Gotchas
 
-## Known quirks
-
-### Audio engine (radio-engine)
-- The engine emits audio stream at `/stream` from the same HTTP server (port 2241), not a separate port.
-- Play queue scanning uses `ffmpeg` for metadata extraction (same as legacy C++ engine).
-- `init_play_queue` scans **recursively**; subdirectories under `media/` are supported.
-- `TrackMetadata` fields: `duration_ms` (i64, not f64), `cover_data` (binary Vec<u8>), `embedded_lyrics` (String). These are reserved for future features (cover art extraction, embedded lyrics → .lrc conversion).
-
-### Rust backend
-- **Device-based auth** — no passwords, no JWT. Each browser/device gets a `device_token` cookie. Admin is promoted via `admin_setup_token` (configure in `config.toml`).
-- **No Redis dependency** — engine is embedded in-process.
-- **No Axum auth middleware** — every protected handler calls `require_auth_from_headers()` or uses `AuthUser` extractor.
-- **Admin setup token** — configured in `config.toml` `[device].admin_setup_token`. Must be set before first run.
-- **Settings save but don't hot-reload** — `POST /api/admin/settings` writes `config.toml` but changes take effect only after restart.
-- **Rescan needs `ffprobe`** on PATH to extract audio duration metadata.
-- **Native Rust NCM download** — `services/ncm/` implements NetEase Cloud Music Eapi protocol (AES-ECB encryption, request signing, cookie auth) in pure Rust. Reference: [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) / [Music163Api-Go](https://github.com/XiaoMengXinX/Music163Api-Go) (GPL-3.0).
-- **SQLite-only** — migrations use `AUTOINCREMENT`, `datetime('now')`, `INSERT OR IGNORE`. PostgreSQL is noted in comments but requires migration rewrite.
-- **Migrations run automatically** at startup via `sqlx::migrate!`, no manual step needed.
-- **Static files are a fallback** (`ServeDir::new("static")` as `.fallback_service()`) — any unmatched route falls through to the SPA, enabling client-side routing.
-- **`now_playing` HTTP endpoint is DB-only** (no real-time position_ms). Real-time playback data comes via WebSocket only.
-- **`stream_base` config** (`[audio_engine].stream_base`) supports three modes:
-  - `"auto"` (default) — detects reverse proxy via `X-Forwarded-*` / `Host` headers and builds full URL dynamically.
-  - Relative path (e.g. `/stream`) — resolved by frontend against `window.location.origin`.
-  - Absolute URL (e.g. `http://...`) — used directly.
-- **Missing cover art returns a placeholder SVG** — the `/api/songs/{id}/cover` endpoint returns a default music-note icon when no cover exists, rather than a 404 error.
-- **Backend pre-parses lyrics** — LRC files are parsed into `Vec<LyricsLineDto>` in the WebSocket poller and sent as `lyrics_lines`; the frontend no longer needs `parseLyrics()`.
-- **`/api/admin/download/stream` SSE endpoint** — real-time download logs via `text/event-stream`. The frontend uses `EventSource` instead of polling. Events are JSON `{log: string, done: bool}`.
-- **Download auto-reloads play queue** — after batch download completes, the backend sends `AudioCommandType::ReloadQueue` to the engine so new tracks appear in rotation immediately (without DB rescan).
-- **`[ncm]` config section** — `device_id` (persisted 32-char hex, auto-generated if empty) and `download_concurrency` (default 1, max 8).
-
-## No tests / no CI
-
-- Unit tests exist only in `radio-engine/src/ring_buffer.rs` (9 tests). No backend tests.
-- No lint/typecheck config, no CI workflows.
-- Manual verification: build, run in `dist/`, hit API endpoints with curl or browser.
-- Server logs to `dist/server.log`.
+- For traffic or leak tests against localhost, bypass shell proxy variables with `curl --noproxy '*' ...`; local proxies can make closed clients look like server-side fd leaks.
+- If frontend code changed, run `npm run build` before `./build_release.sh`; the root script does not install npm deps or invoke Vite.
