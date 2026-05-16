@@ -29,10 +29,10 @@ pub fn read_admin_cookie_from_secrets(path: &std::path::Path) -> Result<Option<S
     if !path.exists() {
         return Ok(None);
     }
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("无法读取 {}", path.display()))?;
-    let json: serde_json::Value = serde_json::from_str(&content)
-        .with_context(|| format!("无法解析 {}", path.display()))?;
+    let content =
+        std::fs::read_to_string(path).with_context(|| format!("无法读取 {}", path.display()))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&content).with_context(|| format!("无法解析 {}", path.display()))?;
     Ok(json
         .get("ncm_cookie")
         .and_then(|v| v.as_str())

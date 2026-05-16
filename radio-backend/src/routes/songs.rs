@@ -1,10 +1,9 @@
 /// 歌曲库路由：搜索、获取歌曲详情、上传、下载。
-
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
-use crate::services::metadata::{find_cover, get_duration, sanitize_filename, parse_artist_title};
+use crate::services::metadata::{find_cover, get_duration, parse_artist_title, sanitize_filename};
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -22,9 +21,11 @@ pub fn song_routes() -> Router<Arc<AppState>> {
         .route("/:id", get(get_song))
         .route("/", get(search_songs))
         // 上传（带 100MB body limit，需要登录但不限管理员）
-        .nest("/upload", Router::new()
-            .route("/", axum::routing::post(upload_song))
-            .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+        .nest(
+            "/upload",
+            Router::new()
+                .route("/", axum::routing::post(upload_song))
+                .layer(DefaultBodyLimit::max(100 * 1024 * 1024)),
         )
 }
 
@@ -43,7 +44,7 @@ pub async fn search_songs(
             .await?;
 
         let songs = sqlx::query_as::<_, crate::models::Song>(
-            "SELECT * FROM songs ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            "SELECT * FROM songs ORDER BY created_at DESC LIMIT ? OFFSET ?",
         )
         .bind(limit)
         .bind(offset)
@@ -54,7 +55,7 @@ pub async fn search_songs(
     } else {
         let pattern = format!("%{}%", search);
         let total: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM songs WHERE title LIKE ? OR artist LIKE ? OR album LIKE ?"
+            "SELECT COUNT(*) FROM songs WHERE title LIKE ? OR artist LIKE ? OR album LIKE ?",
         )
         .bind(&pattern)
         .bind(&pattern)
@@ -127,14 +128,13 @@ pub async fn get_song_cover(
             .unwrap());
     }
 
-    let cover_full = std::path::Path::new(&state.config.audio_engine.media_path)
-        .join(&song.cover_path);
+    let cover_full =
+        std::path::Path::new(&state.config.audio_engine.media_path).join(&song.cover_path);
 
-    let data = std::fs::read(&cover_full)
-        .map_err(|_| {
-            // 文件丢失时也回退到缺省封面
-            DEFAULT_COVER_SVG.to_string()
-        });
+    let data = std::fs::read(&cover_full).map_err(|_| {
+        // 文件丢失时也回退到缺省封面
+        DEFAULT_COVER_SVG.to_string()
+    });
 
     match data {
         Ok(bytes) => {
@@ -176,13 +176,13 @@ pub async fn upload_song(
             continue;
         }
 
-        let filename = field.file_name()
-            .unwrap_or("unknown.mp3")
-            .to_string();
+        let filename = field.file_name().unwrap_or("unknown.mp3").to_string();
 
         let safe_name = sanitize_filename(&filename);
 
-        let data = field.bytes().await
+        let data = field
+            .bytes()
+            .await
             .map_err(|e| AppError::BadRequest(format!("读取上传数据失败: {}", e)))?;
 
         if data.is_empty() {
@@ -200,7 +200,8 @@ pub async fn upload_song(
 
         uploaded_filename = safe_name.clone();
 
-        let stem = dest_path.file_stem()
+        let stem = dest_path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or(safe_name.clone());
         let (artist, title) = parse_artist_title(&stem);
@@ -210,7 +211,8 @@ pub async fn upload_song(
         let cover_path = find_cover(&dest_path, &media_path);
         let lrc_path = dest_path.with_extension("lrc");
         let lyrics_path = if lrc_path.exists() {
-            lrc_path.strip_prefix(&media_path)
+            lrc_path
+                .strip_prefix(&media_path)
                 .unwrap_or(&lrc_path)
                 .to_string_lossy()
                 .to_string()
@@ -237,13 +239,18 @@ pub async fn upload_song(
     }
 
     // 让引擎重扫媒体目录，否则空文件夹起服务时上传后引擎 play_queue 仍然是空的。
-    state.player_handle.send_command(radio_engine::types::AudioCommand {
-        cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
-        song_id: None,
-        file_path: None,
-    });
+    state
+        .player_handle
+        .send_command(radio_engine::types::AudioCommand {
+            cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
+            song_id: None,
+            file_path: None,
+        });
 
-    Ok(Json(ApiResponse::ok(format!("上传成功: {}", uploaded_filename))))
+    Ok(Json(ApiResponse::ok(format!(
+        "上传成功: {}",
+        uploaded_filename
+    ))))
 }
 
 /// GET /api/songs/{id}/file — 流式播放歌曲文件（支持 Range 请求，公开）
@@ -262,8 +269,8 @@ pub async fn stream_song_file(
         return Err(AppError::NotFound("Song file not available".into()));
     }
 
-    let file_full = std::path::Path::new(&state.config.audio_engine.media_path)
-        .join(&song.file_path);
+    let file_full =
+        std::path::Path::new(&state.config.audio_engine.media_path).join(&song.file_path);
 
     if !file_full.exists() {
         return Err(AppError::NotFound("Song file not found on disk".into()));
@@ -277,13 +284,20 @@ pub async fn stream_song_file(
     if let Some(range_val) = range_header {
         let range_str = range_val.to_str().unwrap_or("");
         if let Some(range) = parse_bytes_range(range_str, total_len) {
-            let body = axum::body::Body::from(data[range.start as usize..=range.end as usize].to_vec());
+            let body =
+                axum::body::Body::from(data[range.start as usize..=range.end as usize].to_vec());
             return Ok(Response::builder()
                 .status(StatusCode::PARTIAL_CONTENT)
                 .header(header::CONTENT_TYPE, "audio/mpeg")
                 .header(header::ACCEPT_RANGES, "bytes")
-                .header(header::CONTENT_RANGE, format!("bytes {}-{}/{}", range.start, range.end, total_len))
-                .header(header::CONTENT_LENGTH, (range.end - range.start + 1).to_string())
+                .header(
+                    header::CONTENT_RANGE,
+                    format!("bytes {}-{}/{}", range.start, range.end, total_len),
+                )
+                .header(
+                    header::CONTENT_LENGTH,
+                    (range.end - range.start + 1).to_string(),
+                )
                 .body(body)
                 .unwrap());
         }
@@ -322,7 +336,10 @@ fn parse_bytes_range(range: &str, total: u64) -> Option<ByteRange> {
     if start > end || start >= total {
         return None;
     }
-    Some(ByteRange { start, end: end.min(total.saturating_sub(1)) })
+    Some(ByteRange {
+        start,
+        end: end.min(total.saturating_sub(1)),
+    })
 }
 
 /// GET /api/songs/{id}/download — 下载歌曲文件（需要登录）
@@ -343,8 +360,8 @@ pub async fn download_song(
         return Err(AppError::NotFound("Song file not available".into()));
     }
 
-    let file_full = std::path::Path::new(&state.config.audio_engine.media_path)
-        .join(&song.file_path);
+    let file_full =
+        std::path::Path::new(&state.config.audio_engine.media_path).join(&song.file_path);
 
     if !file_full.exists() {
         return Err(AppError::NotFound("Song file not found on disk".into()));
@@ -353,14 +370,20 @@ pub async fn download_song(
     let data = std::fs::read(&file_full)
         .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to read file")))?;
 
-    let filename = song.file_path.rsplit('/').next()
+    let filename = song
+        .file_path
+        .rsplit('/')
+        .next()
         .unwrap_or(&song.file_path)
         .to_string();
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "audio/mpeg")
-        .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", filename))
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{}\"", filename),
+        )
         .header(header::CONTENT_LENGTH, data.len().to_string())
         .body(axum::body::Body::from(data))
         .unwrap())

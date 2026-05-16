@@ -35,11 +35,17 @@ fn http_client() -> &'static reqwest::Client {
 
 fn parse_surl_from_url(url: &str) -> Option<String> {
     // https://pan.baidu.com/s/1xxxxx
-    if let Some(caps) = Regex::new(r"pan\.baidu\.com/s/1([a-zA-Z0-9_-]+)").unwrap().captures(url) {
+    if let Some(caps) = Regex::new(r"pan\.baidu\.com/s/1([a-zA-Z0-9_-]+)")
+        .unwrap()
+        .captures(url)
+    {
         return Some(caps.get(1)?.as_str().to_string());
     }
     // https://pan.baidu.com/share/init?surl=xxxxx
-    if let Some(caps) = Regex::new(r"[?&]surl=([a-zA-Z0-9_-]+)").unwrap().captures(url) {
+    if let Some(caps) = Regex::new(r"[?&]surl=([a-zA-Z0-9_-]+)")
+        .unwrap()
+        .captures(url)
+    {
         return Some(caps.get(1)?.as_str().to_string());
     }
     None
@@ -47,7 +53,10 @@ fn parse_surl_from_url(url: &str) -> Option<String> {
 
 fn parse_pwd_from_url(url: &str) -> Option<String> {
     // &pwd=xxxx or &password=xxxx or #/path?pwd=xxxx
-    if let Some(caps) = Regex::new(r"[?&#&]pwd=([a-zA-Z0-9]{4})").unwrap().captures(url) {
+    if let Some(caps) = Regex::new(r"[?&#&]pwd=([a-zA-Z0-9]{4})")
+        .unwrap()
+        .captures(url)
+    {
         return Some(caps.get(1)?.as_str().to_string());
     }
     None
@@ -56,7 +65,11 @@ fn parse_pwd_from_url(url: &str) -> Option<String> {
 async fn fetch_share_page(surl: &str, pwd: Option<&str>) -> Result<String> {
     let url = format!("https://pan.baidu.com/s/1{}", surl);
     let client = http_client();
-    let resp = client.get(&url).header("User-Agent", "Mozilla/5.0").send().await?;
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "Mozilla/5.0")
+        .send()
+        .await?;
     let mut html = resp.text().await?;
 
     // Check if password required
@@ -70,12 +83,14 @@ async fn fetch_share_page(surl: &str, pwd: Option<&str>) -> Result<String> {
             params.insert("vcode".to_string(), "".to_string());
             params.insert("vcode_str".to_string(), "".to_string());
 
-            let verify_resp = client.post(&url)
+            let verify_resp = client
+                .post(&url)
                 .header("User-Agent", "Mozilla/5.0")
                 .header("Referer", format!("https://pan.baidu.com/s/1{}", surl))
                 .header("X-Requested-With", "XMLHttpRequest")
                 .form(&params)
-                .send().await?;
+                .send()
+                .await?;
 
             let verify_json: serde_json::Value = verify_resp.json().await?;
             if verify_json.get("errno").and_then(|v| v.as_i64()) != Some(0) {
@@ -83,9 +98,11 @@ async fn fetch_share_page(surl: &str, pwd: Option<&str>) -> Result<String> {
             }
 
             // Fetch again with cookies
-            let resp = client.get(format!("https://pan.baidu.com/s/1{}", surl))
+            let resp = client
+                .get(format!("https://pan.baidu.com/s/1{}", surl))
                 .header("User-Agent", "Mozilla/5.0")
-                .send().await?;
+                .send()
+                .await?;
             html = resp.text().await?;
         } else {
             return Err(anyhow!("该分享需要提取码"));
@@ -97,7 +114,9 @@ async fn fetch_share_page(surl: &str, pwd: Option<&str>) -> Result<String> {
 
 fn extract_bdstoken(html: &str) -> Option<String> {
     let re = Regex::new(r#"bdstoken["']?\s*[:=]\s*["']?([a-f0-9]{32})"#).ok()?;
-    re.captures(html).and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+    re.captures(html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
 }
 
 fn extract_share_data(html: &str) -> Result<(String, String, Option<String>, Option<String>)> {
@@ -106,24 +125,29 @@ fn extract_share_data(html: &str) -> Result<(String, String, Option<String>, Opt
     let re_uk = Regex::new(r#"uk["']?\s*[:=]\s*['"]?([0-9]+)"#).unwrap();
     let re_seckey = Regex::new(r#"seckey["']?\s*[:=]\s*['"]([^'"]+)['"]"#).unwrap();
 
-    let shareid = re_shareid.captures(html)
-        .and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+    let shareid = re_shareid
+        .captures(html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
         .ok_or_else(|| anyhow!("无法解析 shareid"))?;
 
-    let uk = re_uk.captures(html)
-        .and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+    let uk = re_uk
+        .captures(html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
         .ok_or_else(|| anyhow!("无法解析 uk"))?;
 
     let bdstoken = extract_bdstoken(html);
-    let seckey = re_seckey.captures(html)
-        .and_then(|c| c.get(1)).map(|m| m.as_str().to_string());
+    let seckey = re_seckey
+        .captures(html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string());
 
     Ok((shareid, uk, bdstoken, seckey))
 }
 
 pub async fn get_share_info(url: &str) -> Result<NetdiskShareInfo> {
-    let surl = parse_surl_from_url(url)
-        .ok_or_else(|| anyhow!("无法解析百度网盘分享链接"))?;
+    let surl = parse_surl_from_url(url).ok_or_else(|| anyhow!("无法解析百度网盘分享链接"))?;
     let pwd = parse_pwd_from_url(url);
 
     let html = fetch_share_page(&surl, pwd.as_deref()).await?;
@@ -146,8 +170,12 @@ pub async fn list_share_files(info: &NetdiskShareInfo) -> Result<Vec<NetdiskFile
         info.shareid, info.uk
     );
 
-    let mut req = client.get(&url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    let mut req = client
+        .get(&url)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        )
         .header("Referer", format!("https://pan.baidu.com/s/1{}", info.surl));
 
     // Add cookies if we have them
@@ -161,12 +189,23 @@ pub async fn list_share_files(info: &NetdiskShareInfo) -> Result<Vec<NetdiskFile
         return Err(anyhow!("获取文件列表失败: errno={}", errno));
     }
 
-    let list = json.get("list").and_then(|v| v.as_array()).ok_or_else(|| anyhow!("文件列表为空"))?;
+    let list = json
+        .get("list")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| anyhow!("文件列表为空"))?;
 
     let mut files = Vec::new();
     for item in list {
-        let path = item.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let filename = item.get("server_filename").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let path = item
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let filename = item
+            .get("server_filename")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let size = item.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
         let fs_id = item.get("fs_id").and_then(|v| v.as_i64()).unwrap_or(0);
         let is_dir = item.get("isdir").and_then(|v| v.as_i64()).unwrap_or(0) == 1;
@@ -188,19 +227,25 @@ pub async fn get_download_link(info: &NetdiskShareInfo, fs_id: i64) -> Result<St
 
     // First get sign and timestamp from share page
     let url = format!("https://pan.baidu.com/s/1{}", info.surl);
-    let resp = client.get(&url)
+    let resp = client
+        .get(&url)
         .header("User-Agent", "Mozilla/5.0")
-        .send().await?;
+        .send()
+        .await?;
     let html = resp.text().await?;
 
     let sign_re = Regex::new(r#"sign["']?\s*[:=]\s*['"]([a-f0-9]+)['"]"#).unwrap();
     let timestamp_re = Regex::new(r#"timestamp["']?\s*[:=]\s*([0-9]+)"#).unwrap();
 
-    let sign = sign_re.captures(&html)
-        .and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+    let sign = sign_re
+        .captures(&html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
         .unwrap_or_default();
-    let timestamp = timestamp_re.captures(&html)
-        .and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+    let timestamp = timestamp_re
+        .captures(&html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
         .unwrap_or_default();
 
     let download_url = "https://pan.baidu.com/api/sharedownload";
@@ -211,19 +256,27 @@ pub async fn get_download_link(info: &NetdiskShareInfo, fs_id: i64) -> Result<St
     params.insert("clienttype".to_string(), "0".to_string());
     params.insert("web".to_string(), "1".to_string());
     params.insert("app_id".to_string(), "250528".to_string());
-    params.insert("seckey".to_string(), info.seckey.clone().unwrap_or_default());
+    params.insert(
+        "seckey".to_string(),
+        info.seckey.clone().unwrap_or_default(),
+    );
     params.insert("encrypt".to_string(), "0".to_string());
     params.insert("product".to_string(), "share".to_string());
     params.insert("uk".to_string(), info.uk.clone());
     params.insert("primaryid".to_string(), info.shareid.clone());
     params.insert("fid_list".to_string(), format!("[{}]", fs_id));
 
-    let resp = client.post(download_url)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    let resp = client
+        .post(download_url)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        )
         .header("Referer", format!("https://pan.baidu.com/s/1{}", info.surl))
         .header("X-Requested-With", "XMLHttpRequest")
         .form(&params)
-        .send().await?;
+        .send()
+        .await?;
 
     let json: serde_json::Value = resp.json().await?;
     let errno = json.get("errno").and_then(|v| v.as_i64()).unwrap_or(-1);
@@ -231,7 +284,9 @@ pub async fn get_download_link(info: &NetdiskShareInfo, fs_id: i64) -> Result<St
         return Err(anyhow!("获取下载链接失败: errno={}", errno));
     }
 
-    let list = json.get("list").and_then(|v| v.as_array())
+    let list = json
+        .get("list")
+        .and_then(|v| v.as_array())
         .ok_or_else(|| anyhow!("下载链接列表为空"))?;
 
     for item in list {
@@ -245,10 +300,12 @@ pub async fn get_download_link(info: &NetdiskShareInfo, fs_id: i64) -> Result<St
 
 pub async fn download_file(url: &str, output_path: &std::path::Path) -> Result<u64> {
     let client = http_client();
-    let resp = client.get(url)
+    let resp = client
+        .get(url)
         .header("User-Agent", "Mozilla/5.0")
         .header("Accept", "*/*")
-        .send().await?;
+        .send()
+        .await?;
 
     if !resp.status().is_success() {
         return Err(anyhow!("下载失败: HTTP {}", resp.status()));

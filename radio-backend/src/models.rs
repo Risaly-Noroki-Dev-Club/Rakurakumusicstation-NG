@@ -1,6 +1,5 @@
 /// 反映 SQL 模式的数据库模型。
 /// SQLx 派生 FromRow 用于查询结果映射。
-
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -119,7 +118,7 @@ pub struct QueueItem {
     pub id: i64,
     pub song_id: i64,
     pub device_user_id: i64,
-    pub status: String,       // pending | playing | played | skipped
+    pub status: String, // pending | playing | played | skipped
     pub position: i32,
     pub added_at: NaiveDateTime,
     pub played_at: Option<NaiveDateTime>,
@@ -241,6 +240,7 @@ pub struct NowPlaying {
     pub started_at: Option<String>,
     pub stream_url: String,
     pub file_url: Option<String>,
+    pub cover_url: Option<String>,
 }
 
 /// 歌词行 DTO（用于 WebSocket 序列化）。
@@ -269,6 +269,7 @@ pub enum WsMessage {
         status: PlaybackStatus,
         stream_url: String,
         file_url: Option<String>,
+        cover_url: Option<String>,
         timestamp_ms: i64,
     },
     #[serde(rename = "queue_update")]
@@ -281,7 +282,7 @@ pub enum WsMessage {
     #[serde(rename = "notice")]
     Notice {
         message: String,
-        level: String,  // info | warning | error
+        level: String, // info | warning | error
     },
     #[serde(rename = "ping")]
     Ping { timestamp: i64 },
@@ -314,11 +315,19 @@ pub struct ApiResponse<T: Serialize> {
 
 impl<T: Serialize> ApiResponse<T> {
     pub fn ok(data: T) -> Self {
-        Self { success: true, data: Some(data), error: None }
+        Self {
+            success: true,
+            data: Some(data),
+            error: None,
+        }
     }
 
     pub fn err(msg: impl Into<String>) -> Self {
-        Self { success: false, data: None, error: Some(msg.into()) }
+        Self {
+            success: false,
+            data: None,
+            error: Some(msg.into()),
+        }
     }
 }
 

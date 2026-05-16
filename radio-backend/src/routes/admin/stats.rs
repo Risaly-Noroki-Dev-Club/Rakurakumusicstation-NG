@@ -1,14 +1,9 @@
 /// 统计与日志路由。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::ApiResponse;
 use crate::routes::admin::get_admin;
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    Json,
-};
+use axum::{extract::State, http::HeaderMap, Json};
 use std::sync::Arc;
 
 /// GET /api/admin/stats — 系统统计
@@ -26,11 +21,10 @@ pub async fn stats(
         .fetch_one(&state.db)
         .await?;
 
-    let queue_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM queue_items WHERE status IN ('pending', 'playing')"
-    )
-    .fetch_one(&state.db)
-    .await?;
+    let queue_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM queue_items WHERE status IN ('pending', 'playing')")
+            .fetch_one(&state.db)
+            .await?;
 
     let playlist_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM playlists")
         .fetch_one(&state.db)
@@ -52,7 +46,7 @@ pub async fn get_logs(
     let _admin = get_admin(&state, &headers).await?;
 
     let logs = sqlx::query_as::<_, crate::models::AdminLog>(
-        "SELECT * FROM admin_log ORDER BY created_at DESC LIMIT 100"
+        "SELECT * FROM admin_log ORDER BY created_at DESC LIMIT 100",
     )
     .fetch_all(&state.db)
     .await?;

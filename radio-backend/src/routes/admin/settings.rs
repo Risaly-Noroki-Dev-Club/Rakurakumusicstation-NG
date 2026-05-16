@@ -1,5 +1,4 @@
 /// 系统设置路由。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, SaveSettingsRequest, SettingsResponse};
@@ -25,7 +24,13 @@ fn resolved_icon_url(station: &crate::config::StationConfig, base_path: &str) ->
 }
 
 fn icon_content_type(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|s| s.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+    match path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
         "svg" => "image/svg+xml",
         "webp" => "image/webp",
         "jpg" | "jpeg" => "image/jpeg",
@@ -79,45 +84,69 @@ pub async fn save_settings(
 ) -> Result<Json<ApiResponse<String>>, AppError> {
     let admin = get_admin(&state, &headers).await?;
 
-    let config_path = std::env::var("RADIO_CONFIG")
-        .unwrap_or_else(|_| "config.toml".to_string());
+    let config_path = std::env::var("RADIO_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
 
     let mut toml_value: toml::Value = {
-        let content = std::fs::read_to_string(&config_path)
-            .unwrap_or_default();
+        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
         toml::from_str(&content).unwrap_or(toml::Value::Table(toml::value::Table::new()))
     };
 
     if let toml::Value::Table(ref mut root) = toml_value {
-        let station = root.entry("station")
+        let station = root
+            .entry("station")
             .or_insert(toml::Value::Table(toml::value::Table::new()));
         if let toml::Value::Table(ref mut st) = station {
-            if let Some(ref v) = body.station_name { st.insert("name".into(), toml::Value::String(v.clone())); }
-            if let Some(ref v) = body.short_name { st.insert("short_name".into(), toml::Value::String(v.clone())); }
-            if let Some(ref v) = body.subtitle { st.insert("subtitle".into(), toml::Value::String(v.clone())); }
-            if let Some(ref v) = body.description { st.insert("description".into(), toml::Value::String(v.clone())); }
-            if let Some(ref v) = body.icon_url { st.insert("icon_url".into(), toml::Value::String(v.clone())); }
+            if let Some(ref v) = body.station_name {
+                st.insert("name".into(), toml::Value::String(v.clone()));
+            }
+            if let Some(ref v) = body.short_name {
+                st.insert("short_name".into(), toml::Value::String(v.clone()));
+            }
+            if let Some(ref v) = body.subtitle {
+                st.insert("subtitle".into(), toml::Value::String(v.clone()));
+            }
+            if let Some(ref v) = body.description {
+                st.insert("description".into(), toml::Value::String(v.clone()));
+            }
+            if let Some(ref v) = body.icon_url {
+                st.insert("icon_url".into(), toml::Value::String(v.clone()));
+            }
         }
     }
 
-    std::fs::write(&config_path, toml::to_string_pretty(&toml_value)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?)
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
+    std::fs::write(
+        &config_path,
+        toml::to_string_pretty(&toml_value)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?,
+    )
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
 
     {
         let mut station = state.station.write().unwrap_or_else(|e| e.into_inner());
-        if let Some(ref v) = body.station_name { station.name = v.clone(); }
-        if let Some(ref v) = body.short_name { station.short_name = v.clone(); }
-        if let Some(ref v) = body.subtitle { station.subtitle = v.clone(); }
-        if let Some(ref v) = body.description { station.description = v.clone(); }
-        if let Some(ref v) = body.icon_url { station.icon_url = v.clone(); }
+        if let Some(ref v) = body.station_name {
+            station.name = v.clone();
+        }
+        if let Some(ref v) = body.short_name {
+            station.short_name = v.clone();
+        }
+        if let Some(ref v) = body.subtitle {
+            station.subtitle = v.clone();
+        }
+        if let Some(ref v) = body.description {
+            station.description = v.clone();
+        }
+        if let Some(ref v) = body.icon_url {
+            station.icon_url = v.clone();
+        }
     }
 
-    sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'update_settings', ?)")
-        .bind(admin.id)
-        .bind("Updated system settings")
-        .execute(&state.db)
-        .await?;
+    sqlx::query(
+        "INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'update_settings', ?)",
+    )
+    .bind(admin.id)
+    .bind("Updated system settings")
+    .execute(&state.db)
+    .await?;
 
     Ok(Json(ApiResponse::ok("设置已保存，立即生效".into())))
 }
@@ -139,7 +168,9 @@ pub async fn upload_icon(
         let content_type = field.content_type().map(|s| s.to_string());
         let ext = allowed_icon_extension(&filename, content_type.as_deref())
             .ok_or_else(|| AppError::BadRequest("仅支持 PNG、SVG、WebP、JPEG 图标".into()))?;
-        let data = field.bytes().await
+        let data = field
+            .bytes()
+            .await
             .map_err(|e| AppError::BadRequest(format!("读取上传图标失败: {}", e)))?;
         if data.is_empty() {
             return Err(AppError::BadRequest("图标文件为空".into()));
@@ -155,33 +186,39 @@ pub async fn upload_icon(
         std::fs::write(&rel_path, &data)
             .map_err(|e| AppError::Internal(anyhow::anyhow!("Write icon error: {}", e)))?;
 
-        let config_path = std::env::var("RADIO_CONFIG")
-            .unwrap_or_else(|_| "config.toml".to_string());
+        let config_path =
+            std::env::var("RADIO_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
         let mut toml_value: toml::Value = {
             let content = std::fs::read_to_string(&config_path).unwrap_or_default();
             toml::from_str(&content).unwrap_or(toml::Value::Table(toml::value::Table::new()))
         };
         if let toml::Value::Table(ref mut root) = toml_value {
-            let station = root.entry("station")
+            let station = root
+                .entry("station")
                 .or_insert(toml::Value::Table(toml::value::Table::new()));
             if let toml::Value::Table(ref mut st) = station {
                 st.insert("icon_path".into(), toml::Value::String(rel_path.clone()));
             }
         }
-        std::fs::write(&config_path, toml::to_string_pretty(&toml_value)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
+        std::fs::write(
+            &config_path,
+            toml::to_string_pretty(&toml_value)
+                .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?,
+        )
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
 
         {
             let mut station = state.station.write().unwrap_or_else(|e| e.into_inner());
             station.icon_path = rel_path.clone();
         }
 
-        sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'upload_icon', ?)")
-            .bind(admin.id)
-            .bind(format!("Uploaded site icon {}", rel_path))
-            .execute(&state.db)
-            .await?;
+        sqlx::query(
+            "INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'upload_icon', ?)",
+        )
+        .bind(admin.id)
+        .bind(format!("Uploaded site icon {}", rel_path))
+        .execute(&state.db)
+        .await?;
 
         return Ok(Json(ApiResponse::ok("图标已上传".into())));
     }
@@ -189,21 +226,21 @@ pub async fn upload_icon(
     Err(AppError::BadRequest("未找到上传文件字段".into()))
 }
 
-pub async fn site_icon(
-    State(state): State<Arc<AppState>>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn site_icon(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
     let station = state.station.read().unwrap_or_else(|e| e.into_inner());
     if station.icon_path.trim().is_empty() {
         return Err(AppError::NotFound("未配置上传图标".into()));
     }
     let path = std::path::PathBuf::from(&station.icon_path);
     drop(station);
-    let data = std::fs::read(&path)
-        .map_err(|_| AppError::NotFound("图标文件不存在".into()))?;
+    let data = std::fs::read(&path).map_err(|_| AppError::NotFound("图标文件不存在".into()))?;
     let content_type = icon_content_type(&path);
     Ok((
         StatusCode::OK,
-        [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "no-cache")],
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
         data,
     ))
 }

@@ -1,7 +1,6 @@
 /// WebSocket 处理：升级 HTTP 连接并向所有已连接客户端广播消息。
 ///
 /// 从内嵌音频引擎直接获取播放状态（不再通过 HTTP 轮询 C++ 引擎）。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::WsMessage;
@@ -115,6 +114,7 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
             db_song_id: i64,
             title: String,
             artist: String,
+            has_cover: bool,
             lyrics_lines: Option<Vec<crate::models::LyricsLineDto>>,
         }
 
@@ -138,8 +138,8 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
                 lyrics_broadcast_song_id = None;
 
                 if !ps.file_path.is_empty() {
-                    let song_row = sqlx::query_as::<_, (i64, String, String, Option<String>)>(
-                        "SELECT id, title, artist, lyrics_path FROM songs WHERE file_path = ?"
+                    let song_row = sqlx::query_as::<_, (i64, String, String, String, String)>(
+                        "SELECT id, title, artist, cover_path, lyrics_path FROM songs WHERE file_path = ?"
                     )
                     .bind(&ps.file_path)
                     .fetch_optional(&state_clone.db)
@@ -147,32 +147,37 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
                     .ok()
                     .flatten();
 
-                    if let Some((db_song_id, title, artist, lyrics_path)) = song_row {
-                        if let Err(e) = queue_manager::mark_playing(&state_clone.db, db_song_id).await {
+                    if let Some((db_song_id, title, artist, cover_path, lyrics_path)) = song_row {
+                        if let Err(e) =
+                            queue_manager::mark_playing(&state_clone.db, db_song_id).await
+                        {
                             tracing::error!("mark_playing failed for song {}: {}", db_song_id, e);
                         }
 
-                        let lyrics_lines = lyrics_path.and_then(|path| {
-                            if path.is_empty() {
-                                return None;
-                            }
-                            let lrc_full = std::path::Path::new(
-                                &state_clone.config.audio_engine.media_path,
-                            )
-                            .join(&path);
+                        let lyrics_lines = if lyrics_path.is_empty() {
+                            None
+                        } else {
+                            let lrc_full =
+                                std::path::Path::new(&state_clone.config.audio_engine.media_path)
+                                    .join(&lyrics_path);
                             std::fs::read_to_string(&lrc_full).ok().map(|content| {
                                 let parsed = crate::lyrics::Lyrics::parse(&content);
-                                parsed.lines.into_iter().map(|l| crate::models::LyricsLineDto {
-                                    time_ms: l.time_ms,
-                                    text: l.text,
-                                }).collect::<Vec<_>>()
+                                parsed
+                                    .lines
+                                    .into_iter()
+                                    .map(|l| crate::models::LyricsLineDto {
+                                        time_ms: l.time_ms,
+                                        text: l.text,
+                                    })
+                                    .collect::<Vec<_>>()
                             })
-                        });
+                        };
 
                         cached = Some(CachedSong {
                             db_song_id,
                             title,
                             artist,
+                            has_cover: !cover_path.is_empty(),
                             lyrics_lines,
                         });
                     }
@@ -195,7 +200,10 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
                 let lyrics_lines_ref = cached.as_ref().and_then(|c| c.lyrics_lines.as_ref());
 
                 let lyrics_line = lyrics_lines_ref.and_then(|lines| {
-                    lines.iter().enumerate().rev()
+                    lines
+                        .iter()
+                        .enumerate()
+                        .rev()
                         .find(|(_, l)| l.time_ms <= ps.position_ms)
                         .map(|(idx, _)| idx)
                 });
@@ -224,19 +232,33 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
                         &state_clone.config.server.base_path,
                     ),
                     file_url: if song_id > 0 {
-                        Some(state_clone.config.audio_engine.resolve_file_url(
-                            song_id,
-                            &state_clone.config.server.base_path,
-                        ))
+                        Some(
+                            state_clone
+                                .config
+                                .audio_engine
+                                .resolve_file_url(song_id, &state_clone.config.server.base_path),
+                        )
+                    } else {
+                        None
+                    },
+                    cover_url: if song_id > 0
+                        && cached.as_ref().map(|c| c.has_cover).unwrap_or(false)
+                    {
+                        Some(
+                            state_clone
+                                .config
+                                .audio_engine
+                                .resolve_cover_url(song_id, &state_clone.config.server.base_path),
+                        )
                     } else {
                         None
                     },
                     timestamp_ms: chrono::Utc::now().timestamp_millis(),
                 };
 
-                let _ = state_clone.ws_tx.send(
-                    serde_json::to_string(&enriched).unwrap_or_default()
-                );
+                let _ = state_clone
+                    .ws_tx
+                    .send(serde_json::to_string(&enriched).unwrap_or_default());
             }
 
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;

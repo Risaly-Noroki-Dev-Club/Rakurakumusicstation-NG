@@ -1,8 +1,7 @@
+use aes::cipher::generic_array::GenericArray;
 /// AES-128-ECB 加密/解密（网易云 Eapi 使用）
-
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::Aes128;
-use aes::cipher::generic_array::GenericArray;
 
 const EAPI_KEY: &str = "e82ckenh8dichen8";
 

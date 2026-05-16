@@ -1,5 +1,4 @@
 /// 上传路由（管理员）。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::ApiResponse;
@@ -32,13 +31,13 @@ pub async fn upload_song(
             continue;
         }
 
-        let filename = field.file_name()
-            .unwrap_or("unknown.mp3")
-            .to_string();
+        let filename = field.file_name().unwrap_or("unknown.mp3").to_string();
 
         let safe_name = sanitize_filename(&filename);
 
-        let data = field.bytes().await
+        let data = field
+            .bytes()
+            .await
             .map_err(|e| AppError::BadRequest(format!("读取上传数据失败: {}", e)))?;
 
         if data.is_empty() {
@@ -56,7 +55,8 @@ pub async fn upload_song(
 
         uploaded_filename = safe_name.clone();
 
-        let stem = dest_path.file_stem()
+        let stem = dest_path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or(safe_name.clone());
         let (artist, title) = parse_artist_title(&stem);
@@ -66,7 +66,8 @@ pub async fn upload_song(
         let cover_path = find_cover(&dest_path, &media_path);
         let lrc_path = dest_path.with_extension("lrc");
         let lyrics_path = if lrc_path.exists() {
-            lrc_path.strip_prefix(&media_path)
+            lrc_path
+                .strip_prefix(&media_path)
                 .unwrap_or(&lrc_path)
                 .to_string_lossy()
                 .to_string()
@@ -99,11 +100,16 @@ pub async fn upload_song(
         .await?;
 
     // 让引擎重扫媒体目录，否则空文件夹起服务时上传后引擎 play_queue 仍然是空的。
-    state.player_handle.send_command(radio_engine::types::AudioCommand {
-        cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
-        song_id: None,
-        file_path: None,
-    });
+    state
+        .player_handle
+        .send_command(radio_engine::types::AudioCommand {
+            cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
+            song_id: None,
+            file_path: None,
+        });
 
-    Ok(Json(ApiResponse::ok(format!("上传成功: {}", uploaded_filename))))
+    Ok(Json(ApiResponse::ok(format!(
+        "上传成功: {}",
+        uploaded_filename
+    ))))
 }

@@ -1,5 +1,4 @@
 /// 收藏路由：收藏/取消收藏歌曲。
-
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
@@ -31,7 +30,7 @@ async fn list_favorites(
         JOIN favorites f ON f.song_id = s.id
         WHERE f.device_user_id = ?
         ORDER BY f.created_at DESC
-        "#
+        "#,
     )
     .bind(device.id)
     .fetch_all(&state.db)
@@ -55,13 +54,12 @@ async fn add_favorite(
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
-    let result = sqlx::query(
-        "INSERT OR IGNORE INTO favorites (device_user_id, song_id) VALUES (?, ?)"
-    )
-    .bind(device.id)
-    .bind(song_id)
-    .execute(&state.db)
-    .await?;
+    let result =
+        sqlx::query("INSERT OR IGNORE INTO favorites (device_user_id, song_id) VALUES (?, ?)")
+            .bind(device.id)
+            .bind(song_id)
+            .execute(&state.db)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Ok(Json(ApiResponse::ok("Already favorited".into())));

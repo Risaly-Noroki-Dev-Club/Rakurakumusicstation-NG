@@ -1,9 +1,8 @@
 /// 数据库初始化、连接池和迁移。
-
 use crate::config::DatabaseConfig;
 use crate::config::StationConfig;
-use radio_engine::ring_buffer::RingBuffer;
 use radio_engine::player::PlayerHandle;
+use radio_engine::ring_buffer::RingBuffer;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
@@ -66,9 +65,7 @@ async fn init_database(config: &DatabaseConfig) -> anyhow::Result<SqlitePool> {
         .connect_with(options)
         .await?;
 
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
 
     tracing::info!("Database initialized successfully");
 

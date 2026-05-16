@@ -1,5 +1,4 @@
 /// 队列管理器：共享的电台队列（FIFO），支持管理员覆盖操作。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{QueueItem, QueueItemDisplay, SongSummary};
@@ -7,7 +6,11 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 
 /// 检查设备用户是否处于点歌冷却中。
-pub async fn check_cooldown(db: &SqlitePool, device_user_id: i64, cooldown_secs: u64) -> Result<(), AppError> {
+pub async fn check_cooldown(
+    db: &SqlitePool,
+    device_user_id: i64,
+    cooldown_secs: u64,
+) -> Result<(), AppError> {
     if cooldown_secs == 0 {
         return Ok(());
     }
@@ -32,12 +35,17 @@ pub async fn check_cooldown(db: &SqlitePool, device_user_id: i64, cooldown_secs:
 }
 
 /// 检查设备用户是否超出队列提交的速率限制。
-pub async fn check_rate_limit(db: &SqlitePool, device_user_id: i64, window_secs: u64, max_subs: usize) -> Result<bool, AppError> {
+pub async fn check_rate_limit(
+    db: &SqlitePool,
+    device_user_id: i64,
+    window_secs: u64,
+    max_subs: usize,
+) -> Result<bool, AppError> {
     let cutoff = chrono::Utc::now() - chrono::Duration::seconds(window_secs as i64);
     let cutoff_str = cutoff.format("%Y-%m-%d %H:%M:%S").to_string();
 
     let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM queue_items WHERE device_user_id = ? AND added_at > ?"
+        "SELECT COUNT(*) FROM queue_items WHERE device_user_id = ? AND added_at > ?",
     )
     .bind(device_user_id)
     .bind(&cutoff_str)
@@ -49,11 +57,10 @@ pub async fn check_rate_limit(db: &SqlitePool, device_user_id: i64, window_secs:
 
 /// 获取当前队列大小（pending + playing 项目）。
 pub async fn queue_size(db: &SqlitePool) -> Result<usize, AppError> {
-    let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM queue_items WHERE status IN ('pending', 'playing')"
-    )
-    .fetch_one(db)
-    .await?;
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM queue_items WHERE status IN ('pending', 'playing')")
+            .fetch_one(db)
+            .await?;
 
     Ok(count.0 as usize)
 }
@@ -76,11 +83,17 @@ pub async fn add_to_queue(
 
     check_cooldown(db, device_user_id, config.request_cooldown_secs).await?;
 
-    if check_rate_limit(db, device_user_id, config.rate_limit_window_secs, config.max_user_submissions).await? {
+    if check_rate_limit(
+        db,
+        device_user_id,
+        config.rate_limit_window_secs,
+        config.max_user_submissions,
+    )
+    .await?
+    {
         return Err(AppError::RateLimited(format!(
             "You can only submit {} songs per {} seconds",
-            config.max_user_submissions,
-            config.rate_limit_window_secs
+            config.max_user_submissions, config.rate_limit_window_secs
         )));
     }
 
@@ -93,7 +106,7 @@ pub async fn add_to_queue(
     }
 
     let max_pos: Option<(i32,)> = sqlx::query_as(
-        "SELECT MAX(position) FROM queue_items WHERE status IN ('pending', 'playing')"
+        "SELECT MAX(position) FROM queue_items WHERE status IN ('pending', 'playing')",
     )
     .fetch_optional(db)
     .await?;
@@ -119,20 +132,25 @@ pub async fn add_to_queue(
     .await?;
 
     // Push the request onto the engine queue so the player picks it up next.
-    state.player_handle.enqueue_request(radio_engine::types::RequestedTrack {
-        file_path: song.file_path.clone(),
-        song_id: song.id,
-        title: song.title.clone(),
-        artist: song.artist.clone(),
-        duration_ms: song.duration_ms,
-    });
+    state
+        .player_handle
+        .enqueue_request(radio_engine::types::RequestedTrack {
+            file_path: song.file_path.clone(),
+            song_id: song.id,
+            title: song.title.clone(),
+            artist: song.artist.clone(),
+            duration_ms: song.duration_ms,
+        });
 
-    crate::websocket::broadcast(state, crate::models::WsMessage::QueueUpdate {
-        action: "added".into(),
-        song_title: Some(song.title.clone()),
-        requested_by: Some(display_name.to_string()),
-        queue_size: current_size + 1,
-    });
+    crate::websocket::broadcast(
+        state,
+        crate::models::WsMessage::QueueUpdate {
+            action: "added".into(),
+            song_title: Some(song.title.clone()),
+            requested_by: Some(display_name.to_string()),
+            queue_size: current_size + 1,
+        },
+    );
 
     tracing::info!(
         "Device '{}' added song '{}' to queue (item #{})",
@@ -147,7 +165,7 @@ pub async fn add_to_queue(
 /// 获取带歌曲详情的队列，按 position 排序。
 pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>, AppError> {
     let items = sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM queue_items WHERE status IN ('pending', 'playing') ORDER BY position ASC"
+        "SELECT * FROM queue_items WHERE status IN ('pending', 'playing') ORDER BY position ASC",
     )
     .fetch_all(db)
     .await?;
@@ -159,14 +177,13 @@ pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>,
             .fetch_optional(db)
             .await?;
 
-        let display_name = sqlx::query_as::<_, (String,)>(
-            "SELECT display_name FROM device_users WHERE id = ?"
-        )
-        .bind(item.device_user_id)
-        .fetch_optional(db)
-        .await?
-        .map(|(d,)| d)
-        .unwrap_or_else(|| "unknown".into());
+        let display_name =
+            sqlx::query_as::<_, (String,)>("SELECT display_name FROM device_users WHERE id = ?")
+                .bind(item.device_user_id)
+                .fetch_optional(db)
+                .await?
+                .map(|(d,)| d)
+                .unwrap_or_else(|| "unknown".into());
 
         display_items.push(QueueItemDisplay {
             id: item.id,
@@ -194,7 +211,9 @@ pub async fn move_queue_item(
         .ok_or_else(|| AppError::NotFound("Queue item not found".into()))?;
 
     if item.status != "pending" {
-        return Err(AppError::BadRequest("Only pending items can be moved".into()));
+        return Err(AppError::BadRequest(
+            "Only pending items can be moved".into(),
+        ));
     }
 
     let old_position = item.position;
@@ -240,7 +259,9 @@ pub async fn remove_queue_item(state: &Arc<AppState>, item_id: i64) -> Result<()
         .ok_or_else(|| AppError::NotFound("Queue item not found".into()))?;
 
     if item.status == "playing" {
-        return Err(AppError::BadRequest("Cannot remove the currently playing item; use skip instead".into()));
+        return Err(AppError::BadRequest(
+            "Cannot remove the currently playing item; use skip instead".into(),
+        ));
     }
 
     let removed_position = item.position;
@@ -259,28 +280,30 @@ pub async fn remove_queue_item(state: &Arc<AppState>, item_id: i64) -> Result<()
     .await?;
 
     // Pull it out of the engine request queue too, otherwise it'd still play.
-    state.player_handle.remove_request_by_song_id(removed_song_id);
+    state
+        .player_handle
+        .remove_request_by_song_id(removed_song_id);
 
     Ok(())
 }
 
 /// 跳过当前正在播放的歌曲（仅限管理员）。
-pub async fn skip_current(
-    state: &Arc<AppState>,
-) -> Result<(), AppError> {
+pub async fn skip_current(state: &Arc<AppState>) -> Result<(), AppError> {
     let db = &state.db;
 
     let playing = sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM queue_items WHERE status = 'playing' ORDER BY position ASC LIMIT 1"
+        "SELECT * FROM queue_items WHERE status = 'playing' ORDER BY position ASC LIMIT 1",
     )
     .fetch_optional(db)
     .await?;
 
     if let Some(item) = playing {
-        sqlx::query("UPDATE queue_items SET status = 'skipped', played_at = datetime('now') WHERE id = ?")
-            .bind(item.id)
-            .execute(db)
-            .await?;
+        sqlx::query(
+            "UPDATE queue_items SET status = 'skipped', played_at = datetime('now') WHERE id = ?",
+        )
+        .bind(item.id)
+        .execute(db)
+        .await?;
     }
 
     let command = radio_engine::types::AudioCommand {
@@ -291,19 +314,19 @@ pub async fn skip_current(
 
     crate::websocket::publish_command(state, &command).await?;
 
-    crate::websocket::broadcast(state, crate::models::WsMessage::Notice {
-        message: "Admin skipped the current track".into(),
-        level: "info".into(),
-    });
+    crate::websocket::broadcast(
+        state,
+        crate::models::WsMessage::Notice {
+            message: "Admin skipped the current track".into(),
+            level: "info".into(),
+        },
+    );
 
     Ok(())
 }
 
 /// 当音频引擎开始播放歌曲时调用。
-pub async fn mark_playing(
-    db: &SqlitePool,
-    song_id: i64,
-) -> Result<(), AppError> {
+pub async fn mark_playing(db: &SqlitePool, song_id: i64) -> Result<(), AppError> {
     sqlx::query(
         "UPDATE queue_items SET status = 'played', played_at = datetime('now') WHERE status = 'playing'"
     )
@@ -332,7 +355,7 @@ pub async fn rehydrate_engine_queue(state: &Arc<AppState>) -> Result<(), AppErro
     let rows = sqlx::query_as::<_, (String, i64, String, String, i64)>(
         "SELECT s.file_path, s.id, s.title, s.artist, s.duration_ms
          FROM queue_items q JOIN songs s ON s.id = q.song_id
-         WHERE q.status = 'pending' ORDER BY q.position ASC"
+         WHERE q.status = 'pending' ORDER BY q.position ASC",
     )
     .fetch_all(&state.db)
     .await?;
@@ -353,7 +376,10 @@ pub async fn rehydrate_engine_queue(state: &Arc<AppState>) -> Result<(), AppErro
     let n = tracks.len();
     state.player_handle.replace_request_queue(tracks);
     if n > 0 {
-        tracing::info!("Rehydrated engine request queue with {} pending track(s)", n);
+        tracing::info!(
+            "Rehydrated engine request queue with {} pending track(s)",
+            n
+        );
     }
     Ok(())
 }
@@ -362,7 +388,7 @@ pub async fn rehydrate_engine_queue(state: &Arc<AppState>) -> Result<(), AppErro
 #[allow(dead_code)]
 pub async fn get_next_song(db: &SqlitePool) -> Result<Option<crate::models::Song>, AppError> {
     let item = sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM queue_items WHERE status = 'pending' ORDER BY position ASC LIMIT 1"
+        "SELECT * FROM queue_items WHERE status = 'pending' ORDER BY position ASC LIMIT 1",
     )
     .fetch_optional(db)
     .await?;
@@ -382,7 +408,7 @@ pub async fn get_next_song(db: &SqlitePool) -> Result<Option<crate::models::Song
 /// 获取最近的播放历史。
 pub async fn get_history(db: &SqlitePool, limit: i64) -> Result<Vec<serde_json::Value>, AppError> {
     let history = sqlx::query_as::<_, crate::models::PlayHistory>(
-        "SELECT * FROM play_history ORDER BY played_at DESC LIMIT ?"
+        "SELECT * FROM play_history ORDER BY played_at DESC LIMIT ?",
     )
     .bind(limit)
     .fetch_all(db)
@@ -396,14 +422,14 @@ pub async fn get_history(db: &SqlitePool, limit: i64) -> Result<Vec<serde_json::
             .await?;
 
         let display_name = match h.device_user_id {
-            Some(uid) => sqlx::query_as::<_, (String,)>(
-                "SELECT display_name FROM device_users WHERE id = ?"
-            )
-            .bind(uid)
-            .fetch_optional(db)
-            .await?
-            .map(|(d,)| d)
-            .unwrap_or_else(|| "unknown".into()),
+            Some(uid) => {
+                sqlx::query_as::<_, (String,)>("SELECT display_name FROM device_users WHERE id = ?")
+                    .bind(uid)
+                    .fetch_optional(db)
+                    .await?
+                    .map(|(d,)| d)
+                    .unwrap_or_else(|| "unknown".into())
+            }
             None => "system".to_string(),
         };
 

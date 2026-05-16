@@ -2,7 +2,11 @@ use super::client::NcmClient;
 use super::types::*;
 use anyhow::{Context, Result};
 
-pub async fn search_song(client: &NcmClient, keyword: &str, limit: i32) -> Result<Vec<SearchSongItem>> {
+pub async fn search_song(
+    client: &NcmClient,
+    keyword: &str,
+    limit: i32,
+) -> Result<Vec<SearchSongItem>> {
     let req_json = serde_json::json!({
         "s": keyword,
         "offset": 0,
@@ -18,12 +22,16 @@ pub async fn search_song(client: &NcmClient, keyword: &str, limit: i32) -> Resul
         )
         .await?;
 
-    let data: SearchSongData = serde_json::from_str(&resp)
-        .with_context(|| "解析网易云搜索结果失败")?;
+    let data: SearchSongData =
+        serde_json::from_str(&resp).with_context(|| "解析网易云搜索结果失败")?;
     Ok(data.result.songs)
 }
 
-pub async fn get_song_url(client: &NcmClient, ids: &[i64], level: &str) -> Result<Vec<SongURLData>> {
+pub async fn get_song_url(
+    client: &NcmClient,
+    ids: &[i64],
+    level: &str,
+) -> Result<Vec<SongURLData>> {
     let ids_json: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
     let req_json = serde_json::json!({
         "encodeType": "mp3",
@@ -40,8 +48,8 @@ pub async fn get_song_url(client: &NcmClient, ids: &[i64], level: &str) -> Resul
         )
         .await?;
 
-    let data: SongsURLData = serde_json::from_str(&resp)
-        .with_context(|| "解析网易云下载链接失败")?;
+    let data: SongsURLData =
+        serde_json::from_str(&resp).with_context(|| "解析网易云下载链接失败")?;
     Ok(data.data)
 }
 
@@ -63,8 +71,8 @@ pub async fn get_song_detail(client: &NcmClient, ids: &[i64]) -> Result<Vec<Song
         )
         .await?;
 
-    let data: SongsDetailData = serde_json::from_str(&resp)
-        .with_context(|| "解析网易云歌曲详情失败")?;
+    let data: SongsDetailData =
+        serde_json::from_str(&resp).with_context(|| "解析网易云歌曲详情失败")?;
     Ok(data.songs)
 }
 
@@ -86,7 +94,6 @@ pub async fn get_song_lyric(client: &NcmClient, id: i64) -> Result<Option<String
         )
         .await?;
 
-    let data: SongLyricData = serde_json::from_str(&resp)
-        .with_context(|| "解析网易云歌词失败")?;
+    let data: SongLyricData = serde_json::from_str(&resp).with_context(|| "解析网易云歌词失败")?;
     Ok(data.lrc.map(|l| l.lyric))
 }

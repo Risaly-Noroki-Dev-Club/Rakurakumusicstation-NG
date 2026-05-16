@@ -1,10 +1,10 @@
-pub mod crypto;
-pub mod cookie;
-pub mod types;
-pub mod client;
 pub mod api;
+pub mod client;
+pub mod cookie;
+pub mod crypto;
 pub mod downloader;
 pub mod playlist_track_all;
+pub mod types;
 
 pub use client::NcmClient;
 pub use downloader::run_download;

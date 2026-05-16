@@ -7,7 +7,6 @@
 /// [mm:ss]不带百分秒
 /// ```
 /// 如 `[ti:标题]` `[ar:艺术家]` `[al:专辑]` `[offset:+/-毫秒]` 之类的标签将被跳过。
-
 use once_cell::sync::Lazy;
 use regex::Regex;
 
@@ -32,14 +31,11 @@ pub struct Lyrics {
 }
 
 /// 编译后的正则表达式，用于匹配 LRC 时间戳：[mm:ss.xx] 或 [mm:ss]
-static LRC_TIMESTAMP_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\[(\d{1,3}):(\d{1,2})(?:\.(\d{1,3}))?\]").unwrap()
-});
+static LRC_TIMESTAMP_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^\[(\d{1,3}):(\d{1,2})(?:\.(\d{1,3}))?\]").unwrap());
 
 /// 编译后的正则表达式，用于匹配 LRC 中常见的类 ID3 标签。
-static LRC_TAG_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^\[(ti|ar|al|offset):(.*)\]$").unwrap()
-});
+static LRC_TAG_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\[(ti|ar|al|offset):(.*)\]$").unwrap());
 
 impl Lyrics {
     /// 从字符串内容解析 LRC 文件。
@@ -116,10 +112,7 @@ impl Lyrics {
 
             // 最后一个括号后的剩余文本即为歌词文本
             if !timestamps.is_empty() {
-                let text_start = line
-                    .rfind(']')
-                    .map(|pos| pos + 1)
-                    .unwrap_or(0);
+                let text_start = line.rfind(']').map(|pos| pos + 1).unwrap_or(0);
                 let text = line[text_start..].trim().to_string();
 
                 for time_ms in timestamps {
@@ -164,7 +157,10 @@ impl Lyrics {
         }
 
         // 二分查找以提高效率
-        match self.lines.binary_search_by(|line| line.time_ms.cmp(&position_ms)) {
+        match self
+            .lines
+            .binary_search_by(|line| line.time_ms.cmp(&position_ms))
+        {
             Ok(idx) => Some(idx),
             Err(0) => None, // 位置在第一行之前
             Err(idx) => Some(idx - 1),

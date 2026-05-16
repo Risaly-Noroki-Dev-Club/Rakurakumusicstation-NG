@@ -138,10 +138,7 @@ async fn download_one(
     let filepath = PathBuf::from(output_dir).join(&filename);
 
     log_tx
-        .send(format!(
-            "⬇️ 下载: {} ({} bytes)",
-            filename, url_data.size
-        ))
+        .send(format!("⬇️ 下载: {} ({} bytes)", filename, url_data.size))
         .await
         .ok();
 
@@ -179,20 +176,14 @@ async fn download_one(
     }
 
     tokio::fs::write(&filepath, &bytes).await?;
-    log_tx
-        .send(format!("✅ 已保存: {}", filename))
-        .await
-        .ok();
+    log_tx.send(format!("✅ 已保存: {}", filename)).await.ok();
 
     // 4. Download lyrics
     match api::get_song_lyric(client, song.id).await {
         Ok(Some(lyric)) if !lyric.is_empty() => {
             let lrc_path = filepath.with_extension("lrc");
             if let Err(e) = tokio::fs::write(&lrc_path, lyric).await {
-                log_tx
-                    .send(format!("⚠️ 歌词保存失败: {}", e))
-                    .await
-                    .ok();
+                log_tx.send(format!("⚠️ 歌词保存失败: {}", e)).await.ok();
             } else {
                 log_tx
                     .send(format!("📝 歌词已保存: {}", lrc_path.display()))
@@ -284,10 +275,7 @@ pub async fn run_download(
     }
 
     log_tx
-        .send(format!(
-            "🎉 下载完成! 成功: {}, 失败: {}",
-            success, failed
-        ))
+        .send(format!("🎉 下载完成! 成功: {}, 失败: {}", success, failed))
         .await
         .ok();
 

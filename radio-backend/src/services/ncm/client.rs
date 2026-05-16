@@ -1,5 +1,5 @@
-use super::crypto::{eapi_decrypt, eapi_encrypt};
 use super::cookie::cookie_value;
+use super::crypto::{eapi_decrypt, eapi_encrypt};
 use anyhow::Result;
 use rand::Rng;
 use reqwest::Client;
@@ -37,7 +37,9 @@ impl NcmClient {
     }
 
     fn build_cookie_header(&self) -> String {
-        let mut cookies: Vec<String> = self.cookie.as_deref()
+        let mut cookies: Vec<String> = self
+            .cookie
+            .as_deref()
             .unwrap_or("")
             .split(';')
             .map(str::trim)
@@ -97,11 +99,16 @@ impl NcmClient {
     }
 
     pub async fn eapi_request(&self, path: &str, url: &str, json_body: &str) -> Result<String> {
-        let mut body_json: serde_json::Value = serde_json::from_str(json_body)
-            .unwrap_or_else(|_| serde_json::json!({}));
-        if let Some(csrf) = self.cookie.as_deref().and_then(|c| cookie_value(c, "__csrf")) {
+        let mut body_json: serde_json::Value =
+            serde_json::from_str(json_body).unwrap_or_else(|_| serde_json::json!({}));
+        if let Some(csrf) = self
+            .cookie
+            .as_deref()
+            .and_then(|c| cookie_value(c, "__csrf"))
+        {
             if let Some(map) = body_json.as_object_mut() {
-                map.entry("csrf_token".to_string()).or_insert(serde_json::Value::String(csrf));
+                map.entry("csrf_token".to_string())
+                    .or_insert(serde_json::Value::String(csrf));
             }
         }
         let json_body = body_json.to_string();

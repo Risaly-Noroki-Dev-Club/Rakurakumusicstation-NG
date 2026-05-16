@@ -1,21 +1,15 @@
-/// 电台后端 HTTP API 的路由模块。
-
-pub mod auth;
-pub mod songs;
-pub mod playlist;
-pub mod queue;
 pub mod admin;
+/// 电台后端 HTTP API 的路由模块。
+pub mod auth;
 pub mod favorites;
 pub mod ncm;
+pub mod playlist;
+pub mod queue;
+pub mod songs;
 
 use crate::config::join_base_path;
 use crate::db::AppState;
-use axum::{
-    Json,
-    Router,
-    http::StatusCode,
-    routing::get,
-};
+use axum::{http::StatusCode, routing::get, Json, Router};
 use std::sync::Arc;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -138,13 +132,12 @@ async fn station_info(
         &state.config.server.host
     };
 
-    let has_admin = sqlx::query_as::<_, (i64,)>(
-        "SELECT COUNT(*) FROM device_users WHERE role = 'admin'"
-    )
-    .fetch_one(&state.db)
-    .await
-    .map(|r| r.0 > 0)
-    .unwrap_or(false);
+    let has_admin =
+        sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM device_users WHERE role = 'admin'")
+            .fetch_one(&state.db)
+            .await
+            .map(|r| r.0 > 0)
+            .unwrap_or(false);
 
     let station = state.station.read().unwrap_or_else(|e| e.into_inner());
 

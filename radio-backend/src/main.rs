@@ -4,7 +4,6 @@
 ///
 /// 处理 HTTP API、WebSocket 广播、设备身份验证（基于 Cookie）、
 /// 队列管理、歌词解析，并内嵌音频引擎。
-
 mod auth;
 mod config;
 mod db;
@@ -17,10 +16,10 @@ mod services;
 mod websocket;
 
 use axum::{
+    extract::State,
     http::{header, Method, Request},
     middleware::{self, Next},
     response::Response,
-    extract::State,
 };
 use db::AppState;
 use radio_engine::config::BUFFER_CAPACITY;
@@ -95,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
 
@@ -132,10 +131,15 @@ async fn main() -> anyhow::Result<()> {
 
     // 构建路由
     let app = routes::build_router(state.clone())
-        .layer(middleware::from_fn_with_state(state.clone(), device_cookie_middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            device_cookie_middleware,
+        ))
         .layer(
             CorsLayer::new()
-                .allow_origin(tower_http::cors::AllowOrigin::predicate(|_origin, _parts| true))
+                .allow_origin(tower_http::cors::AllowOrigin::predicate(
+                    |_origin, _parts| true,
+                ))
                 .allow_methods([
                     Method::GET,
                     Method::POST,
@@ -144,11 +148,7 @@ async fn main() -> anyhow::Result<()> {
                     Method::PATCH,
                     Method::OPTIONS,
                 ])
-                .allow_headers([
-                    header::CONTENT_TYPE,
-                    header::ACCEPT,
-                    header::AUTHORIZATION,
-                ])
+                .allow_headers([header::CONTENT_TYPE, header::ACCEPT, header::AUTHORIZATION])
                 .allow_credentials(true),
         );
 
@@ -180,7 +180,11 @@ async fn bind_with_keepalive(addr: &str) -> anyhow::Result<tokio::net::TcpListen
     use std::time::Duration;
 
     let socket_addr: SocketAddr = addr.parse()?;
-    let domain = if socket_addr.is_ipv4() { Domain::IPV4 } else { Domain::IPV6 };
+    let domain = if socket_addr.is_ipv4() {
+        Domain::IPV4
+    } else {
+        Domain::IPV6
+    };
     let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
     socket.set_nonblocking(true)?;
     socket.set_reuse_address(true)?;

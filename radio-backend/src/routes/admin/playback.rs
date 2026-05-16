@@ -1,15 +1,10 @@
 /// 播放控制路由。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::ApiResponse;
 use crate::routes::admin::get_admin;
 use crate::websocket;
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    Json,
-};
+use axum::{extract::State, http::HeaderMap, Json};
 use std::sync::Arc;
 
 /// POST /api/admin/playlist/next — 切到下一首

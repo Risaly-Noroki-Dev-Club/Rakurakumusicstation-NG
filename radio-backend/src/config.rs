@@ -1,6 +1,5 @@
 /// 应用配置，从 config.toml 加载，支持通过环境变量覆盖。
 /// 环境变量使用 `RADIO_` 前缀和大写路径表示法。
-
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,15 +57,17 @@ impl AudioEngineConfig {
                 Some(h) => Self::infer_from_headers(h, server_port, base_path),
                 None => join_base_path(base_path, "/stream"),
             },
-            url if url.starts_with("http://") || url.starts_with("https://") => {
-                url.to_string()
-            }
+            url if url.starts_with("http://") || url.starts_with("https://") => url.to_string(),
             path if path.starts_with('/') => join_base_path(base_path, path),
             path => path.to_string(),
         }
     }
 
-    fn infer_from_headers(headers: &axum::http::HeaderMap, server_port: u16, base_path: &str) -> String {
+    fn infer_from_headers(
+        headers: &axum::http::HeaderMap,
+        server_port: u16,
+        base_path: &str,
+    ) -> String {
         let proto = headers
             .get("x-forwarded-proto")
             .and_then(|v| v.to_str().ok())
@@ -81,8 +82,7 @@ impl AudioEngineConfig {
 
         if host.contains(':') {
             format!("{}://{}{}", proto, host, stream_path)
-        } else if (proto == "https" && server_port != 443)
-            || (proto == "http" && server_port != 80)
+        } else if (proto == "https" && server_port != 443) || (proto == "http" && server_port != 80)
         {
             format!("{}://{}:{}{}", proto, host, server_port, stream_path)
         } else {
@@ -93,6 +93,11 @@ impl AudioEngineConfig {
     /// 构建当前播放曲目的文件 URL。
     pub fn resolve_file_url(&self, song_id: i64, base_path: &str) -> String {
         join_base_path(base_path, &format!("/api/songs/{}/file", song_id))
+    }
+
+    /// 构建当前播放曲目的封面 URL。
+    pub fn resolve_cover_url(&self, song_id: i64, base_path: &str) -> String {
+        join_base_path(base_path, &format!("/api/songs/{}/cover", song_id))
     }
 }
 
@@ -151,45 +156,99 @@ pub struct NcmConfig {
     pub download_concurrency: usize,
 }
 
-fn default_device_id() -> String { String::new() }
-fn default_download_concurrency() -> usize { 1 }
+fn default_device_id() -> String {
+    String::new()
+}
+fn default_download_concurrency() -> usize {
+    1
+}
 
 // ─── 默认值 ─────────────────────────────────────────────
 
-fn default_host() -> String { "0.0.0.0".into() }
-fn default_port() -> u16 { 2241 }
-fn default_base_path() -> String { "/".into() }
-fn default_sqlite_url() -> String { "sqlite://data/radio.db?mode=rwc".into() }
-fn default_media_path() -> String { "./media".into() }
-fn default_stream_base() -> String { "auto".into() }
-fn default_cookie_max_age_days() -> u64 { 365 }
-fn default_admin_setup_token() -> String { "change-me-in-production".into() }
-fn default_max_queue_size() -> usize { 100 }
-fn default_max_user_submissions() -> usize { 3 }
-fn default_rate_limit_window() -> u64 { 300 }
-fn default_request_cooldown() -> u64 { 0 }
-fn default_station_name() -> String { "Rakuraku Music Station".into() }
-fn default_station_short_name() -> String { "RakurakuRadio".into() }
-fn default_subtitle() -> String { "A Community Radio".into() }
-fn default_station_description() -> String { "Community Radio - Low Latency Audio Streaming".into() }
-fn default_log_level() -> String { "info".into() }
+fn default_host() -> String {
+    "0.0.0.0".into()
+}
+fn default_port() -> u16 {
+    2241
+}
+fn default_base_path() -> String {
+    "/".into()
+}
+fn default_sqlite_url() -> String {
+    "sqlite://data/radio.db?mode=rwc".into()
+}
+fn default_media_path() -> String {
+    "./media".into()
+}
+fn default_stream_base() -> String {
+    "auto".into()
+}
+fn default_cookie_max_age_days() -> u64 {
+    365
+}
+fn default_admin_setup_token() -> String {
+    "change-me-in-production".into()
+}
+fn default_max_queue_size() -> usize {
+    100
+}
+fn default_max_user_submissions() -> usize {
+    3
+}
+fn default_rate_limit_window() -> u64 {
+    300
+}
+fn default_request_cooldown() -> u64 {
+    0
+}
+fn default_station_name() -> String {
+    "Rakuraku Music Station".into()
+}
+fn default_station_short_name() -> String {
+    "RakurakuRadio".into()
+}
+fn default_subtitle() -> String {
+    "A Community Radio".into()
+}
+fn default_station_description() -> String {
+    "Community Radio - Low Latency Audio Streaming".into()
+}
+fn default_log_level() -> String {
+    "info".into()
+}
 
 impl AppConfig {
     pub fn load(path: &str) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         let mut config: Self = toml::from_str(&content)?;
 
-        if let Ok(v) = std::env::var("RADIO_DATABASE_URL") { config.database.url = v; }
+        if let Ok(v) = std::env::var("RADIO_DATABASE_URL") {
+            config.database.url = v;
+        }
         if let Ok(v) = std::env::var("RADIO_SERVER_PORT") {
             config.server.port = v.parse().unwrap_or(config.server.port);
         }
-        if let Ok(v) = std::env::var("RADIO_BASE_PATH") { config.server.base_path = v; }
-        if let Ok(v) = std::env::var("RADIO_LOG_LEVEL") { config.logging.level = v; }
-        if let Ok(v) = std::env::var("RADIO_MEDIA_PATH") { config.audio_engine.media_path = v; }
-        if let Ok(v) = std::env::var("RADIO_STREAM_BASE") { config.audio_engine.stream_base = v; }
-        if let Ok(v) = std::env::var("RADIO_STATION_NAME") { config.station.name = v; }
-        if let Ok(v) = std::env::var("RADIO_ADMIN_SETUP_TOKEN") { config.device.admin_setup_token = v; }
-        if let Ok(v) = std::env::var("RADIO_NCM_DEVICE_ID") { config.ncm.device_id = v; }
+        if let Ok(v) = std::env::var("RADIO_BASE_PATH") {
+            config.server.base_path = v;
+        }
+        if let Ok(v) = std::env::var("RADIO_LOG_LEVEL") {
+            config.logging.level = v;
+        }
+        if let Ok(v) = std::env::var("RADIO_MEDIA_PATH") {
+            config.audio_engine.media_path = v;
+        }
+        if let Ok(v) = std::env::var("RADIO_STREAM_BASE") {
+            config.audio_engine.stream_base = v;
+        }
+        if let Ok(v) = std::env::var("RADIO_STATION_NAME") {
+            config.station.name = v;
+        }
+        if let Ok(v) = std::env::var("RADIO_ADMIN_SETUP_TOKEN") {
+            config.device.admin_setup_token = v;
+        }
+        if let Ok(v) = std::env::var("RADIO_NCM_DEVICE_ID") {
+            config.ncm.device_id = v;
+        }
         if let Ok(v) = std::env::var("RADIO_NCM_DOWNLOAD_CONCURRENCY") {
             config.ncm.download_concurrency = v.parse().unwrap_or(config.ncm.download_concurrency);
         }
@@ -200,8 +259,7 @@ impl AppConfig {
     }
 
     pub fn load_default() -> anyhow::Result<Self> {
-        let path = std::env::var("RADIO_CONFIG")
-            .unwrap_or_else(|_| "config.toml".to_string());
+        let path = std::env::var("RADIO_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
         Self::load(&path)
     }
 }
@@ -217,7 +275,11 @@ pub fn normalize_base_path(path: &str) -> String {
 
 pub fn join_base_path(base_path: &str, path: &str) -> String {
     let base = normalize_base_path(base_path);
-    let path = if path.starts_with('/') { path } else { &format!("/{}", path) };
+    let path = if path.starts_with('/') {
+        path
+    } else {
+        &format!("/{}", path)
+    };
     if base == "/" {
         path.to_string()
     } else {

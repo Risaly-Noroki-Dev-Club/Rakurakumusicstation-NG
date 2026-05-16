@@ -1,5 +1,4 @@
 /// 设备播放列表路由：个人播放列表的增删改查。
-
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
@@ -22,7 +21,10 @@ pub fn playlist_routes() -> Router<Arc<AppState>> {
 }
 
 /// 从请求头中提取已认证设备的辅助函数。
-async fn get_device(state: &AppState, headers: &HeaderMap) -> Result<crate::auth::AuthUser, AppError> {
+async fn get_device(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<crate::auth::AuthUser, AppError> {
     auth::require_device_auth(headers, &state.db).await
 }
 
@@ -39,7 +41,7 @@ async fn list_my_playlists(
         FROM playlists p
         WHERE p.device_user_id = ?
         ORDER BY p.created_at DESC
-        "#
+        "#,
     )
     .bind(device.id)
     .fetch_all(&state.db)
@@ -47,12 +49,11 @@ async fn list_my_playlists(
 
     let mut result = Vec::new();
     for (id, device_user_id, name, is_public, created_at_str) in playlists {
-        let count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM playlist_songs WHERE playlist_id = ?"
-        )
-        .bind(id)
-        .fetch_one(&state.db)
-        .await?;
+        let count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM playlist_songs WHERE playlist_id = ?")
+                .bind(id)
+                .fetch_one(&state.db)
+                .await?;
 
         result.push(PlaylistWithCount {
             id,
@@ -80,14 +81,13 @@ async fn create_playlist(
         return Err(AppError::BadRequest("Playlist name cannot be empty".into()));
     }
 
-    let result = sqlx::query(
-        "INSERT INTO playlists (device_user_id, name, is_public) VALUES (?, ?, ?)"
-    )
-    .bind(device.id)
-    .bind(req.name.trim())
-    .bind(req.is_public)
-    .execute(&state.db)
-    .await?;
+    let result =
+        sqlx::query("INSERT INTO playlists (device_user_id, name, is_public) VALUES (?, ?, ?)")
+            .bind(device.id)
+            .bind(req.name.trim())
+            .bind(req.is_public)
+            .execute(&state.db)
+            .await?;
 
     Ok(Json(ApiResponse::ok(serde_json::json!({
         "id": result.last_insert_rowid(),
@@ -103,13 +103,12 @@ async fn get_playlist(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let device = get_device(&state, &headers).await?;
 
-    let playlist = sqlx::query_as::<_, crate::models::Playlist>(
-        "SELECT * FROM playlists WHERE id = ?"
-    )
-    .bind(playlist_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
+    let playlist =
+        sqlx::query_as::<_, crate::models::Playlist>("SELECT * FROM playlists WHERE id = ?")
+            .bind(playlist_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
 
     if playlist.device_user_id != device.id && !playlist.is_public {
         return Err(AppError::Forbidden("Not your playlist".into()));
@@ -121,7 +120,7 @@ async fn get_playlist(
         JOIN playlist_songs ps ON ps.song_id = s.id
         WHERE ps.playlist_id = ?
         ORDER BY ps.position ASC
-        "#
+        "#,
     )
     .bind(playlist_id)
     .fetch_all(&state.db)
@@ -147,13 +146,12 @@ async fn delete_playlist(
 ) -> Result<Json<ApiResponse<String>>, AppError> {
     let device = get_device(&state, &headers).await?;
 
-    let playlist = sqlx::query_as::<_, crate::models::Playlist>(
-        "SELECT * FROM playlists WHERE id = ?"
-    )
-    .bind(playlist_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
+    let playlist =
+        sqlx::query_as::<_, crate::models::Playlist>("SELECT * FROM playlists WHERE id = ?")
+            .bind(playlist_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
 
     if playlist.device_user_id != device.id {
         return Err(AppError::Forbidden("Not your playlist".into()));
@@ -176,13 +174,12 @@ async fn add_song(
 ) -> Result<Json<ApiResponse<String>>, AppError> {
     let device = get_device(&state, &headers).await?;
 
-    let playlist = sqlx::query_as::<_, crate::models::Playlist>(
-        "SELECT * FROM playlists WHERE id = ?"
-    )
-    .bind(playlist_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
+    let playlist =
+        sqlx::query_as::<_, crate::models::Playlist>("SELECT * FROM playlists WHERE id = ?")
+            .bind(playlist_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
 
     if playlist.device_user_id != device.id {
         return Err(AppError::Forbidden("Not your playlist".into()));
@@ -194,17 +191,16 @@ async fn add_song(
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
-    let max_pos: Option<(i32,)> = sqlx::query_as(
-        "SELECT MAX(position) FROM playlist_songs WHERE playlist_id = ?"
-    )
-    .bind(playlist_id)
-    .fetch_optional(&state.db)
-    .await?;
+    let max_pos: Option<(i32,)> =
+        sqlx::query_as("SELECT MAX(position) FROM playlist_songs WHERE playlist_id = ?")
+            .bind(playlist_id)
+            .fetch_optional(&state.db)
+            .await?;
 
     let next_pos = max_pos.map(|(p,)| p + 1).unwrap_or(0);
 
     let result = sqlx::query(
-        "INSERT OR IGNORE INTO playlist_songs (playlist_id, song_id, position) VALUES (?, ?, ?)"
+        "INSERT OR IGNORE INTO playlist_songs (playlist_id, song_id, position) VALUES (?, ?, ?)",
     )
     .bind(playlist_id)
     .bind(req.song_id)
@@ -228,13 +224,12 @@ async fn remove_song(
 ) -> Result<Json<ApiResponse<String>>, AppError> {
     let device = get_device(&state, &headers).await?;
 
-    let playlist = sqlx::query_as::<_, crate::models::Playlist>(
-        "SELECT * FROM playlists WHERE id = ?"
-    )
-    .bind(playlist_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
+    let playlist =
+        sqlx::query_as::<_, crate::models::Playlist>("SELECT * FROM playlists WHERE id = ?")
+            .bind(playlist_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Playlist not found".into()))?;
 
     if playlist.device_user_id != device.id {
         return Err(AppError::Forbidden("Not your playlist".into()));

@@ -1,5 +1,4 @@
 /// 队列路由：查看、添加、移动、移除、跳过、历史记录、正在播放。
-
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
@@ -37,7 +36,8 @@ async fn add_to_queue(
     Json(req): Json<AddToQueueRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let device = auth::require_device_auth(&headers, &state.db).await?;
-    let item_id = queue_manager::add_to_queue(&state, req.song_id, device.id, &device.display_name).await?;
+    let item_id =
+        queue_manager::add_to_queue(&state, req.song_id, device.id, &device.display_name).await?;
 
     Ok(Json(ApiResponse::ok(serde_json::json!({
         "queue_item_id": item_id,
@@ -79,7 +79,10 @@ async fn move_queue_item(
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'move_queue', ?)")
         .bind(device.id)
-        .bind(format!("Moved item {} to position {}", item_id, req.new_position))
+        .bind(format!(
+            "Moved item {} to position {}",
+            item_id, req.new_position
+        ))
         .execute(&state.db)
         .await?;
 
@@ -119,7 +122,7 @@ pub async fn now_playing(
 ) -> Result<Json<ApiResponse<NowPlaying>>, AppError> {
     // 1. 优先查用户请求队列（点歌）
     let playing = sqlx::query_as::<_, crate::models::QueueItem>(
-        "SELECT * FROM queue_items WHERE status = 'playing' ORDER BY position ASC LIMIT 1"
+        "SELECT * FROM queue_items WHERE status = 'playing' ORDER BY position ASC LIMIT 1",
     )
     .fetch_optional(&state.db)
     .await?;
@@ -139,7 +142,13 @@ pub async fn now_playing(
                 _ => None,
             };
             let duration_ms = song.as_ref().map(|s| s.duration_ms).unwrap_or(0);
-            (song, 0i64, duration_ms, lyrics_text, item.played_at.map(|t| t.to_string()))
+            (
+                song,
+                0i64,
+                duration_ms,
+                lyrics_text,
+                item.played_at.map(|t| t.to_string()),
+            )
         }
         None => {
             // 2. Folder cycle：从引擎 PlaybackState 回退
@@ -147,10 +156,12 @@ pub async fn now_playing(
             if ps.file_path.is_empty() {
                 (None, 0i64, 0i64, None, None)
             } else {
-                let song = sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs WHERE file_path = ?")
-                    .bind(&ps.file_path)
-                    .fetch_optional(&state.db)
-                    .await?;
+                let song = sqlx::query_as::<_, crate::models::Song>(
+                    "SELECT * FROM songs WHERE file_path = ?",
+                )
+                .bind(&ps.file_path)
+                .fetch_optional(&state.db)
+                .await?;
                 let lyrics_text = match &song {
                     Some(s) if !s.lyrics_path.is_empty() => {
                         let lrc_full = std::path::Path::new(&state.config.audio_engine.media_path)
@@ -171,7 +182,22 @@ pub async fn now_playing(
 
     let song_summary = song.as_ref().map(|s| s.clone().into());
     let file_url = song.as_ref().map(|s| {
-        state.config.audio_engine.resolve_file_url(s.id, &state.config.server.base_path)
+        state
+            .config
+            .audio_engine
+            .resolve_file_url(s.id, &state.config.server.base_path)
+    });
+    let cover_url = song.as_ref().and_then(|s| {
+        if s.cover_path.is_empty() {
+            None
+        } else {
+            Some(
+                state
+                    .config
+                    .audio_engine
+                    .resolve_cover_url(s.id, &state.config.server.base_path),
+            )
+        }
     });
 
     Ok(Json(ApiResponse::ok(NowPlaying {
@@ -187,5 +213,6 @@ pub async fn now_playing(
             &state.config.server.base_path,
         ),
         file_url,
+        cover_url,
     })))
 }

@@ -1,10 +1,9 @@
 /// 批量下载路由 — 使用原生 Rust NCM 客户端 + SSE 实时推送。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, DownloadEvent, DownloadRequest};
 use crate::routes::admin::get_admin;
-use crate::services::ncm::{NcmClient, run_download};
+use crate::services::ncm::{run_download, NcmClient};
 use axum::{
     extract::State,
     http::HeaderMap,
@@ -158,18 +157,26 @@ pub async fn download_stream(
         match rx.recv().await {
             Ok(ev) => {
                 let data = serde_json::to_string(&ev).unwrap_or_default();
-                Some((Ok::<_, std::convert::Infallible>(Event::default().data(data)), rx))
+                Some((
+                    Ok::<_, std::convert::Infallible>(Event::default().data(data)),
+                    rx,
+                ))
             }
             Err(broadcast::error::RecvError::Lagged(_)) => {
                 // 错过了一些消息，继续接收
-                Some((Ok::<_, std::convert::Infallible>(Event::default().data(
-                    serde_json::to_string(&DownloadEvent {
-                        log: "...".to_string(),
-                        done: false,
-                        task_id: None,
-                    })
-                    .unwrap_or_default(),
-                )), rx))
+                Some((
+                    Ok::<_, std::convert::Infallible>(
+                        Event::default().data(
+                            serde_json::to_string(&DownloadEvent {
+                                log: "...".to_string(),
+                                done: false,
+                                task_id: None,
+                            })
+                            .unwrap_or_default(),
+                        ),
+                    ),
+                    rx,
+                ))
             }
             Err(broadcast::error::RecvError::Closed) => None,
         }

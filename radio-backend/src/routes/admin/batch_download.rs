@@ -5,7 +5,7 @@ use crate::models::{
     BatchDownloadStatus, DownloadEvent,
 };
 use crate::routes::admin::get_admin;
-use crate::services::ncm::{NcmClient, api};
+use crate::services::ncm::{api, NcmClient};
 use crate::services::netdisk;
 use axum::{
     extract::{Query, State},
@@ -14,11 +14,11 @@ use axum::{
     Json,
 };
 use futures_util::stream::{unfold, Stream};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::broadcast;
-use serde::Deserialize;
 
 #[derive(Clone)]
 struct BatchTask {
@@ -181,9 +181,9 @@ pub async fn batch_download_stream(
 
     let rx = {
         let tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
-        let task = tasks.get(&query.task_id).ok_or_else(|| {
-            AppError::BadRequest("任务不存在或已结束".into())
-        })?;
+        let task = tasks
+            .get(&query.task_id)
+            .ok_or_else(|| AppError::BadRequest("任务不存在或已结束".into()))?;
         task.tx.subscribe()
     };
 
@@ -191,18 +191,24 @@ pub async fn batch_download_stream(
         match rx.recv().await {
             Ok(ev) => {
                 let data = serde_json::to_string(&ev).unwrap_or_default();
-                Some((Ok::<_, std::convert::Infallible>(Event::default().data(data)), rx))
+                Some((
+                    Ok::<_, std::convert::Infallible>(Event::default().data(data)),
+                    rx,
+                ))
             }
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                Some((Ok::<_, std::convert::Infallible>(Event::default().data(
-                    serde_json::to_string(&DownloadEvent {
-                        log: "...".to_string(),
-                        done: false,
-                        task_id: None,
-                    })
-                    .unwrap_or_default(),
-                )), rx))
-            }
+            Err(broadcast::error::RecvError::Lagged(_)) => Some((
+                Ok::<_, std::convert::Infallible>(
+                    Event::default().data(
+                        serde_json::to_string(&DownloadEvent {
+                            log: "...".to_string(),
+                            done: false,
+                            task_id: None,
+                        })
+                        .unwrap_or_default(),
+                    ),
+                ),
+                rx,
+            )),
             Err(broadcast::error::RecvError::Closed) => None,
         }
     });
@@ -219,9 +225,9 @@ pub async fn batch_download_status(
     let _admin = get_admin(&_state, &headers).await?;
 
     let tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
-    let task = tasks.get(&query.task_id).ok_or_else(|| {
-        AppError::BadRequest("任务不存在或已结束".into())
-    })?;
+    let task = tasks
+        .get(&query.task_id)
+        .ok_or_else(|| AppError::BadRequest("任务不存在或已结束".into()))?;
 
     let items = task.items.lock().unwrap_or_else(|e| e.into_inner()).clone();
     let running = task.running.load(std::sync::atomic::Ordering::SeqCst);
@@ -278,8 +284,12 @@ async fn run_ncm_batch(
                 error: Some("缺少关键词".into()),
                 file_path: None,
             };
-            task.items.lock().unwrap_or_else(|e| e.into_inner()).push(result.clone());
-            task.failed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            task.items
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(result.clone());
+            task.failed
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let _ = task.tx.send(DownloadEvent {
                 log: format!("❌ [{}/{}] 缺少关键词", i + 1, total),
                 done: false,
@@ -303,7 +313,9 @@ async fn run_ncm_batch(
             &task,
             i,
             total,
-        ).await {
+        )
+        .await
+        {
             Ok(path) => {
                 let result = BatchDownloadResultItem {
                     id: item.id.clone(),
@@ -313,8 +325,12 @@ async fn run_ncm_batch(
                     error: None,
                     file_path: Some(path),
                 };
-                task.items.lock().unwrap_or_else(|e| e.into_inner()).push(result);
-                task.success.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                task.items
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(result);
+                task.success
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
             Err(e) => {
                 let result = BatchDownloadResultItem {
@@ -325,8 +341,12 @@ async fn run_ncm_batch(
                     error: Some(e.to_string()),
                     file_path: None,
                 };
-                task.items.lock().unwrap_or_else(|e| e.into_inner()).push(result);
-                task.failed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                task.items
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(result);
+                task.failed
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let _ = task.tx.send(DownloadEvent {
                     log: format!("❌ [{}/{}] 失败: {}", i + 1, total, e),
                     done: false,
@@ -344,7 +364,8 @@ async fn run_ncm_batch(
         task_id: None,
     });
 
-    task.running.store(false, std::sync::atomic::Ordering::SeqCst);
+    task.running
+        .store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 async fn ncm_download_one(
@@ -559,8 +580,12 @@ async fn run_netdisk_batch(
                 error: Some("缺少分享链接".into()),
                 file_path: None,
             };
-            task.items.lock().unwrap_or_else(|e| e.into_inner()).push(result);
-            task.failed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            task.items
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(result);
+            task.failed
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             continue;
         }
 
@@ -572,11 +597,15 @@ async fn run_netdisk_batch(
 
         match netdisk_download_one(&url, &media_path, &task, i, total).await {
             Ok(paths) => {
-                let file_names: Vec<String> = paths.iter().map(|p| {
-                    std::path::Path::new(p).file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| p.clone())
-                }).collect();
+                let file_names: Vec<String> = paths
+                    .iter()
+                    .map(|p| {
+                        std::path::Path::new(p)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| p.clone())
+                    })
+                    .collect();
                 let result = BatchDownloadResultItem {
                     id: item.id.clone(),
                     title: Some(file_names.join(", ")),
@@ -585,8 +614,12 @@ async fn run_netdisk_batch(
                     error: None,
                     file_path: Some(paths.join("\n")),
                 };
-                task.items.lock().unwrap_or_else(|e| e.into_inner()).push(result);
-                task.success.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                task.items
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(result);
+                task.success
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
             Err(e) => {
                 let result = BatchDownloadResultItem {
@@ -597,8 +630,12 @@ async fn run_netdisk_batch(
                     error: Some(e.to_string()),
                     file_path: None,
                 };
-                task.items.lock().unwrap_or_else(|e| e.into_inner()).push(result);
-                task.failed.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                task.items
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(result);
+                task.failed
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let _ = task.tx.send(DownloadEvent {
                     log: format!("❌ [{}/{}] 失败: {}", i + 1, total, e),
                     done: false,
@@ -616,7 +653,8 @@ async fn run_netdisk_batch(
         task_id: None,
     });
 
-    task.running.store(false, std::sync::atomic::Ordering::SeqCst);
+    task.running
+        .store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 async fn netdisk_download_one(
@@ -640,11 +678,16 @@ async fn netdisk_download_one(
     }
 
     // Filter to audio files or all files if no audio found
-    let audio_exts = [".mp3", ".flac", ".m4a", ".wav", ".aac", ".ogg", ".opus", ".wma"];
-    let audio_files: Vec<_> = files.iter().filter(|f| {
-        let name_lower = f.filename.to_lowercase();
-        audio_exts.iter().any(|ext| name_lower.ends_with(ext))
-    }).collect();
+    let audio_exts = [
+        ".mp3", ".flac", ".m4a", ".wav", ".aac", ".ogg", ".opus", ".wma",
+    ];
+    let audio_files: Vec<_> = files
+        .iter()
+        .filter(|f| {
+            let name_lower = f.filename.to_lowercase();
+            audio_exts.iter().any(|ext| name_lower.ends_with(ext))
+        })
+        .collect();
 
     let files_to_download = if audio_files.is_empty() {
         files.iter().filter(|f| !f.is_dir).collect::<Vec<_>>()

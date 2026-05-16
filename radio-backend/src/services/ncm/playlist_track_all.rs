@@ -19,7 +19,7 @@ pub async fn get_playlist_track_all(client: &NcmClient, id: i64) -> Result<Vec<S
         )
         .await?;
 
-    let data: PlaylistTrackAllData = serde_json::from_str(&resp)
-        .with_context(|| "解析网易云歌单曲目失败")?;
+    let data: PlaylistTrackAllData =
+        serde_json::from_str(&resp).with_context(|| "解析网易云歌单曲目失败")?;
     Ok(data.songs)
 }

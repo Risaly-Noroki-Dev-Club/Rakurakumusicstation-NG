@@ -6,18 +6,25 @@ pub use radio_engine::metadata::parse_artist_title;
 /// 查找音频文件旁的封面图片。
 pub fn find_cover(audio_path: &Path, media_root: &Path) -> String {
     let cover_names = [
-        "cover.jpg", "cover.png", "cover.jpeg",
-        "folder.jpg", "folder.png",
-        "album.jpg", "album.png",
-        "front.jpg", "front.png",
-        "AlbumCover.jpg", "AlbumCover.png",
+        "cover.jpg",
+        "cover.png",
+        "cover.jpeg",
+        "folder.jpg",
+        "folder.png",
+        "album.jpg",
+        "album.png",
+        "front.jpg",
+        "front.png",
+        "AlbumCover.jpg",
+        "AlbumCover.png",
     ];
     let parent = audio_path.parent().unwrap_or_else(|| Path::new("."));
 
     for name in &cover_names {
         let candidate = parent.join(name);
         if candidate.exists() {
-            return candidate.strip_prefix(media_root)
+            return candidate
+                .strip_prefix(media_root)
                 .unwrap_or(&candidate)
                 .to_string_lossy()
                 .to_string();
@@ -28,7 +35,8 @@ pub fn find_cover(audio_path: &Path, media_root: &Path) -> String {
         for ext in &["jpg", "png", "jpeg"] {
             let candidate = parent.join(format!("{}.{}", stem.to_string_lossy(), ext));
             if candidate.exists() {
-                return candidate.strip_prefix(media_root)
+                return candidate
+                    .strip_prefix(media_root)
                     .unwrap_or(&candidate)
                     .to_string_lossy()
                     .to_string();
@@ -43,9 +51,12 @@ pub fn find_cover(audio_path: &Path, media_root: &Path) -> String {
 pub fn get_duration(path: &Path) -> Option<i64> {
     let output = std::process::Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
         ])
         .arg(path)
         .output()

@@ -1,5 +1,4 @@
 /// 设备个人网易云账号路由：设置、查看、测试个人网易云凭据。
-
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
@@ -27,7 +26,7 @@ pub async fn get_ncm(
     let device = auth::require_device_auth(&headers, &state.db).await?;
 
     let ncm = sqlx::query_as::<_, crate::models::UserNcm>(
-        "SELECT * FROM user_ncm WHERE device_user_id = ?"
+        "SELECT * FROM user_ncm WHERE device_user_id = ?",
     )
     .bind(device.id)
     .fetch_optional(&state.db)
@@ -60,7 +59,7 @@ pub async fn save_ncm(
     let device = auth::require_device_auth(&headers, &state.db).await?;
 
     let existing = sqlx::query_as::<_, crate::models::UserNcm>(
-        "SELECT * FROM user_ncm WHERE device_user_id = ?"
+        "SELECT * FROM user_ncm WHERE device_user_id = ?",
     )
     .bind(device.id)
     .fetch_optional(&state.db)
@@ -102,7 +101,7 @@ pub async fn test_ncm(
     let device = auth::require_device_auth(&headers, &state.db).await?;
 
     let ncm = sqlx::query_as::<_, crate::models::UserNcm>(
-        "SELECT * FROM user_ncm WHERE device_user_id = ?"
+        "SELECT * FROM user_ncm WHERE device_user_id = ?",
     )
     .bind(device.id)
     .fetch_optional(&state.db)

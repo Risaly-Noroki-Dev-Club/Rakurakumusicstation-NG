@@ -1,5 +1,4 @@
 /// 应用范围的错误类型，附带 HTTP 状态码。
-
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -49,11 +48,17 @@ impl IntoResponse for AppError {
             AppError::Banned => (StatusCode::FORBIDDEN, "Your account has been banned".into()),
             AppError::Database(e) => {
                 tracing::error!("Database error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal database error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal database error".into(),
+                )
             }
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {:?}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".into())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".into(),
+                )
             }
         };
 

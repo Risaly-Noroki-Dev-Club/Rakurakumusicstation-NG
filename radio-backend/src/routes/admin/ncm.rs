@@ -1,15 +1,10 @@
 /// 网易云账号设置路由 — 原生 Rust 实现。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, ImportPlaylistRequest, ImportPlaylistResponse, NcmImportTask};
 use crate::routes::admin::get_admin;
 use crate::services::ncm::{cookie, get_playlist_track_all, NcmClient};
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    Json,
-};
+use axum::{extract::State, http::HeaderMap, Json};
 use std::sync::Arc;
 
 fn ncm_secrets_path() -> std::path::PathBuf {
@@ -19,7 +14,9 @@ fn ncm_secrets_path() -> std::path::PathBuf {
 }
 
 pub fn read_admin_ncm_cookie() -> Option<String> {
-    cookie::read_admin_cookie_from_secrets(&ncm_secrets_path()).ok().flatten()
+    cookie::read_admin_cookie_from_secrets(&ncm_secrets_path())
+        .ok()
+        .flatten()
 }
 
 /// GET /api/admin/ncm — 获取网易云账号状态
@@ -41,10 +38,11 @@ pub async fn get_ncm_settings(
     let content = std::fs::read_to_string(&path)
         .map_err(|_| AppError::Internal(anyhow::anyhow!("无法读取 secrets.json")))?;
 
-    let secrets: serde_json::Value = serde_json::from_str(&content)
-        .unwrap_or(serde_json::Value::Null);
+    let secrets: serde_json::Value =
+        serde_json::from_str(&content).unwrap_or(serde_json::Value::Null);
 
-    let configured = secrets.get("ncm_cookie")
+    let configured = secrets
+        .get("ncm_cookie")
         .map(|v| cookie::has_cookie(v.as_str().unwrap_or(""), "MUSIC_U"))
         .unwrap_or(false);
 

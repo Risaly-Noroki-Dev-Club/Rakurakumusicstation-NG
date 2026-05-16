@@ -1,5 +1,4 @@
 /// 歌曲管理路由。
-
 use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::ApiResponse;
@@ -19,11 +18,10 @@ pub async fn list_all_songs(
 ) -> Result<Json<ApiResponse<Vec<crate::models::Song>>>, AppError> {
     let _admin = get_admin(&state, &headers).await?;
 
-    let songs = sqlx::query_as::<_, crate::models::Song>(
-        "SELECT * FROM songs ORDER BY created_at DESC"
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let songs =
+        sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs ORDER BY created_at DESC")
+            .fetch_all(&state.db)
+            .await?;
 
     Ok(Json(ApiResponse::ok(songs)))
 }
@@ -42,20 +40,23 @@ pub async fn delete_song(
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
-    let file_path = std::path::Path::new(&state.config.audio_engine.media_path).join(&song.file_path);
+    let file_path =
+        std::path::Path::new(&state.config.audio_engine.media_path).join(&song.file_path);
     if !song.file_path.is_empty() && file_path.exists() {
         std::fs::remove_file(&file_path).ok();
     }
 
     if !song.lyrics_path.is_empty() {
-        let lrc_path = std::path::Path::new(&state.config.audio_engine.media_path).join(&song.lyrics_path);
+        let lrc_path =
+            std::path::Path::new(&state.config.audio_engine.media_path).join(&song.lyrics_path);
         if lrc_path.exists() {
             std::fs::remove_file(&lrc_path).ok();
         }
     }
 
     if !song.cover_path.is_empty() {
-        let cover_path = std::path::Path::new(&state.config.audio_engine.media_path).join(&song.cover_path);
+        let cover_path =
+            std::path::Path::new(&state.config.audio_engine.media_path).join(&song.cover_path);
         if cover_path.exists() && cover_path != file_path {
             std::fs::remove_file(&cover_path).ok();
         }
@@ -126,15 +127,14 @@ pub async fn rescan_songs(
         let relative = file_path.strip_prefix(media_path).unwrap_or(file_path);
         let rel_str = relative.to_string_lossy().to_string();
 
-        let existing = sqlx::query_as::<_, (i64,)>(
-            "SELECT id FROM songs WHERE file_path = ?"
-        )
-        .bind(&rel_str)
-        .fetch_optional(&state.db)
-        .await?;
+        let existing = sqlx::query_as::<_, (i64,)>("SELECT id FROM songs WHERE file_path = ?")
+            .bind(&rel_str)
+            .fetch_optional(&state.db)
+            .await?;
 
         if existing.is_none() {
-            let stem = file_path.file_stem()
+            let stem = file_path
+                .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
 
@@ -143,7 +143,8 @@ pub async fn rescan_songs(
 
             let lrc_path = file_path.with_extension("lrc");
             let lyrics_path = if lrc_path.exists() {
-                lrc_path.strip_prefix(media_path)
+                lrc_path
+                    .strip_prefix(media_path)
                     .unwrap_or(&lrc_path)
                     .to_string_lossy()
                     .to_string()
@@ -176,5 +177,8 @@ pub async fn rescan_songs(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(ApiResponse::ok(format!("Rescan complete. {} new songs added.", new_songs))))
+    Ok(Json(ApiResponse::ok(format!(
+        "Rescan complete. {} new songs added.",
+        new_songs
+    ))))
 }

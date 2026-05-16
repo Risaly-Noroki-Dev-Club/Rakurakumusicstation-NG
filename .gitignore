@@ -34,6 +34,7 @@ test.*
 *.swp
 *.swo
 *~
+opencode.json
 
 # 构建产物
 # embedded_templates.hpp - 不再生成，C++ 引擎已精简至仅音频流 + Redis 桥接

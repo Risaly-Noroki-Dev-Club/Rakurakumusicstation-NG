@@ -1,5 +1,4 @@
 /// 设备认证路由：获取当前设备信息、设置显示名称、申请管理员。
-
 use crate::auth;
 use crate::db::AppState;
 use crate::error::AppError;
@@ -47,7 +46,9 @@ async fn set_display_name(
         return Err(AppError::BadRequest("Display name cannot be empty".into()));
     }
     if name.len() > 32 {
-        return Err(AppError::BadRequest("Display name must be 32 characters or less".into()));
+        return Err(AppError::BadRequest(
+            "Display name must be 32 characters or less".into(),
+        ));
     }
 
     sqlx::query("UPDATE device_users SET display_name = ? WHERE id = ?")
@@ -56,7 +57,10 @@ async fn set_display_name(
         .execute(&state.db)
         .await?;
 
-    Ok(Json(ApiResponse::ok(format!("Display name set to '{}'", name))))
+    Ok(Json(ApiResponse::ok(format!(
+        "Display name set to '{}'",
+        name
+    ))))
 }
 
 /// POST /api/auth/claim-admin — 使用管理员设置令牌升级为管理员
@@ -65,15 +69,15 @@ async fn claim_admin(
     headers: HeaderMap,
     Json(req): Json<ClaimAdminRequest>,
 ) -> Result<Json<ApiResponse<String>>, AppError> {
-    let device_token = auth::extract_device_token(&headers)
-        .ok_or(AppError::Unauthorized)?;
+    let device_token = auth::extract_device_token(&headers).ok_or(AppError::Unauthorized)?;
 
     auth::claim_admin(
         &state.db,
         &device_token,
         &req.admin_setup_token,
         &state.config.device.admin_setup_token,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(ApiResponse::ok("Admin privileges granted".into())))
 }
