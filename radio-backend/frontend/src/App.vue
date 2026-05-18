@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, watch, ref, provide } from 'vue'
+import { onMounted, onUnmounted, computed, watch, ref, provide, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { store, THEMES } from './store'
@@ -23,6 +23,21 @@ provide('audioEl', audioEl)
 // 浏览器 autoplay 策略要求首次播放必须有用户手势触发，否则 .play() 会被静默拒绝。
 // 我们尝试自动播一次，被拒就显示一个全屏覆盖层等用户点。
 const needsTapToPlay = ref(false)
+
+function restartLiveStream() {
+  const audio = audioEl.value
+  if (!audio) return
+  const wasPaused = audio.paused
+  audio.pause()
+  audio.removeAttribute('src')
+  audio.load()
+  nextTick(() => {
+    const separator = getStreamUrl().includes('?') ? '&' : '?'
+    audio.src = `${getStreamUrl()}${separator}t=${Date.now()}`
+    audio.load()
+    if (!wasPaused) audio.play().catch(() => { needsTapToPlay.value = true })
+  })
+}
 
 function initAudio() {
   if (!audioEl.value) return
@@ -112,6 +127,13 @@ watch(() => store.showSnackbar, (val) => {
     }, 200)
   }
 })
+
+watch(
+  () => `${store.playbackState.song_id}:${store.playbackState.title}:${store.playbackState.artist}`,
+  (_current, previous) => {
+    if (previous) restartLiveStream()
+  }
+)
 </script>
 
 <template>

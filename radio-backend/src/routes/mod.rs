@@ -91,7 +91,11 @@ async fn stream_handler(
                 break;
             }
 
-            let available = reader.wait_for_data(WAIT_DATA_MS).await;
+            let (available, should_resync) = reader.wait_for_data_or_resync(WAIT_DATA_MS).await;
+            if should_resync {
+                tracing::debug!("Stream resync requested, closing client response");
+                break;
+            }
             if available == 0 {
                 continue;
             }

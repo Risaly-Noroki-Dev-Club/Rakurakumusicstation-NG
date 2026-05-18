@@ -29,6 +29,7 @@ pub struct RingBuffer {
     write_pos: AtomicUsize,
     reader_positions: Mutex<Vec<Arc<AtomicUsize>>>,
     notify: tokio::sync::Notify,
+    resync: tokio::sync::Notify,
 }
 
 // RingBuffer is Send + Sync because all shared mutable state is protected
@@ -68,6 +69,7 @@ impl RingBuffer {
             write_pos: AtomicUsize::new(0),
             reader_positions: Mutex::new(Vec::new()),
             notify: tokio::sync::Notify::new(),
+            resync: tokio::sync::Notify::new(),
         })
     }
 
@@ -174,14 +176,25 @@ impl RingBuffer {
     /// to drain the previously-buffered audio (multi-second delay at 128 kbps)
     /// before hearing the new track.
     pub fn clear(&self) {
+        self.clear_and_resync_readers();
+    }
+
+    /// Discard buffered audio and force every active stream reader to reconnect.
+    ///
+    /// Clearing reader positions removes server-side buffered audio, but browsers
+    /// also keep their own decoded/network audio buffer. Closing `/stream` makes
+    /// clients reconnect at the current live edge instead of audibly draining the
+    /// old track for tens of seconds after a manual skip.
+    pub fn clear_and_resync_readers(&self) {
         let wp = self.write_pos.load(Ordering::Acquire);
         let readers = self.reader_positions.lock().unwrap();
         for r in readers.iter() {
             r.store(wp, Ordering::Release);
         }
-        // Wake any reader waiting in `wait_for_data` so they immediately see avail=0
-        // and re-enter the wait loop pointing at the new write_pos.
+        // Wake any reader waiting in `wait_for_data` so it immediately notices
+        // the resync signal or, for plain `clear`, sees avail=0 at the new edge.
         self.notify.notify_waiters();
+        self.resync.notify_waiters();
     }
 }
 
@@ -243,6 +256,14 @@ impl RingBufferReader {
     /// Wait for data to become available or timeout expires.
     /// Returns number of bytes available to read.
     pub async fn wait_for_data(&self, timeout_ms: u64) -> usize {
+        self.wait_for_data_or_resync(timeout_ms).await.0
+    }
+
+    /// Wait for data, a timeout, or a stream resync signal.
+    ///
+    /// The boolean is true when the current `/stream` response should be closed
+    /// so browser clients reconnect at the live edge after a manual skip.
+    pub async fn wait_for_data_or_resync(&self, timeout_ms: u64) -> (usize, bool) {
         let timeout = tokio::time::Duration::from_millis(timeout_ms);
         let deadline = tokio::time::Instant::now() + timeout;
 
@@ -257,18 +278,19 @@ impl RingBufferReader {
             };
 
             if avail > 0 {
-                return avail;
+                return (avail, false);
             }
 
             let now = tokio::time::Instant::now();
             if now >= deadline {
-                return 0;
+                return (0, false);
             }
 
             let remaining = deadline - now;
-            match tokio::time::timeout(remaining, self.buffer.notify.notified()).await {
-                Ok(()) => continue,
-                Err(_) => return 0,
+            tokio::select! {
+                _ = self.buffer.notify.notified() => continue,
+                _ = self.buffer.resync.notified() => return (0, true),
+                _ = tokio::time::sleep(remaining) => return (0, false),
             }
         }
     }
