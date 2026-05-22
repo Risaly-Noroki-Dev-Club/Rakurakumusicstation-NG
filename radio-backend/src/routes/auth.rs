@@ -1,6 +1,6 @@
+use crate::app::state::AppState;
 /// 设备认证路由：获取当前设备信息、设置显示名称、申请管理员。
 use crate::auth;
-use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, ClaimAdminRequest, SetDisplayNameRequest};
 use axum::{

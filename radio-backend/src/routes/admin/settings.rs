@@ -1,5 +1,5 @@
 /// 系统设置路由。
-use crate::db::AppState;
+use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, SaveSettingsRequest, SettingsResponse};
 use crate::routes::admin::get_admin;

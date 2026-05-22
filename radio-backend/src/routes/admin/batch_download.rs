@@ -1,10 +1,14 @@
-use crate::db::AppState;
+use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{
     ApiResponse, BatchDownloadRequest, BatchDownloadResponse, BatchDownloadResultItem,
     BatchDownloadStatus, DownloadEvent,
 };
 use crate::routes::admin::get_admin;
+use crate::services::download_tasks::{
+    ext_from_type, generate_task_id, insert_task, quality_to_ncm_level, remove_task,
+    sanitize_filename, subscribe_task, task_snapshot, BatchTask,
+};
 use crate::services::ncm::{api, NcmClient};
 use crate::services::netdisk;
 use axum::{
@@ -15,68 +19,9 @@ use axum::{
 };
 use futures_util::stream::{unfold, Stream};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 use tokio::sync::broadcast;
-
-#[derive(Clone)]
-struct BatchTask {
-    tx: broadcast::Sender<DownloadEvent>,
-    running: Arc<std::sync::atomic::AtomicBool>,
-    source: String,
-    total: usize,
-    success: Arc<std::sync::atomic::AtomicUsize>,
-    failed: Arc<std::sync::atomic::AtomicUsize>,
-    items: Arc<Mutex<Vec<BatchDownloadResultItem>>>,
-}
-
-fn batch_tasks() -> &'static Mutex<HashMap<String, BatchTask>> {
-    static TASKS: OnceLock<Mutex<HashMap<String, BatchTask>>> = OnceLock::new();
-    TASKS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn generate_task_id() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let chars: Vec<char> = "abcdefghijklmnopqrstuvwxyz0123456789".chars().collect();
-    (0..12)
-        .map(|_| chars[rng.gen_range(0..chars.len())])
-        .collect()
-}
-
-fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| match c {
-            '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => ' ',
-            _ => c,
-        })
-        .collect::<String>()
-        .trim()
-        .to_string()
-}
-
-fn quality_to_ncm_level(quality: &str) -> &'static str {
-    match quality {
-        "standard" => "standard",
-        "high" => "higher",
-        "exhigh" => "exhigh",
-        "lossless" => "lossless",
-        _ => "exhigh",
-    }
-}
-
-fn ext_from_type(file_type: &str, url: &str) -> &'static str {
-    if file_type == "flac" {
-        "flac"
-    } else if file_type == "mp3" {
-        "mp3"
-    } else if url.contains(".flac") {
-        "flac"
-    } else {
-        "mp3"
-    }
-}
 
 /// POST /api/admin/download/batch — 启动批量下载任务
 pub async fn start_batch_download(
@@ -94,21 +39,9 @@ pub async fn start_batch_download(
     let task_id = generate_task_id();
     let total = body.items.len();
 
-    let (tx, _rx) = broadcast::channel::<DownloadEvent>(512);
-    let task = BatchTask {
-        tx: tx.clone(),
-        running: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-        source: source.clone(),
-        total,
-        success: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-        failed: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-        items: Arc::new(Mutex::new(Vec::new())),
-    };
+    let task = BatchTask::new(source.clone(), total);
 
-    {
-        let mut tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
-        tasks.insert(task_id.clone(), task.clone());
-    }
+    insert_task(task_id.clone(), task.clone());
 
     let media_path = state.config.audio_engine.media_path.clone();
     let player_handle = state.player_handle.clone();
@@ -149,13 +82,11 @@ pub async fn start_batch_download(
             });
         }
         "spotify" => {
-            let mut tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
-            tasks.remove(&task_id);
+            remove_task(&task_id);
             return Err(AppError::BadRequest("Spotify 下载尚未实现".into()));
         }
         _ => {
-            let mut tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
-            tasks.remove(&task_id);
+            remove_task(&task_id);
             return Err(AppError::BadRequest(format!("不支持的下载源: {}", source)));
         }
     }
@@ -179,13 +110,8 @@ pub async fn batch_download_stream(
 ) -> Result<Sse<impl Stream<Item = Result<Event, std::convert::Infallible>>>, AppError> {
     let _admin = get_admin(&_state, &headers).await?;
 
-    let rx = {
-        let tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
-        let task = tasks
-            .get(&query.task_id)
-            .ok_or_else(|| AppError::BadRequest("任务不存在或已结束".into()))?;
-        task.tx.subscribe()
-    };
+    let rx = subscribe_task(&query.task_id)
+        .ok_or_else(|| AppError::BadRequest("任务不存在或已结束".into()))?;
 
     let stream = unfold(rx, |mut rx| async {
         match rx.recv().await {
@@ -224,24 +150,17 @@ pub async fn batch_download_status(
 ) -> Result<Json<ApiResponse<BatchDownloadStatus>>, AppError> {
     let _admin = get_admin(&_state, &headers).await?;
 
-    let tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
-    let task = tasks
-        .get(&query.task_id)
+    let snapshot = task_snapshot(&query.task_id)
         .ok_or_else(|| AppError::BadRequest("任务不存在或已结束".into()))?;
-
-    let items = task.items.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    let running = task.running.load(std::sync::atomic::Ordering::SeqCst);
-    let success = task.success.load(std::sync::atomic::Ordering::SeqCst);
-    let failed = task.failed.load(std::sync::atomic::Ordering::SeqCst);
 
     Ok(Json(ApiResponse::ok(BatchDownloadStatus {
         task_id: query.task_id,
-        running,
-        source: task.source.clone(),
-        total: task.total,
-        success,
-        failed,
-        items,
+        running: snapshot.running,
+        source: snapshot.source,
+        total: snapshot.total,
+        success: snapshot.success,
+        failed: snapshot.failed,
+        items: snapshot.items,
     })))
 }
 

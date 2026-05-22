@@ -1,9 +1,11 @@
+use crate::app::state::AppState;
 /// 歌曲库路由：搜索、获取歌曲详情、上传、下载。
 use crate::auth;
-use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
-use crate::services::metadata::{find_cover, get_duration, parse_artist_title, sanitize_filename};
+use crate::services::metadata::{
+    find_cover, get_duration, parse_artist_title, resolve_or_extract_cover, sanitize_filename,
+};
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -120,16 +122,25 @@ pub async fn get_song_cover(
         .await?
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
-    if song.cover_path.is_empty() {
+    let media_path = std::path::Path::new(&state.config.audio_engine.media_path);
+    let cover_path = resolve_or_extract_cover(
+        &state.db,
+        song.id,
+        &song.file_path,
+        &song.cover_path,
+        media_path,
+    )
+    .await?;
+
+    let Some(cover_path) = cover_path else {
         return Ok(Response::builder()
             .header(header::CONTENT_TYPE, "image/svg+xml")
             .header(header::CACHE_CONTROL, "public, max-age=3600")
             .body(axum::body::Body::from(DEFAULT_COVER_SVG))
             .unwrap());
-    }
+    };
 
-    let cover_full =
-        std::path::Path::new(&state.config.audio_engine.media_path).join(&song.cover_path);
+    let cover_full = media_path.join(&cover_path);
 
     let data = std::fs::read(&cover_full).map_err(|_| {
         // 文件丢失时也回退到缺省封面

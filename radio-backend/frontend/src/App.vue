@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, watch, ref, provide, nextTick } from 'vue'
+import { onMounted, onUnmounted, computed, watch, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
-import { store, THEMES } from './store'
+import { store } from './store'
 import {
   loadStationInfo, loadDeviceUser,
-  connectWebSocket, startPollers, stopPollers, getWs,
-  getStreamUrl
+  connectWebSocket, startPollers, stopPollers, getWs
 } from './api'
+import { useLiveAudio } from './app/useLiveAudio'
+import { useThemeSync } from './app/useThemeSync'
 import MiniPlayer from './components/MiniPlayer.vue'
 
 const route = useRoute()
@@ -16,59 +17,16 @@ const vuetifyTheme = useTheme()
 
 let queuePoller: ReturnType<typeof setInterval> | null = null
 
-// Global audio element (declared in template so browser sees it during parse)
-const audioEl = ref<HTMLAudioElement | null>(null)
+const {
+  audioEl,
+  needsTapToPlay,
+  initAudio,
+  restartLiveStream,
+  startPlaybackFromGesture,
+  cleanupAudio,
+} = useLiveAudio()
 provide('audioEl', audioEl)
-
-// 浏览器 autoplay 策略要求首次播放必须有用户手势触发，否则 .play() 会被静默拒绝。
-// 我们尝试自动播一次，被拒就显示一个全屏覆盖层等用户点。
-const needsTapToPlay = ref(false)
-
-function restartLiveStream() {
-  const audio = audioEl.value
-  if (!audio) return
-  const wasPaused = audio.paused
-  audio.pause()
-  audio.removeAttribute('src')
-  audio.load()
-  nextTick(() => {
-    const separator = getStreamUrl().includes('?') ? '&' : '?'
-    audio.src = `${getStreamUrl()}${separator}t=${Date.now()}`
-    audio.load()
-    if (!wasPaused) audio.play().catch(() => { needsTapToPlay.value = true })
-  })
-}
-
-function initAudio() {
-  if (!audioEl.value) return
-  audioEl.value.src = getStreamUrl()
-  audioEl.value.load()
-  requestAnimationFrame(() => {
-    const p = audioEl.value?.play()
-    if (p && typeof p.then === 'function') {
-      p.catch(() => { needsTapToPlay.value = true })
-    }
-  })
-}
-
-function startPlaybackFromGesture() {
-  if (!audioEl.value) return
-  audioEl.value.play().then(() => {
-    needsTapToPlay.value = false
-  }).catch(() => {
-    // 仍然失败：保留按钮，让用户重试
-  })
-}
-
-function preferredTheme(): 'light' | 'dark' {
-  const selected = THEMES[store.themeIdx]
-  if (selected === 'dark' || selected === 'light') return selected
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function syncTheme() {
-  vuetifyTheme.global.name.value = preferredTheme()
-}
+useThemeSync(vuetifyTheme)
 
 async function init() {
   // Start audio immediately in parallel — don't block on API calls
@@ -83,22 +41,10 @@ async function init() {
 
 onMounted(init)
 
-const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-const onSystemThemeChange = () => {
-  if (THEMES[store.themeIdx] === 'auto') syncTheme()
-}
-
-watch(() => store.themeIdx, syncTheme, { immediate: true })
-mediaQuery.addEventListener('change', onSystemThemeChange)
-
 onUnmounted(() => {
-  mediaQuery.removeEventListener('change', onSystemThemeChange)
   if (queuePoller) stopPollers(queuePoller)
   if (getWs()) getWs()!.close()
-  if (audioEl.value) {
-    audioEl.value.pause()
-    audioEl.value.src = ''
-  }
+  cleanupAudio()
 })
 
 const navItems = [

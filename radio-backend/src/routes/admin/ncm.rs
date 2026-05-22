@@ -1,5 +1,5 @@
 /// 网易云账号设置路由 — 原生 Rust 实现。
-use crate::db::AppState;
+use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, ImportPlaylistRequest, ImportPlaylistResponse, NcmImportTask};
 use crate::routes::admin::get_admin;

@@ -32,6 +32,13 @@ export async function onSearchInput(): Promise<void> {
   await loadLibrarySongs(false)
 }
 
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+export function debouncedSearch(): void {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(onSearchInput, 300)
+}
+
 export async function downloadSong(songId: number): Promise<void> {
   try {
     const res = await apiFetch('/api/songs/' + songId + '/download')

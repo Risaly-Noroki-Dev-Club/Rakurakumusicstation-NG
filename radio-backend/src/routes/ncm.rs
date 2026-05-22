@@ -1,6 +1,6 @@
+use crate::app::state::AppState;
 /// 设备个人网易云账号路由：设置、查看、测试个人网易云凭据。
 use crate::auth;
-use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, NcmStatus, SaveNcmRequest};
 use crate::services::ncm::{cookie, NcmClient};

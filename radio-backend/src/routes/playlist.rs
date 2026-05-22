@@ -1,6 +1,6 @@
+use crate::app::state::AppState;
 /// 设备播放列表路由：个人播放列表的增删改查。
 use crate::auth;
-use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{
     AddSongToPlaylistRequest, ApiResponse, CreatePlaylistRequest, PlaylistWithCount, SongSummary,

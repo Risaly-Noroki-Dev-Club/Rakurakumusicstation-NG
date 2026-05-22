@@ -1,5 +1,5 @@
 /// 批量下载路由 — 使用原生 Rust NCM 客户端 + SSE 实时推送。
-use crate::db::AppState;
+use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, DownloadEvent, DownloadRequest};
 use crate::routes::admin::get_admin;

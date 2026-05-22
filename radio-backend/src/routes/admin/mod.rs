@@ -10,8 +10,8 @@ pub mod upload;
 /// 管理员路由入口模块。
 pub mod users;
 
+use crate::app::state::AppState;
 use crate::auth;
-use crate::db::AppState;
 use crate::error::AppError;
 use axum::{extract::DefaultBodyLimit, http::HeaderMap, Router};
 use std::sync::Arc;

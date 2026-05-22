@@ -1,5 +1,5 @@
 /// 队列管理器：共享的电台队列（FIFO），支持管理员覆盖操作。
-use crate::db::AppState;
+use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{QueueItem, QueueItemDisplay, SongSummary};
 use sqlx::SqlitePool;

@@ -1,6 +1,6 @@
+use crate::app::state::AppState;
 /// 收藏路由：收藏/取消收藏歌曲。
 use crate::auth;
-use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, SongSummary};
 use axum::{

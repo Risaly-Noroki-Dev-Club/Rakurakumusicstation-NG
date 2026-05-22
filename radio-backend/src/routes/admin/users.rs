@@ -1,5 +1,5 @@
 /// 设备用户管理路由。
-use crate::db::AppState;
+use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, Role, SetRoleRequest};
 use crate::routes::admin::get_admin;

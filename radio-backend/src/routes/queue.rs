@@ -1,9 +1,9 @@
+use crate::app::state::AppState;
 /// 队列路由：查看、添加、移动、移除、跳过、历史记录、正在播放。
 use crate::auth;
-use crate::db::AppState;
 use crate::error::AppError;
 use crate::models::{AddToQueueRequest, ApiResponse, MoveQueueItemRequest, NowPlaying};
-use crate::queue_manager;
+use crate::services::queue;
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
@@ -25,7 +25,7 @@ pub fn queue_routes() -> Router<Arc<AppState>> {
 async fn get_queue(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<crate::models::QueueItemDisplay>>>, AppError> {
-    let items = queue_manager::get_queue_display(&state.db).await?;
+    let items = queue::get_queue_display(&state.db).await?;
     Ok(Json(ApiResponse::ok(items)))
 }
 
@@ -36,8 +36,7 @@ async fn add_to_queue(
     Json(req): Json<AddToQueueRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let device = auth::require_device_auth(&headers, &state.db).await?;
-    let item_id =
-        queue_manager::add_to_queue(&state, req.song_id, device.id, &device.display_name).await?;
+    let item_id = queue::add_to_queue(&state, req.song_id, device.id, &device.display_name).await?;
 
     Ok(Json(ApiResponse::ok(serde_json::json!({
         "queue_item_id": item_id,
@@ -54,7 +53,7 @@ async fn remove_queue_item(
     let device = auth::require_device_auth(&headers, &state.db).await?;
     auth::require_admin(&device)?;
 
-    queue_manager::remove_queue_item(&state, item_id).await?;
+    queue::remove_queue_item(&state, item_id).await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'remove_queue', ?)")
         .bind(device.id)
@@ -75,7 +74,7 @@ async fn move_queue_item(
     let device = auth::require_device_auth(&headers, &state.db).await?;
     auth::require_admin(&device)?;
 
-    queue_manager::move_queue_item(&state.db, item_id, req.new_position).await?;
+    queue::move_queue_item(&state.db, item_id, req.new_position).await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'move_queue', ?)")
         .bind(device.id)
@@ -97,7 +96,7 @@ async fn skip_current(
     let device = auth::require_device_auth(&headers, &state.db).await?;
     auth::require_admin(&device)?;
 
-    queue_manager::skip_current(&state).await?;
+    queue::skip_current(&state).await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'skip_track', 'Skipped current track')")
         .bind(device.id)
@@ -111,7 +110,7 @@ async fn skip_current(
 async fn get_history(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, AppError> {
-    let history = queue_manager::get_history(&state.db, 20).await?;
+    let history = queue::get_history(&state.db, 20).await?;
     Ok(Json(ApiResponse::ok(history)))
 }
 
@@ -187,17 +186,11 @@ pub async fn now_playing(
             .audio_engine
             .resolve_file_url(s.id, &state.config.server.base_path)
     });
-    let cover_url = song.as_ref().and_then(|s| {
-        if s.cover_path.is_empty() {
-            None
-        } else {
-            Some(
-                state
-                    .config
-                    .audio_engine
-                    .resolve_cover_url(s.id, &state.config.server.base_path),
-            )
-        }
+    let cover_url = song.as_ref().map(|s| {
+        state
+            .config
+            .audio_engine
+            .resolve_cover_url(s.id, &state.config.server.base_path)
     });
 
     Ok(Json(ApiResponse::ok(NowPlaying {
