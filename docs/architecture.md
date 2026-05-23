@@ -98,7 +98,6 @@ radio-backend/frontend/src/store.ts
 - `App.vue` is now mostly layout and top-level lifecycle wiring.
 - `src/app/useLiveAudio.ts` owns the global audio element lifecycle.
 - `src/app/useThemeSync.ts` owns Vuetify/system theme synchronization.
-- `src/app/audioControls.ts` owns volume helpers.
 - `src/app/filePlayback.ts` contains the backup MediaSource file playback mode.
 - `src/store.ts` is still the global reactive store. It is a future candidate for domain splitting.
 
@@ -122,6 +121,7 @@ radio-backend/frontend/src/api/websocket/fallbackPolling.ts
 
 - New HTTP endpoint: add a handler in `routes/`, keep it thin, move reusable logic to `services/`.
 - New queue behavior: start in `services/queue.rs`; split into submodules when editing becomes painful.
+- Public queue responses must not expose real requester names; `/api/queue/history` is admin-only.
 - New playback/now-playing behavior: use `services/playback_snapshot.rs` unless it is connection-specific.
 - New WebSocket connection behavior: use backend `websocket.rs` or frontend `api/websocket/connection.ts`.
 - New WebSocket message handling: backend message type in `models/ws.rs`, frontend handling in `api/websocket/messages.ts`.

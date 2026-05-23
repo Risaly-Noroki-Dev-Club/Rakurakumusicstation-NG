@@ -5,7 +5,7 @@
 - Main app is a single Rust binary: `radio-backend` serves REST, WebSocket `/ws`, audio stream `/stream`, and static files on port `2241`.
 - `radio-engine` is a local Rust library embedded by `radio-backend`; do not reintroduce a separate audio process, Redis, or HTTP IPC for engine control.
 - `radio-backend/frontend` is Vue 3 + Vite + TypeScript; `npm run build` writes production assets to `radio-backend/static/`, which the backend serves via `ServeDir::new("static")` fallback.
-- `legacy/cpp-engine/`, `audio-engine/`, root `music_dl.py`, and `deploy/Makefile` are legacy/deploy leftovers and are not part of the normal root build.
+- Legacy C++ engine and old dual-process deploy files have been removed; keep runtime as the single Rust backend binary plus embedded `radio-engine`.
 
 ## Commands
 

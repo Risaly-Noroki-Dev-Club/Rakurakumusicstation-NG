@@ -73,8 +73,9 @@ cd ..
 print_status "准备部署文件..."
 mkdir -p dist/data dist/media
 
-# 复制二进制文件
-cp radio-backend/target/release/radio-backend dist/
+# 复制二进制文件。先写临时文件再替换，避免覆盖正在运行的二进制时触发 ETXTBSY。
+cp radio-backend/target/release/radio-backend dist/radio-backend.new
+mv -f dist/radio-backend.new dist/radio-backend
 print_success "radio-backend 二进制文件已复制"
 
 # 复制前端静态文件（如果存在）

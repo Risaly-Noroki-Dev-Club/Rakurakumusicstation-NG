@@ -11,6 +11,37 @@
 
 ## 快速开始
 
+### 一行安装（systemd）
+
+适用于 Debian/Ubuntu、Arch Linux、Fedora 等常见 Linux 发行版。脚本会安装依赖、拉取源码、构建前端和 Rust 后端，并创建 `rakuraku-music-station` systemd 服务。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Risaly-Noroki-Dev-Club/Rakurakumusicstation-NG/main/install.sh | sudo bash
+```
+
+安装后：
+
+```bash
+# 配置文件
+sudoedit /etc/rakuraku/config.toml
+
+# 放入音乐
+sudo cp /path/to/music/*.mp3 /var/lib/rakuraku/media/
+
+# 重启服务
+sudo systemctl restart rakuraku-music-station
+
+# 查看日志
+journalctl -u rakuraku-music-station -f
+```
+
+可选环境变量：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Risaly-Noroki-Dev-Club/Rakurakumusicstation-NG/main/install.sh \
+  | sudo RAKURAKU_REF=main RAKURAKU_PORT=2241 bash
+```
+
 ### 从源码构建
 
 ```bash
@@ -59,9 +90,9 @@ cd dist && ./stop.sh
 
 | 页面 | 路径 | 功能 |
 |------|------|------|
-| **播放器** | `/` | 封面、进度条、同步歌词、音量 / 播放控制 |
+| **播放器** | `/` | 封面、进度条、同步歌词、播放控制 |
 | **曲库** | `/library` | 搜索歌曲、点歌、上传、歌单、网易云账号绑定 |
-| **队列** | `/up-next` | 待播队列与播放历史；`/queue` 会兼容跳转到此页 |
+| **队列** | `/up-next` | 待播队列；管理员可查看播放历史；`/queue` 会兼容跳转到此页 |
 | **设置** | `/settings` | 显示名称、亮色/暗色/自动主题、管理员提权 |
 
 页面顶部有音频进度条常驻，曲目封面、歌词通过 WebSocket 实时同步。
@@ -190,8 +221,8 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 | `GET` | `/api/songs/:id/cover` | 无 | 封面图片 |
 | `GET` | `/api/songs/:id/download` | Device | 下载歌曲 |
 | `POST` | `/api/songs/upload` | Device | 上传歌曲 |
-| `GET` | `/api/queue` | 无 | 待播队列 |
-| `GET` | `/api/queue/history` | 无 | 播放历史 |
+| `GET` | `/api/queue` | 无 | 待播队列；普通用户不返回真实点歌人 |
+| `GET` | `/api/queue/history` | Admin | 播放历史 |
 | `POST` | `/api/queue` | Device | 点歌 |
 | `GET` `POST` `DELETE` | `/api/playlists` | Device | 歌单管理 |
 | `GET` `POST` | `/api/ncm` | Device | 个人网易云账号 |
@@ -201,6 +232,8 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 | `*` | `/api/admin/*` | Admin | 管理端点 |
 | `WS` | `/ws` | Device (query) | WebSocket 实时推送 |
 | `GET` | `/stream` | 无 | 音频流 (`audio/mpeg`) |
+
+`/api/now-playing.position_ms` 是电台引擎进度，保留给外部集成兼容使用。官方前端不会用它暴露用户侧的点歌历史。播放历史和真实点歌人只对管理员开放。
 
 ---
 

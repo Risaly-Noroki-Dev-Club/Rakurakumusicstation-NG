@@ -46,7 +46,7 @@
 
 ### 重大架构变更：C++ 引擎被 Rust 重写替代
 
-- **全新 Rust 音频引擎** (`radio-engine/` crate) — 原 C++ 音频引擎（`legacy/cpp-engine/`，已归档不再使用）由 Rust 零拷贝环形缓冲区引擎替代。
+- **全新 Rust 音频引擎** (`radio-engine/` crate) — 原 C++ 音频引擎已移除，由 Rust 零拷贝环形缓冲区引擎替代。
   - 音频管道：ffmpeg → `RingBuffer` → TCP 客户端流
   - 播放列表扫描使用 ffmpeg 提取元数据（与旧版 C++ 引擎一致）
   - 内嵌为 `radio-backend` 内的本地 crate（非独立进程）

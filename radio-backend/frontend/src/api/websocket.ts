@@ -29,5 +29,4 @@ export function stopPollers(qp: ReturnType<typeof setInterval>): void {
 export { connectWebSocket, getWs }
 
 export { refreshPlaybackPoll }
-export { volumeDown, volumeUp } from '../app/audioControls'
 export { cleanupFilePlayback, switchPlaybackMode } from '../app/filePlayback'

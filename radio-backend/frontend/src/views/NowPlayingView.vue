@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, inject } from 'vue'
 import { store } from '../store'
-import { apiUrl, volumeDown, volumeUp, adminSkipNext, adminSkipPrev } from '../api'
+import { apiUrl, adminSkipNext, adminSkipPrev } from '../api'
 import AmProgressBar from '../components/AmProgressBar.vue'
 import LyricsView from '../components/LyricsView.vue'
 import DynamicBackground from '../components/DynamicBackground.vue'
@@ -22,14 +22,6 @@ const isAdmin = computed(() => store.deviceUser?.role === 'admin')
 function toggleLyrics() {
   if (!hasLyrics.value) return
   store.showLyrics = !store.showLyrics
-}
-
-function onVolDown() {
-  if (audioEl?.value) volumeDown(audioEl.value)
-}
-
-function onVolUp() {
-  if (audioEl?.value) volumeUp(audioEl.value)
 }
 
 function togglePlay() {
@@ -95,10 +87,6 @@ function onNext() {
 
         <!-- Controls -->
         <div class="am-controls d-flex align-center justify-center mt-6" :class="{ 'justify-start': store.isDesktop }">
-          <v-btn icon variant="text" color="medium-emphasis" @click="onVolDown">
-            <v-icon size="24">mdi-volume-minus</v-icon>
-          </v-btn>
-
           <v-btn
             icon
             variant="text"
@@ -132,9 +120,6 @@ function onNext() {
             <v-icon size="28">mdi-skip-next</v-icon>
           </v-btn>
 
-          <v-btn icon variant="text" color="medium-emphasis" @click="onVolUp">
-            <v-icon size="24">mdi-volume-plus</v-icon>
-          </v-btn>
         </div>
 
         <!-- Lyrics toggle -->

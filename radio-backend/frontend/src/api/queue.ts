@@ -7,7 +7,11 @@ export async function refreshQueue(): Promise<void> {
     const data = await res.json()
     if (!data.success) return
     store.queue = data.data || []
-    await refreshHistory()
+    if (store.deviceUser?.role === 'admin') {
+      await refreshHistory()
+    } else {
+      store.history = []
+    }
   } catch { /* ignore */ }
 }
 

@@ -1,15 +1,14 @@
 [Unit]
-Description=Rakuraku Music Station - Rust Business Backend
+Description=Rakuraku Music Station
 Documentation=https://github.com/example/rakuraku
-After=network.target redis.service audio-engine.service
-Wants=redis.service audio-engine.service
+After=network.target
 
 [Service]
 Type=simple
 User=radio
 Group=radio
 WorkingDirectory=/var/lib/rakuraku
-Environment=RADIO_CONFIG=/etc/rakuraku/radio-backend.toml
+Environment=RADIO_CONFIG=/etc/rakuraku/config.toml
 Environment=RADIO_LOG_LEVEL=info
 ExecStart=/usr/local/bin/radio-backend
 ExecStop=/bin/kill -TERM $MAINPID
@@ -24,8 +23,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/rakuraku/data /var/lib/rakuraku/media
-ReadOnlyPaths=/etc/rakuraku
+ReadWritePaths=/var/lib/rakuraku /etc/rakuraku
 
 # 资源限制
 LimitNOFILE=4096

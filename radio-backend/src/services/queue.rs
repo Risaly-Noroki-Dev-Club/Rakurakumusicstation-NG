@@ -147,7 +147,7 @@ pub async fn add_to_queue(
         crate::models::WsMessage::QueueUpdate {
             action: "added".into(),
             song_title: Some(song.title.clone()),
-            requested_by: Some(display_name.to_string()),
+            requested_by: None,
             queue_size: current_size + 1,
         },
     );

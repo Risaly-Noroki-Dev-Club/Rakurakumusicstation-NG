@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue'
 import { store, formatTime } from '../store'
-import { apiUrl, getStreamUrl, volumeDown, volumeUp } from '../api'
+import { apiUrl, getStreamUrl } from '../api'
 
 const audioEl = ref<HTMLAudioElement | null>(null)
 const lyricsBoxRef = ref<HTMLElement | null>(null)
@@ -52,14 +52,6 @@ function scrollLyric(el: HTMLElement | null) {
   }
 }
 
-function onVolDown() {
-  if (audioEl.value) volumeDown(audioEl.value)
-}
-
-function onVolUp() {
-  if (audioEl.value) volumeUp(audioEl.value)
-}
-
 onMounted(() => {
   if (audioEl.value) {
     audioEl.value.src = getStreamUrl()
@@ -91,10 +83,6 @@ onMounted(() => {
         <span>{{ totalTimeFormatted }}</span>
       </div>
       <audio ref="audioEl" controls autoplay style="width:100%; margin:8px 0;"></audio>
-      <div class="controls">
-        <button class="btn btn-secondary btn-small" @click="onVolDown">🔉</button>
-        <button class="btn btn-secondary btn-small" @click="onVolUp">🔊</button>
-      </div>
     </div>
 
     <div :class="['card', { hidden: store.lyricsLines.length === 0 }]">

@@ -19,7 +19,7 @@ onMounted(() => { refreshQueue() })
             <span :class="['badge', item.status === 'playing' ? 'badge-playing' : 'badge-pending']">
               {{ item.status === 'playing' ? '播放中' : '等待' }}
             </span>
-            点歌: {{ item.requested_by }}
+            <span v-if="store.deviceUser?.role === 'admin'">点歌: {{ item.requested_by }}</span>
             <button
               v-if="store.deviceUser?.role === 'admin' && item.status !== 'playing'"
               class="btn btn-danger btn-small" style="margin-left:8px"
@@ -28,7 +28,7 @@ onMounted(() => { refreshQueue() })
         </div>
       </div>
     </div>
-    <div class="card">
+    <div v-if="store.deviceUser?.role === 'admin'" class="card">
       <h2>📜 播放历史</h2>
       <div v-if="store.history.length === 0" style="text-align:center;color:var(--text-muted);padding:20px">暂无历史</div>
       <div style="max-height:300px;overflow-y:auto">

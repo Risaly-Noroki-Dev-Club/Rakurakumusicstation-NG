@@ -74,7 +74,7 @@ function replayQueueItem(songId: number) {
             v-for="item in store.queue"
             :key="item.id"
             :title="item.song?.title || '未知歌曲'"
-            :subtitle="(item.song?.artist || '') + ' · 点歌: ' + item.requested_by"
+            :subtitle="store.deviceUser?.role === 'admin' ? (item.song?.artist || '') + ' · 点歌: ' + item.requested_by : (item.song?.artist || '')"
             :class="{ 'bg-primary-lighten-5': item.status === 'playing' }"
           >
             <template #prepend>
@@ -134,7 +134,7 @@ function replayQueueItem(songId: number) {
     </v-card>
 
     <!-- History -->
-    <v-card elevation="1">
+    <v-card v-if="store.deviceUser?.role === 'admin'" elevation="1">
       <v-card-title class="text-subtitle-1 font-weight-bold d-flex align-center">
         播放历史
         <v-spacer />

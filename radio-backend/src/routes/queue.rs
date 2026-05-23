@@ -21,11 +21,21 @@ pub fn queue_routes() -> Router<Arc<AppState>> {
         .route("/history", get(get_history))
 }
 
-/// GET /api/queue — 获取当前队列（公开，无需认证）
+/// GET /api/queue — 获取当前队列（公开，普通用户脱敏点歌人）
 async fn get_queue(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<crate::models::QueueItemDisplay>>>, AppError> {
-    let items = queue::get_queue_display(&state.db).await?;
+    let is_admin = auth::optional_device_auth(&headers, &state.db)
+        .await
+        .map(|user| user.role == "admin")
+        .unwrap_or(false);
+    let mut items = queue::get_queue_display(&state.db).await?;
+    if !is_admin {
+        for item in &mut items {
+            item.requested_by = "匿名".into();
+        }
+    }
     Ok(Json(ApiResponse::ok(items)))
 }
 
@@ -106,10 +116,14 @@ async fn skip_current(
     Ok(Json(ApiResponse::ok("Track skipped".into())))
 }
 
-/// GET /api/queue/history — 最近播放历史（公开）
+/// GET /api/queue/history — 最近播放历史（仅管理员）
 async fn get_history(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
 ) -> Result<Json<ApiResponse<Vec<serde_json::Value>>>, AppError> {
+    let device = auth::require_device_auth(&headers, &state.db).await?;
+    auth::require_admin(&device)?;
+
     let history = queue::get_history(&state.db, 20).await?;
     Ok(Json(ApiResponse::ok(history)))
 }

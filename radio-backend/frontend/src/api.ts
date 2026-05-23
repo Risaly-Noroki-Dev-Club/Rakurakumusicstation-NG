@@ -21,7 +21,5 @@ export {
   startPollers,
   stopPollers,
   refreshPlaybackPoll,
-  volumeDown,
-  volumeUp,
   getWs,
 } from './api/websocket'

@@ -37,7 +37,7 @@ export function handleWsMessage(msg: WsMessage, ws: WebSocket | null): void {
     break
   }
   case 'queue_update':
-    toast((msg.requested_by || '某人') + ' 为电台点了《' + (msg.song_title || '未知歌曲') + '》', 'info')
+    toast('有人为电台点了《' + (msg.song_title || '未知歌曲') + '》', 'info')
     refreshQueue()
     break
   case 'notice':
