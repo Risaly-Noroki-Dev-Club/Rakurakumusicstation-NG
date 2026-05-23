@@ -62,29 +62,3 @@ export async function downloadSong(songId: number): Promise<void> {
     toast('下载完成', 'success')
   } catch { toast('下载失败', 'error') }
 }
-
-export async function uploadSong(file: File): Promise<boolean> {
-  if (file.size > 100 * 1024 * 1024) {
-    toast('文件大小超过 100MB 限制', 'error')
-    return false
-  }
-  const formData = new FormData()
-  formData.append('file', file)
-  try {
-    const res = await apiFetch('/api/songs/upload', {
-      method: 'POST',
-      body: formData
-    })
-    const data = await res.json()
-    if (data.success) {
-      toast(data.data || '上传成功', 'success')
-      return true
-    } else {
-      toast(data.error || '上传失败', 'error')
-      return false
-    }
-  } catch {
-    toast('上传失败', 'error')
-    return false
-  }
-}

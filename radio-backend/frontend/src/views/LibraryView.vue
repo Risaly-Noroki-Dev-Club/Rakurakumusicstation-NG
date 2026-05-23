@@ -2,12 +2,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { store, formatTime } from '../store'
 import {
-  debouncedSearch, addToQueue, downloadSong, uploadSong,
+  debouncedSearch, addToQueue, downloadSong,
   loadMyPlaylists, createPlaylist,
   deletePlaylist, loadPlaylistDetail, addSongToPlaylist, removeSongFromPlaylist,
-  onSearchInput, loadLibrarySongs
+  onSearchInput, loadLibrarySongs, apiFetch
 } from '../api'
-import NcmSettings from '../components/NcmSettings.vue'
 import type { PlaylistDetail, PlaylistSong } from '../api/playlists'
 
 onMounted(() => {
@@ -19,6 +18,7 @@ onMounted(() => {
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const selectedFile = ref<File | null>(null)
+const isAdmin = computed(() => store.deviceUser?.role === 'admin')
 
 function handleFileSelect(event: Event) {
   const input = event.target as HTMLInputElement
@@ -38,18 +38,37 @@ async function handleUpload() {
     store.uploadStatusType = 'error'
     return
   }
+  if (selectedFile.value.size > 100 * 1024 * 1024) {
+    store.uploadStatus = '文件大小超过 100MB 限制'
+    store.uploadStatusType = 'error'
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('file', selectedFile.value)
   store.uploadStatus = '上传中...'
   store.uploadStatusType = 'info'
-  const ok = await uploadSong(selectedFile.value)
-  if (ok) {
-    store.uploadStatus = '上传成功'
+
+  try {
+    const res = await apiFetch('/api/admin/upload', {
+      method: 'POST',
+      body: formData
+    })
+    const data = await res.json()
+    if (!data.success) {
+      store.uploadStatus = data.error || '上传失败'
+      store.uploadStatusType = 'error'
+      return
+    }
+
+    store.uploadStatus = data.data || '上传成功'
     store.uploadStatusType = 'success'
     selectedFile.value = null
     store.uploadFile = null
     store.uploadFileName = ''
     if (fileInput.value) fileInput.value.value = ''
     onSearchInput()
-  } else {
+  } catch {
     store.uploadStatus = '上传失败'
     store.uploadStatusType = 'error'
   }
@@ -205,7 +224,7 @@ async function handleAddToPlaylist(playlistId: number) {
       <!-- Left column: Upload + Playlists -->
       <div class="am-library-left">
         <!-- Upload -->
-        <v-card v-if="store.deviceUser" class="mb-4" elevation="1">
+        <v-card v-if="isAdmin" class="mb-4" elevation="1">
           <v-card-title class="text-subtitle-1 font-weight-bold">
             上传歌曲
           </v-card-title>
@@ -300,10 +319,14 @@ async function handleAddToPlaylist(playlistId: number) {
 
       <!-- Right column: NCM -->
       <div class="am-library-right">
-        <NcmSettings
-          v-if="store.deviceUser"
-          user-mode
-        />
+        <v-card class="mb-4" elevation="1">
+          <v-card-title class="text-subtitle-1 font-weight-bold">
+            音乐导入
+          </v-card-title>
+          <v-card-text class="text-body-2 text-medium-emphasis">
+            网易云和远端导入会向服务器新增音乐文件，仅管理员可在后台操作。普通用户仍可下载曲库中已有歌曲。
+          </v-card-text>
+        </v-card>
       </div>
     </div>
 

@@ -8,7 +8,7 @@ export { loadDeviceUser, setDisplayName, claimAdmin } from './api/auth'
 
 export { refreshQueue, refreshHistory, removeQueueItem, addToQueue } from './api/queue'
 
-export { onSearchInput, debouncedSearch, loadLibrarySongs, downloadSong, uploadSong } from './api/songs'
+export { onSearchInput, debouncedSearch, loadLibrarySongs, downloadSong } from './api/songs'
 
 export { loadMyPlaylists, createPlaylist, deletePlaylist, loadPlaylistDetail, addSongToPlaylist, removeSongFromPlaylist } from './api/playlists'
 
