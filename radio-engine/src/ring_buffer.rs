@@ -1,4 +1,3 @@
-use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -10,20 +9,10 @@ use crate::config::BUFFER_CAPACITY;
 /// read position. The writer overwrites oldest data when full, advancing
 /// any reader positions that fall behind to avoid reading garbage.
 ///
-/// # Safety
-///
-/// `UnsafeCell` is used for the `data` buffer to allow lock-free reads while
-/// the writer modifies it. This is sound because:
-/// 1. The writer holds the internal write lock during writes, ensuring exclusive write access.
-/// 2. The writer updates `write_pos` with `Release` ordering after data is written.
-/// 3. Readers read `write_pos` with `Acquire` ordering before reading data.
-/// 4. Readers and writer operate on disjoint regions of the buffer (enforced by the
-///    read/write position protocol).
-///
-/// This pattern matches the classic lock-free ring buffer design used in the C++
-/// implementation.
+/// The underlying data buffer is protected by a `Mutex` so that writer and
+/// readers never access the same memory concurrently.
 pub struct RingBuffer {
-    data: UnsafeCell<Vec<u8>>,
+    data: Mutex<Vec<u8>>,
     mask: usize,
     capacity: usize,
     write_pos: AtomicUsize,
@@ -32,23 +21,12 @@ pub struct RingBuffer {
     resync: tokio::sync::Notify,
 }
 
-// RingBuffer is Send + Sync because all shared mutable state is protected
-// by atomics (write_pos, reader positions) or mutex (reader_positions).
-// The UnsafeCell for data is only accessed under the write lock for writes,
-// and reads are synchronized via atomic position ordering.
-unsafe impl Send for RingBuffer {}
-unsafe impl Sync for RingBuffer {}
-
 /// A reader attached to a ring buffer. Each reader has an independent
 /// position and can be used concurrently from different threads/tasks.
 pub struct RingBufferReader {
     buffer: Arc<RingBuffer>,
     read_pos: Arc<AtomicUsize>,
 }
-
-// RingBufferReader is Send because it only reads from the shared buffer
-// using atomic position synchronization.
-unsafe impl Send for RingBufferReader {}
 
 impl RingBuffer {
     /// Create a new ring buffer with the given capacity.
@@ -61,7 +39,7 @@ impl RingBuffer {
             capacity
         );
         let mask = capacity - 1;
-        let data = UnsafeCell::new(vec![0u8; capacity]);
+        let data = Mutex::new(vec![0u8; capacity]);
         Arc::new(Self {
             data,
             mask,
@@ -123,11 +101,10 @@ impl RingBuffer {
             }
         }
 
-        // Write data into buffer (handle wrap-around)
-        // SAFETY: Exclusive write access is guaranteed by the local computation above;
-        // no other thread writes to the buffer. Readers are synchronized via atomic
-        // write_pos with Release/Acquire ordering.
-        let buf = unsafe { &mut *self.data.get() };
+        // Write data into buffer (handle wrap-around).
+        // The Mutex guarantees exclusive access to the underlying storage,
+        // preventing data races with concurrent readers.
+        let mut buf = self.data.lock().unwrap();
         let wp_idx = current_wp & self.mask;
         let first_seg = std::cmp::min(len, self.capacity - wp_idx);
         buf[wp_idx..wp_idx + first_seg].copy_from_slice(&data[..first_seg]);
@@ -135,6 +112,7 @@ impl RingBuffer {
             let second_seg = len - first_seg;
             buf[..second_seg].copy_from_slice(&data[first_seg..]);
         }
+        drop(buf);
 
         self.write_pos
             .store(current_wp + len, Ordering::Release);
@@ -214,7 +192,7 @@ impl Drop for RingBufferReader {
 
 impl RingBufferReader {
     /// Read available data into `dest`. Returns number of bytes read.
-    /// Non-blocking, lock-free.
+    /// Non-blocking.
     pub fn read(&self, dest: &mut [u8]) -> usize {
         let wp = self.buffer.write_pos.load(Ordering::Acquire);
         let rp = self.read_pos.load(Ordering::Relaxed);
@@ -233,11 +211,8 @@ impl RingBufferReader {
         let to_read = std::cmp::min(avail, dest.len());
         let first_seg = std::cmp::min(to_read, self.buffer.capacity - rp_idx);
 
-        // SAFETY: The reader only reads from the region between read_pos and write_pos.
-        // The writer will never overwrite this region as long as the reader has not
-        // fallen behind (and is kept up-to-date by push's overflow advancement).
-        // The Acquire load of write_pos ensures we see all writes up to that point.
-        let buf = unsafe { &*self.buffer.data.get() };
+        // Lock the data buffer to prevent concurrent read/write on the same memory.
+        let buf = self.buffer.data.lock().unwrap();
         dest[..first_seg].copy_from_slice(&buf[rp_idx..rp_idx + first_seg]);
 
         if first_seg < to_read {
@@ -245,6 +220,7 @@ impl RingBufferReader {
             dest[first_seg..first_seg + second_seg]
                 .copy_from_slice(&buf[..second_seg]);
         }
+        drop(buf);
 
         // Advance without masking: read_pos stays in the same unbounded-counter
         // space as write_pos so that avail = write_pos - read_pos is always valid.

@@ -59,7 +59,10 @@ impl PlaybackSnapshotCache {
         let should_send_full_lyrics = self.lyrics_broadcast_song_id != Some(song_id);
         let lyrics_lines_payload = if should_send_full_lyrics {
             self.lyrics_broadcast_song_id = Some(song_id);
-            lyrics_lines_ref.cloned()
+            // Always send a value on song change: Some(vec) with lyrics or
+            // Some(vec![]) when there are none, so the frontend can distinguish
+            // "no lyrics for this song" from "not resending lyrics this tick".
+            Some(lyrics_lines_ref.cloned().unwrap_or_default())
         } else {
             None
         };

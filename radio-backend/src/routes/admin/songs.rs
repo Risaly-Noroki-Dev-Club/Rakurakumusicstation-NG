@@ -62,28 +62,41 @@ pub async fn delete_song(
         }
     }
 
-    sqlx::query("DELETE FROM playlist_songs WHERE song_id = ?")
-        .bind(id)
-        .execute(&state.db)
-        .await?;
-    sqlx::query("DELETE FROM queue_items WHERE song_id = ?")
-        .bind(id)
-        .execute(&state.db)
-        .await?;
-    sqlx::query("DELETE FROM favorites WHERE song_id = ?")
-        .bind(id)
-        .execute(&state.db)
-        .await?;
-    sqlx::query("DELETE FROM songs WHERE id = ?")
-        .bind(id)
-        .execute(&state.db)
-        .await?;
+    {
+        let _queue_guard = state.queue_sync.lock().await;
+
+        sqlx::query("DELETE FROM playlist_songs WHERE song_id = ?")
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+        sqlx::query("DELETE FROM queue_items WHERE song_id = ?")
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+        state.player_handle.remove_request_by_song_id(id);
+        sqlx::query("DELETE FROM favorites WHERE song_id = ?")
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+        sqlx::query("DELETE FROM songs WHERE id = ?")
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'delete_song', ?)")
         .bind(admin.id)
         .bind(format!("Deleted song {}: {}", id, song.title))
         .execute(&state.db)
         .await?;
+
+    state
+        .player_handle
+        .send_command(radio_engine::types::AudioCommand {
+            cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
+            song_id: None,
+            file_path: None,
+        });
 
     Ok(Json(ApiResponse::ok(format!("已删除: {}", song.title))))
 }
@@ -176,6 +189,16 @@ pub async fn rescan_songs(
         .bind(format!("Found {} new songs", new_songs))
         .execute(&state.db)
         .await?;
+
+    if new_songs > 0 {
+        state
+            .player_handle
+            .send_command(radio_engine::types::AudioCommand {
+                cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
+                song_id: None,
+                file_path: None,
+            });
+    }
 
     Ok(Json(ApiResponse::ok(format!(
         "Rescan complete. {} new songs added.",

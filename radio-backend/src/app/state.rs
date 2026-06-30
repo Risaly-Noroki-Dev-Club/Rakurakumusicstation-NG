@@ -16,6 +16,8 @@ pub struct AppState {
     pub ring_buffer: Arc<RingBuffer>,
     /// 音频引擎的播放器句柄（用于发送命令、获取状态）
     pub player_handle: PlayerHandle,
+    /// Serializes DB queue mutations with embedded-engine request queue updates.
+    pub queue_sync: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -36,6 +38,7 @@ impl AppState {
             ws_tx,
             ring_buffer,
             player_handle,
+            queue_sync: tokio::sync::Mutex::new(()),
         })
     }
 }

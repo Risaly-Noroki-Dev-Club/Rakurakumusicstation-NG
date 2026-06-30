@@ -55,7 +55,7 @@ pub async fn run() -> anyhow::Result<()> {
             state.clone(),
             crate::http::middleware::device_cookie_middleware,
         ))
-        .layer(cors_layer());
+        .layer(cors_layer(&state.config.server));
 
     let addr = format!("{}:{}", state.config.server.host, state.config.server.port);
     tracing::info!("HTTP server listening on http://{}", addr);
@@ -66,21 +66,37 @@ pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cors_layer() -> CorsLayer {
-    CorsLayer::new()
-        .allow_origin(tower_http::cors::AllowOrigin::predicate(
-            |_origin, _parts| true,
-        ))
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::DELETE,
-            Method::PATCH,
-            Method::OPTIONS,
-        ])
-        .allow_headers([header::CONTENT_TYPE, header::ACCEPT, header::AUTHORIZATION])
-        .allow_credentials(true)
+fn cors_layer(config: &crate::config::ServerConfig) -> CorsLayer {
+    match config.allowed_origins.as_deref() {
+        Some(origins) if !origins.is_empty() => {
+            let origins: Vec<axum::http::HeaderValue> = origins
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods([
+                    Method::GET,
+                    Method::POST,
+                    Method::PUT,
+                    Method::DELETE,
+                    Method::PATCH,
+                    Method::OPTIONS,
+                ])
+                .allow_headers([header::CONTENT_TYPE, header::ACCEPT, header::AUTHORIZATION])
+                .allow_credentials(true)
+        }
+        _ => CorsLayer::new()
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::DELETE,
+                Method::PATCH,
+                Method::OPTIONS,
+            ])
+            .allow_headers([header::CONTENT_TYPE, header::ACCEPT, header::AUTHORIZATION]),
+    }
 }
 
 /// Bind a TCP listener with TCP keepalive enabled on the listening socket.
@@ -111,6 +127,7 @@ async fn bind_with_keepalive(addr: &str) -> anyhow::Result<tokio::net::TcpListen
     socket.set_nonblocking(true)?;
     socket.set_reuse_address(true)?;
 
+    #[allow(unused_mut)]
     let mut keepalive = TcpKeepalive::new()
         .with_time(Duration::from_secs(20))
         .with_interval(Duration::from_secs(10));

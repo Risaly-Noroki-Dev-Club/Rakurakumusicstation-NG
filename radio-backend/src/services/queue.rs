@@ -97,50 +97,56 @@ pub async fn add_to_queue(
         )));
     }
 
-    let current_size = queue_size(db).await?;
-    if current_size >= config.max_size {
-        return Err(AppError::BadRequest(format!(
-            "Queue is full (max {} items)",
-            config.max_size
-        )));
+    let current_size;
+    let queue_item_id;
+    {
+        let _queue_guard = state.queue_sync.lock().await;
+
+        current_size = queue_size(db).await?;
+        if current_size >= config.max_size {
+            return Err(AppError::BadRequest(format!(
+                "Queue is full (max {} items)",
+                config.max_size
+            )));
+        }
+
+        let max_pos: Option<(i32,)> = sqlx::query_as(
+            "SELECT MAX(position) FROM queue_items WHERE status IN ('pending', 'playing')",
+        )
+        .fetch_optional(db)
+        .await?;
+
+        let next_position = max_pos.map(|(p,)| p + 1).unwrap_or(0);
+
+        let result = sqlx::query(
+            "INSERT INTO queue_items (song_id, device_user_id, status, position) VALUES (?, ?, 'pending', ?)"
+        )
+        .bind(song_id)
+        .bind(device_user_id)
+        .bind(next_position)
+        .execute(db)
+        .await?;
+
+        queue_item_id = result.last_insert_rowid();
+
+        sqlx::query(
+            "INSERT OR REPLACE INTO user_requests (device_user_id, last_request_time) VALUES (?, datetime('now'))"
+        )
+        .bind(device_user_id)
+        .execute(db)
+        .await?;
+
+        // Push the request onto the engine queue so the player picks it up next.
+        state
+            .player_handle
+            .enqueue_request(radio_engine::types::RequestedTrack {
+                file_path: song.file_path.clone(),
+                song_id: song.id,
+                title: song.title.clone(),
+                artist: song.artist.clone(),
+                duration_ms: song.duration_ms,
+            });
     }
-
-    let max_pos: Option<(i32,)> = sqlx::query_as(
-        "SELECT MAX(position) FROM queue_items WHERE status IN ('pending', 'playing')",
-    )
-    .fetch_optional(db)
-    .await?;
-
-    let next_position = max_pos.map(|(p,)| p + 1).unwrap_or(0);
-
-    let result = sqlx::query(
-        "INSERT INTO queue_items (song_id, device_user_id, status, position) VALUES (?, ?, 'pending', ?)"
-    )
-    .bind(song_id)
-    .bind(device_user_id)
-    .bind(next_position)
-    .execute(db)
-    .await?;
-
-    let queue_item_id = result.last_insert_rowid();
-
-    sqlx::query(
-        "INSERT OR REPLACE INTO user_requests (device_user_id, last_request_time) VALUES (?, datetime('now'))"
-    )
-    .bind(device_user_id)
-    .execute(db)
-    .await?;
-
-    // Push the request onto the engine queue so the player picks it up next.
-    state
-        .player_handle
-        .enqueue_request(radio_engine::types::RequestedTrack {
-            file_path: song.file_path.clone(),
-            song_id: song.id,
-            title: song.title.clone(),
-            artist: song.artist.clone(),
-            duration_ms: song.duration_ms,
-        });
 
     crate::websocket::broadcast(
         state,
@@ -199,11 +205,23 @@ pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>,
 }
 
 /// 将队列项移动到新位置（仅限管理员）。
+///
+/// Uses a transaction to keep position updates atomic. Validates that
+/// `new_position` falls within the current pending/playing queue range.
 pub async fn move_queue_item(
-    db: &SqlitePool,
+    state: &Arc<AppState>,
     item_id: i64,
     new_position: i32,
 ) -> Result<(), AppError> {
+    let db = &state.db;
+    let _queue_guard = state.queue_sync.lock().await;
+
+    if new_position < 0 {
+        return Err(AppError::BadRequest(
+            "Position must be non-negative".into(),
+        ));
+    }
+
     let item = sqlx::query_as::<_, QueueItem>("SELECT * FROM queue_items WHERE id = ?")
         .bind(item_id)
         .fetch_optional(db)
@@ -222,13 +240,29 @@ pub async fn move_queue_item(
         return Ok(());
     }
 
+    let max_pos: i32 = sqlx::query_as::<_, (i32,)>(
+        "SELECT COALESCE(MAX(position), 0) FROM queue_items WHERE status IN ('pending', 'playing')",
+    )
+    .fetch_one(db)
+    .await?
+    .0;
+
+    if new_position > max_pos {
+        return Err(AppError::BadRequest(format!(
+            "Position {} exceeds max queue position {}",
+            new_position, max_pos
+        )));
+    }
+
+    let mut tx = db.begin().await?;
+
     if new_position < old_position {
         sqlx::query(
             "UPDATE queue_items SET position = position + 1 WHERE status IN ('pending', 'playing') AND position >= ? AND position < ?"
         )
         .bind(new_position)
         .bind(old_position)
-        .execute(db)
+        .execute(&mut *tx)
         .await?;
     } else {
         sqlx::query(
@@ -236,15 +270,20 @@ pub async fn move_queue_item(
         )
         .bind(old_position)
         .bind(new_position)
-        .execute(db)
+        .execute(&mut *tx)
         .await?;
     }
 
     sqlx::query("UPDATE queue_items SET position = ? WHERE id = ?")
         .bind(new_position)
         .bind(item_id)
-        .execute(db)
+        .execute(&mut *tx)
         .await?;
+
+    tx.commit().await?;
+
+    // Keep the embedded engine request queue in sync with the DB order.
+    rehydrate_engine_queue(state).await?;
 
     Ok(())
 }
@@ -252,6 +291,7 @@ pub async fn move_queue_item(
 /// 删除队列项（仅限管理员）。
 pub async fn remove_queue_item(state: &Arc<AppState>, item_id: i64) -> Result<(), AppError> {
     let db = &state.db;
+    let _queue_guard = state.queue_sync.lock().await;
     let item = sqlx::query_as::<_, QueueItem>("SELECT * FROM queue_items WHERE id = ?")
         .bind(item_id)
         .fetch_optional(db)

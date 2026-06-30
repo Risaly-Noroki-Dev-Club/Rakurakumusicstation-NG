@@ -5,6 +5,7 @@ use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
 use crate::services::metadata::resolve_or_extract_cover;
 use axum::{
+    body::Body,
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::Response,
@@ -12,6 +13,7 @@ use axum::{
     Json, Router,
 };
 use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 pub fn song_routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -181,16 +183,22 @@ pub async fn stream_song_file(
         return Err(AppError::NotFound("Song file not found on disk".into()));
     }
 
-    let data = std::fs::read(&file_full)
-        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to read file")))?;
-    let total_len = data.len() as u64;
+    let metadata = tokio::fs::metadata(&file_full)
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to read file metadata")))?;
+    let total_len = metadata.len();
 
-    let range_header = headers.get(header::RANGE);
-    if let Some(range_val) = range_header {
-        let range_str = range_val.to_str().unwrap_or("");
+    let range_header = headers.get(header::RANGE).and_then(|v| v.to_str().ok());
+
+    if let Some(range_str) = range_header {
         if let Some(range) = parse_bytes_range(range_str, total_len) {
-            let body =
-                axum::body::Body::from(data[range.start as usize..=range.end as usize].to_vec());
+            let mut file = tokio::fs::File::open(&file_full)
+                .await
+                .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to open file")))?;
+            file.seek(std::io::SeekFrom::Start(range.start))
+                .await
+                .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to seek file")))?;
+            let chunk_len = range.end - range.start + 1;
             return Ok(Response::builder()
                 .status(StatusCode::PARTIAL_CONTENT)
                 .header(header::CONTENT_TYPE, "audio/mpeg")
@@ -199,22 +207,55 @@ pub async fn stream_song_file(
                     header::CONTENT_RANGE,
                     format!("bytes {}-{}/{}", range.start, range.end, total_len),
                 )
-                .header(
-                    header::CONTENT_LENGTH,
-                    (range.end - range.start + 1).to_string(),
-                )
-                .body(body)
+                .header(header::CONTENT_LENGTH, chunk_len.to_string())
+                .body(stream_file_body(file, Some(chunk_len)))
                 .unwrap());
         }
     }
+
+    let file = tokio::fs::File::open(&file_full)
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to open file")))?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "audio/mpeg")
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONTENT_LENGTH, total_len.to_string())
-        .body(axum::body::Body::from(data))
+        .body(stream_file_body(file, None))
         .unwrap())
+}
+
+fn stream_file_body(mut file: tokio::fs::File, limit: Option<u64>) -> Body {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(4);
+    tokio::spawn(async move {
+        let mut remaining = limit;
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let read_len = match remaining {
+                Some(0) => break,
+                Some(n) => std::cmp::min(n as usize, buf.len()),
+                None => buf.len(),
+            };
+
+            match file.read(&mut buf[..read_len]).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    if let Some(r) = remaining.as_mut() {
+                        *r = r.saturating_sub(n as u64);
+                    }
+                    if tx.send(Ok(buf[..n].to_vec())).await.is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e)).await;
+                    break;
+                }
+            }
+        }
+    });
+    Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(rx))
 }
 
 struct ByteRange {
@@ -247,7 +288,7 @@ fn parse_bytes_range(range: &str, total: u64) -> Option<ByteRange> {
     })
 }
 
-/// GET /api/songs/{id}/download — 下载歌曲文件（需要登录）
+/// GET /api/songs/{id}/download — 下载歌曲文件（需要登录，流式返回）
 pub async fn download_song(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
@@ -272,8 +313,10 @@ pub async fn download_song(
         return Err(AppError::NotFound("Song file not found on disk".into()));
     }
 
-    let data = std::fs::read(&file_full)
-        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to read file")))?;
+    let metadata = tokio::fs::metadata(&file_full)
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to read file metadata")))?;
+    let total_len = metadata.len();
 
     let filename = song
         .file_path
@@ -282,6 +325,10 @@ pub async fn download_song(
         .unwrap_or(&song.file_path)
         .to_string();
 
+    let file = tokio::fs::File::open(&file_full)
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Failed to open file")))?;
+
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "audio/mpeg")
@@ -289,7 +336,7 @@ pub async fn download_song(
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{}\"", filename),
         )
-        .header(header::CONTENT_LENGTH, data.len().to_string())
-        .body(axum::body::Body::from(data))
+        .header(header::CONTENT_LENGTH, total_len.to_string())
+        .body(stream_file_body(file, None))
         .unwrap())
 }

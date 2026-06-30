@@ -6,7 +6,7 @@ use crate::routes::admin::get_admin;
 use axum::{
     extract::{Multipart, State},
     http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::Response,
     Json,
 };
 use std::sync::Arc;
@@ -226,7 +226,7 @@ pub async fn upload_icon(
     Err(AppError::BadRequest("未找到上传文件字段".into()))
 }
 
-pub async fn site_icon(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
+pub async fn site_icon(State(state): State<Arc<AppState>>) -> Result<Response, AppError> {
     let station = state.station.read().unwrap_or_else(|e| e.into_inner());
     if station.icon_path.trim().is_empty() {
         return Err(AppError::NotFound("未配置上传图标".into()));
@@ -235,12 +235,17 @@ pub async fn site_icon(State(state): State<Arc<AppState>>) -> Result<impl IntoRe
     drop(station);
     let data = std::fs::read(&path).map_err(|_| AppError::NotFound("图标文件不存在".into()))?;
     let content_type = icon_content_type(&path);
-    Ok((
-        StatusCode::OK,
-        [
-            (header::CONTENT_TYPE, content_type),
-            (header::CACHE_CONTROL, "no-cache"),
-        ],
-        data,
-    ))
+    let is_svg = content_type == "image/svg+xml";
+
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header("x-content-type-options", "nosniff");
+
+    if is_svg {
+        builder = builder.header("content-security-policy", "sandbox");
+    }
+
+    Ok(builder.body(axum::body::Body::from(data)).unwrap())
 }

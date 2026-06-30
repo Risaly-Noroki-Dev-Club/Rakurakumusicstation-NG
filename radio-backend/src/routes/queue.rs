@@ -84,7 +84,7 @@ async fn move_queue_item(
     let device = auth::require_device_auth(&headers, &state.db).await?;
     auth::require_admin(&device)?;
 
-    queue::move_queue_item(&state.db, item_id, req.new_position).await?;
+    queue::move_queue_item(&state, item_id, req.new_position).await?;
 
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'move_queue', ?)")
         .bind(device.id)

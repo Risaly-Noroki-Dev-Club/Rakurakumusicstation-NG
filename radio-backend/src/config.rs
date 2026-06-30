@@ -23,6 +23,9 @@ pub struct ServerConfig {
     pub port: u16,
     #[serde(default = "default_base_path")]
     pub base_path: String,
+    /// 允许的 CORS Origin 白名单；None 或空则不启用跨域凭证。
+    #[serde(default)]
+    pub allowed_origins: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -187,7 +190,7 @@ fn default_cookie_max_age_days() -> u64 {
     365
 }
 fn default_admin_setup_token() -> String {
-    "change-me-in-production".into()
+    String::new()
 }
 fn default_max_queue_size() -> usize {
     100

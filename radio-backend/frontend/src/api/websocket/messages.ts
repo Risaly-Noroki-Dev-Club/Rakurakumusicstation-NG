@@ -29,8 +29,12 @@ export function handleWsMessage(msg: WsMessage, ws: WebSocket | null): void {
       store.coverLoadError = false
     }
 
-    if (msg.lyrics_lines && (newSongId !== prevSongId || store.lyricsLines.length === 0)) {
-      store.lyricsLines = msg.lyrics_lines
+    if (newSongId !== prevSongId || store.lyricsLines.length === 0) {
+      if (msg.lyrics_lines !== null && msg.lyrics_lines !== undefined) {
+        store.lyricsLines = msg.lyrics_lines
+      } else if (newSongId !== prevSongId) {
+        store.lyricsLines = []
+      }
     }
 
     startInterpolation()

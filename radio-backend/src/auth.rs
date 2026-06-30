@@ -137,6 +137,11 @@ pub async fn claim_admin(
     setup_token: &str,
     configured_token: &str,
 ) -> Result<AuthUser, AppError> {
+    if configured_token.is_empty() {
+        return Err(AppError::Forbidden(
+            "Admin setup is disabled: no admin_setup_token configured".into(),
+        ));
+    }
     if setup_token != configured_token {
         return Err(AppError::Forbidden("Invalid admin setup token".into()));
     }
