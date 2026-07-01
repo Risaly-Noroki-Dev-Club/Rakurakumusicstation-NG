@@ -43,7 +43,8 @@ export function useLiveAudio() {
     audioEl.value.play().then(() => {
       needsTapToPlay.value = false
     }).catch(() => {
-      // 仍然失败：保留按钮，让用户重试
+      // 播放仍然失败（例如后端未运行）——关闭覆盖层，避免用户被困住
+      needsTapToPlay.value = false
     })
   }
 

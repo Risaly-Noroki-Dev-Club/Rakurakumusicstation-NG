@@ -2,63 +2,65 @@
 @import "tailwindcss";
 
 /* ─── Fontsource ─── */
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
-@import "@fontsource/inter/600.css";
-@import "@fontsource/inter/700.css";
+@import "@fontsource/rajdhani/300.css";
+@import "@fontsource/rajdhani/400.css";
+@import "@fontsource/rajdhani/500.css";
+@import "@fontsource/rajdhani/600.css";
+@import "@fontsource/rajdhani/700.css";
 @import "@fontsource/share-tech-mono/400.css";
 
 /* ─── Vuetify overrides ─── */
 :root {
-  --v-theme-background: #FAFAFA;
+  --v-theme-background: #F7F7F8;
   --v-theme-surface: #FFFFFF;
 }
 
-/* ─── Material 2 Light Design System ─── */
+/* ─── Rakuraku Design System ─── */
 :root {
-  /* Core palette */
-  --am-primary: #003D99;
-  --am-primary-dark: #002A6B;
-  --am-primary-light: #3366CC;
-  --am-secondary: #00897B;
-  --am-secondary-light: #4DB6AC;
-  --am-accent: #FF6F00;
-  --am-error: #B00020;
+  /* Core palette - configurable via CSS custom properties */
+  --am-primary: #6C5CE7;
+  --am-primary-dark: #5A4BD1;
+  --am-primary-light: #A29BFE;
+  --am-secondary: #00CEC9;
+  --am-secondary-light: #55EFC4;
+  --am-accent: #FD79A8;
+  --am-error: #E17055;
 
-  /* Background & Surface (Elevation levels per Material 2) */
-  --am-bg: #FAFAFA;
+  /* Background & Surface (Elevation levels) */
+  --am-bg: #F7F7F8;
   --am-surface: #FFFFFF;
   --am-surface-1: #FFFFFF;
-  --am-surface-2: #F5F5F5;
-  --am-surface-3: #EEEEEE;
-  --am-surface-4: #E0E0E0;
+  --am-surface-2: #F0F0F2;
+  --am-surface-3: #E8E8EB;
+  --am-surface-4: #DCDCE0;
 
-  /* Text (Material 2 emphasis on light backgrounds) */
-  --am-text-high: rgba(0, 0, 0, 0.87);
-  --am-text-medium: rgba(0, 0, 0, 0.60);
-  --am-text-disabled: rgba(0, 0, 0, 0.38);
+  /* Text emphasis on light backgrounds */
+  --am-text-high: rgba(28, 25, 52, 0.95);
+  --am-text-medium: rgba(28, 25, 52, 0.58);
+  --am-text-disabled: rgba(28, 25, 52, 0.32);
   --am-text-inverse: #FFFFFF;
 
   /* Divider & border */
-  --am-divider: rgba(0, 0, 0, 0.12);
-  --am-border: #E0E0E0;
+  --am-divider: rgba(28, 25, 52, 0.08);
+  --am-border: #E8E8EB;
 
-  /* Elevation shadows (dp-based, Material 2 spec) */
-  --am-shadow-1: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
-  --am-shadow-2: 0 3px 6px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.12);
-  --am-shadow-4: 0 4px 8px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.12);
-  --am-shadow-8: 0 8px 16px rgba(0,0,0,0.15), 0 4px 8px rgba(0,0,0,0.12);
-  --am-shadow-16: 0 16px 32px rgba(0,0,0,0.15), 0 8px 16px rgba(0,0,0,0.12);
+  /* Elevation shadows */
+  --am-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --am-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --am-shadow-4: 0 8px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --am-shadow-8: 0 16px 48px rgba(0, 0, 0, 0.10), 0 8px 16px rgba(0, 0, 0, 0.06);
 
   /* Typography */
-  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'Share Tech Mono', 'SF Mono', 'Roboto Mono', monospace;
+  --font-display: 'Rajdhani', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Share Tech Mono', 'Courier New', monospace;
 
-  /* Radius (Material 2: 4dp for components, 8dp for cards) */
-  --am-radius-sm: 4px;
-  --am-radius-md: 8px;
-  --am-radius-lg: 12px;
-  --am-radius-xl: 16px;
+  /* Radius */
+  --am-radius-xs: 6px;
+  --am-radius-sm: 10px;
+  --am-radius-md: 14px;
+  --am-radius-lg: 18px;
+  --am-radius-xl: 24px;
+  --am-radius-full: 9999px;
 
   /* Spacing scale */
   --am-space-xs: 4px;
@@ -66,39 +68,45 @@
   --am-space-md: 16px;
   --am-space-lg: 24px;
   --am-space-xl: 32px;
+  --am-space-2xl: 48px;
 
   /* Transition */
   --am-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   --am-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --am-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --am-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --am-ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ─── Dark Theme ─── */
 :root[data-theme="dark"] {
-  --am-primary: #8AB4F8;
-  --am-primary-dark: #5E8EDB;
-  --am-primary-light: #B7D1FF;
-  --am-secondary: #5FD0C3;
-  --am-secondary-light: #8FE4DC;
-  --am-accent: #FFB86B;
-  --am-error: #FFB4AB;
-  --am-bg: #101114;
-  --am-surface: #191B20;
-  --am-surface-1: #191B20;
-  --am-surface-2: #23262D;
-  --am-surface-3: #2D313A;
-  --am-surface-4: #383D48;
-  --am-text-high: rgba(255, 255, 255, 0.92);
-  --am-text-medium: rgba(255, 255, 255, 0.68);
-  --am-text-disabled: rgba(255, 255, 255, 0.42);
-  --am-text-inverse: #101114;
-  --am-divider: rgba(255, 255, 255, 0.14);
-  --am-border: #343944;
-  --am-shadow-1: 0 1px 3px rgba(0,0,0,0.42), 0 1px 2px rgba(0,0,0,0.36);
-  --am-shadow-2: 0 3px 6px rgba(0,0,0,0.38), 0 2px 4px rgba(0,0,0,0.32);
-  --am-shadow-4: 0 4px 10px rgba(0,0,0,0.42), 0 2px 6px rgba(0,0,0,0.34);
-  --am-shadow-8: 0 8px 18px rgba(0,0,0,0.46), 0 4px 10px rgba(0,0,0,0.36);
-  --am-shadow-16: 0 16px 36px rgba(0,0,0,0.52), 0 8px 18px rgba(0,0,0,0.42);
+  --am-primary: #A29BFE;
+  --am-primary-dark: #6C5CE7;
+  --am-primary-light: #DDD6FE;
+  --am-secondary: #55EFC4;
+  --am-secondary-light: #81ECEC;
+  --am-accent: #FD79A8;
+  --am-error: #E17055;
+
+  --am-bg: #0C0B10;
+  --am-surface: #16141C;
+  --am-surface-1: #1C1A24;
+  --am-surface-2: #24212E;
+  --am-surface-3: #2E2B3A;
+  --am-surface-4: #3A364A;
+
+  --am-text-high: rgba(240, 236, 255, 0.94);
+  --am-text-medium: rgba(240, 236, 255, 0.58);
+  --am-text-disabled: rgba(240, 236, 255, 0.30);
+  --am-text-inverse: #0C0B10;
+
+  --am-divider: rgba(240, 236, 255, 0.07);
+  --am-border: #2E2B3A;
+
+  --am-shadow-1: 0 1px 3px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.24);
+  --am-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.36), 0 2px 4px rgba(0, 0, 0, 0.24);
+  --am-shadow-4: 0 8px 24px rgba(0, 0, 0, 0.40), 0 4px 8px rgba(0, 0, 0, 0.28);
+  --am-shadow-8: 0 16px 48px rgba(0, 0, 0, 0.48), 0 8px 16px rgba(0, 0, 0, 0.32);
 }
 
 /* ─── Global resets ─── */
@@ -127,11 +135,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition:
-    background-color 0.35s var(--am-ease-emphasized),
-    color 0.35s var(--am-ease-emphasized);
+    background-color 0.5s var(--am-ease-emphasized),
+    color 0.5s var(--am-ease-emphasized);
 }
 
-/* ─── Scrollbar (Material style) ─── */
+/* ─── Scrollbar ─── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -140,11 +148,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,0.20);
+  background: var(--am-divider);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0,0,0,0.35);
+  background: var(--am-text-medium);
 }
 
 /* ─── Utility helpers ─── */
@@ -162,7 +170,7 @@ body {
   color: var(--am-text-disabled);
 }
 
-/* ─── Audio element hide (we use custom progress bar) ─── */
+/* ─── Audio element hide ─── */
 audio.visually-hidden {
   position: absolute;
   width: 1px;
@@ -174,15 +182,16 @@ audio.visually-hidden {
   border: 0;
 }
 
-/* ─── Vuetify overrides for light Material 2 ─── */
+/* ─── Vuetify overrides ─── */
 .v-application {
   font-family: var(--font-display) !important;
 }
 
 .v-btn {
   text-transform: none !important;
-  letter-spacing: 0.025em !important;
+  letter-spacing: 0.04em !important;
   font-weight: 600 !important;
+  font-family: var(--font-display) !important;
 }
 
 .v-icon {
@@ -195,14 +204,21 @@ audio.visually-hidden {
 
 .v-card {
   border-radius: var(--am-radius-md) !important;
+  border: 1px solid var(--am-divider);
   transition:
-    background-color 0.35s var(--am-ease-emphasized),
-    border-color 0.35s var(--am-ease-emphasized),
-    box-shadow 0.35s var(--am-ease-emphasized) !important;
+    background-color 0.5s var(--am-ease-emphasized),
+    border-color 0.5s var(--am-ease-emphasized),
+    box-shadow 0.5s var(--am-ease-emphasized) !important;
+}
+
+.v-card:hover {
+  border-color: var(--am-primary);
 }
 
 .v-bottom-navigation {
   box-shadow: var(--am-shadow-8) !important;
+  background: var(--am-surface) !important;
+  border-top: 1px solid var(--am-divider) !important;
 }
 
 .v-navigation-drawer {
@@ -221,6 +237,20 @@ audio.visually-hidden {
   background: var(--am-primary) !important;
 }
 
+.v-tabs {
+  border-bottom: 1px solid var(--am-divider);
+}
+
+.v-tab {
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+}
+
+.v-chip {
+  font-weight: 600 !important;
+  letter-spacing: 0.04em !important;
+}
+
 /* ─── Animation keyframes ─── */
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -228,8 +258,18 @@ audio.visually-hidden {
 }
 
 @keyframes slideUp {
-  from { transform: translateY(20px); opacity: 0; }
+  from { transform: translateY(24px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-12px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 @keyframes pulse {

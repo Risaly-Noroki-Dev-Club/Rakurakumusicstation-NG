@@ -4,7 +4,7 @@ import type {
   Toast, Playlist, AdminStats, ThemeName, NcmStatus
 } from './types'
 
-export const THEMES: ThemeName[] = ['auto', 'light', 'dark']
+export const THEMES: ThemeName[] = ['auto', 'dark', 'light']
 
 function getInitialThemeIndex(): number {
   const saved = localStorage.getItem('radio_theme') || 'auto'
@@ -74,7 +74,7 @@ export interface Store {
   userNcmResultType: string
   toasts: Toast[]
 
-  // ─── New states for Apple-Music-style player ───
+  // ─── Player states ───
   showLyrics: boolean
   extractedColor: string
   isDesktop: boolean
@@ -149,7 +149,7 @@ export const store: Store = reactive({
   toasts: [] as Toast[],
 
   showLyrics: false,
-  extractedColor: '#003D99',
+  extractedColor: '#6C5CE7',
   isDesktop: window.innerWidth >= 960,
   showSnackbar: false,
   snackbarText: '',

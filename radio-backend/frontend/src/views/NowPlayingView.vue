@@ -4,7 +4,6 @@ import { store } from '../store'
 import { apiUrl, adminSkipNext, adminSkipPrev } from '../api'
 import AmProgressBar from '../components/AmProgressBar.vue'
 import LyricsView from '../components/LyricsView.vue'
-import DynamicBackground from '../components/DynamicBackground.vue'
 
 const audioEl = inject<import('vue').Ref<HTMLAudioElement | null>>('audioEl')
 
@@ -44,25 +43,22 @@ function onNext() {
 
 <template>
   <div class="am-now-playing">
-    <!-- Dynamic background from cover color -->
-    <DynamicBackground :cover-src="coverSrc" />
-
     <!-- Desktop: side-by-side / Mobile: stacked -->
     <div class="am-player-layout" :class="{ desktop: store.isDesktop }">
       <!-- Cover -->
       <div class="am-cover-section">
-        <div class="am-cover-wrapper">
+        <div class="am-cover-wrapper" :class="{ 'is-playing': isPlaying }">
           <v-img
             :src="coverSrc"
             :alt="store.playbackState.title"
             cover
-            class="am-cover-img rounded-xl"
+            class="am-cover-img"
             @error="store.coverLoadError = true"
             @load="store.coverLoadError = false"
           >
             <template #placeholder>
-              <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-                <v-icon size="64" color="grey">mdi-music-note</v-icon>
+              <div class="d-flex align-center justify-center fill-height" style="background: var(--am-surface-2);">
+                <v-icon size="64" color="primary" style="opacity: 0.5">mdi-music-note</v-icon>
               </div>
             </template>
           </v-img>
@@ -72,26 +68,26 @@ function onNext() {
       <!-- Info & Controls -->
       <div class="am-info-section">
         <div class="am-track-info text-center" :class="{ 'text-left': store.isDesktop }">
-          <h1 class="am-track-title text-h4 font-weight-bold text-truncate">
+          <h1 class="am-track-title text-h4 font-weight-extrabold text-truncate">
             {{ store.playbackState.title || '等待播放...' }}
           </h1>
-          <p class="am-track-artist text-h6 text-medium-emphasis mt-2 text-truncate">
+          <p class="am-track-artist text-subtitle-1 text-medium-emphasis mt-2 text-truncate font-weight-medium">
             {{ store.playbackState.artist || '' }}
           </p>
         </div>
 
         <!-- Progress Bar -->
-        <div class="am-progress-wrapper mt-6">
+        <div class="am-progress-wrapper mt-8">
           <AmProgressBar />
         </div>
 
         <!-- Controls -->
-        <div class="am-controls d-flex align-center justify-center mt-6" :class="{ 'justify-start': store.isDesktop }">
+        <div class="am-controls d-flex align-center justify-center mt-8" :class="{ 'justify-start': store.isDesktop }">
           <v-btn
             icon
             variant="text"
             color="medium-emphasis"
-            class="mx-2"
+            class="mx-3 am-ctrl-btn"
             :disabled="!isAdmin"
             @click="onPrev"
           >
@@ -102,8 +98,8 @@ function onNext() {
             icon
             size="x-large"
             color="primary"
-            elevation="2"
-            class="mx-3"
+            elevation="0"
+            class="mx-4 am-play-btn"
             @click="togglePlay"
           >
             <v-icon size="36">{{ isPlaying ? 'mdi-pause' : 'mdi-play' }}</v-icon>
@@ -113,25 +109,26 @@ function onNext() {
             icon
             variant="text"
             color="medium-emphasis"
-            class="mx-2"
+            class="mx-3 am-ctrl-btn"
             :disabled="!isAdmin"
             @click="onNext"
           >
             <v-icon size="28">mdi-skip-next</v-icon>
           </v-btn>
-
         </div>
 
-        <!-- Lyrics toggle -->
-        <div class="d-flex justify-center mt-4" :class="{ 'justify-start': store.isDesktop }">
+        <!-- Action row -->
+        <div class="d-flex align-center justify-center mt-6 gap-3" :class="{ 'justify-start': store.isDesktop }">
           <v-btn
-            variant="text"
+            variant="tonal"
             density="comfortable"
-            :color="hasLyrics ? 'primary' : 'disabled'"
+            :color="hasLyrics ? 'primary' : undefined"
             :disabled="!hasLyrics"
             @click="toggleLyrics"
+            rounded="xl"
+            size="small"
           >
-            <v-icon left size="18" class="mr-1">mdi-text-box</v-icon>
+            <v-icon left size="18" class="mr-1">mdi-text-box-outline</v-icon>
             {{ hasLyrics ? '歌词' : '无歌词' }}
           </v-btn>
         </div>
@@ -160,15 +157,16 @@ function onNext() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 32px;
   z-index: 1;
+  animation: slideUp 0.6s var(--am-ease-emphasized);
 }
 
 .am-player-layout.desktop {
   max-width: 1000px;
   flex-direction: row;
   align-items: center;
-  gap: 48px;
+  gap: 64px;
 }
 
 .am-cover-section {
@@ -178,14 +176,21 @@ function onNext() {
 .am-cover-wrapper {
   width: 280px;
   height: 280px;
-  border-radius: 16px;
+  border-radius: var(--am-radius-xl);
   overflow: hidden;
+  position: relative;
   box-shadow: var(--am-shadow-16);
+  transition: transform 0.6s var(--am-ease-emphasized), box-shadow 0.6s var(--am-ease-emphasized);
+}
+
+.am-cover-wrapper.is-playing {
+  transform: scale(1.02);
 }
 
 .am-cover-img {
   width: 100%;
   height: 100%;
+  border-radius: var(--am-radius-xl);
 }
 
 .am-info-section {
@@ -196,15 +201,39 @@ function onNext() {
 
 .am-track-title {
   font-family: var(--font-display);
-  line-height: 1.2;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 .am-track-artist {
   font-family: var(--font-display);
+  letter-spacing: 0.01em;
 }
 
 .am-progress-wrapper {
   width: 100%;
+}
+
+.am-play-btn {
+  border-radius: var(--am-radius-full) !important;
+  min-width: 64px !important;
+  min-height: 64px !important;
+  width: 64px !important;
+  height: 64px !important;
+}
+
+.am-ctrl-btn {
+  opacity: 0.7;
+  transition: opacity 0.2s ease, transform 0.2s var(--am-ease-spring);
+}
+
+.am-ctrl-btn:hover:not(:disabled) {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.gap-3 {
+  gap: 12px;
 }
 
 /* Desktop overrides */
@@ -221,5 +250,21 @@ function onNext() {
   .am-track-artist {
     font-size: 1.25rem !important;
   }
+
+  .am-play-btn {
+    min-width: 72px !important;
+    min-height: 72px !important;
+    width: 72px !important;
+    height: 72px !important;
+  }
+
+  .am-play-btn .v-icon {
+    size: 40px;
+  }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>

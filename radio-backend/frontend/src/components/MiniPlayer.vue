@@ -33,10 +33,10 @@ function togglePlay(e: Event) {
 
 <template>
   <div
-    class="am-mini-player d-flex align-center px-4 py-2"
+    class="am-mini-player d-flex align-center px-5 py-3"
     @click="goToPlayer"
   >
-    <v-avatar size="48" rounded="lg" class="flex-shrink-0 mr-3">
+    <v-avatar size="48" rounded="lg" class="flex-shrink-0 mr-4 am-cover-avatar">
       <v-img
         :src="coverSrc"
         alt="cover"
@@ -45,84 +45,81 @@ function togglePlay(e: Event) {
         @load="store.coverLoadError = false"
       >
         <template #placeholder>
-          <div class="d-flex align-center justify-center fill-height bg-grey-lighten-3">
-            <v-icon color="grey">mdi-music-note</v-icon>
+          <div class="d-flex align-center justify-center fill-height" style="background: var(--am-surface-2);">
+            <v-icon color="primary" style="opacity: 0.5">mdi-music-note</v-icon>
           </div>
         </template>
       </v-img>
     </v-avatar>
 
-    <div class="flex-grow-1 min-width-0 mr-3">
-      <div class="text-body-2 font-weight-semibold text-truncate">
+    <div class="flex-grow-1 min-width-0 mr-4">
+      <div class="text-body-2 font-weight-bold text-truncate">
         {{ store.playbackState.title || '等待播放...' }}
       </div>
-      <div class="text-caption text-medium-emphasis text-truncate">
+      <div class="text-caption text-medium-emphasis text-truncate mt-1">
         {{ store.playbackState.artist || '' }}
       </div>
     </div>
 
-    <div class="d-flex align-center gap-2 flex-shrink-0">
-      <v-btn
-        icon
-        variant="text"
-        density="comfortable"
-        color="primary"
-        @click="togglePlay"
-      >
-        <v-icon size="28">{{ isPlaying ? 'mdi-pause' : 'mdi-play' }}</v-icon>
-      </v-btn>
-    </div>
+    <v-btn
+      icon
+      variant="tonal"
+      density="comfortable"
+      color="primary"
+      class="flex-shrink-0 am-play-toggle"
+      @click="togglePlay"
+    >
+      <v-icon size="24">{{ isPlaying ? 'mdi-pause' : 'mdi-play' }}</v-icon>
+    </v-btn>
   </div>
 </template>
 
 <style scoped>
 .am-mini-player {
   position: fixed;
-  bottom: 64px;
+  bottom: 72px;
   left: 0;
   right: 0;
   z-index: 99;
   background: var(--am-surface);
   border-top: 1px solid var(--am-divider);
-  box-shadow: var(--am-shadow-4);
   cursor: pointer;
-  animation: am-mini-enter 0.52s var(--am-ease-emphasized) both;
+  animation: am-mini-enter 0.5s var(--am-ease-emphasized) both;
   transition:
     background-color 0.28s var(--am-ease-emphasized),
-    box-shadow 0.28s var(--am-ease-emphasized),
     transform 0.28s var(--am-ease-spring);
 }
 
 .am-mini-player:hover {
-  background: var(--am-surface-2);
-  box-shadow: var(--am-shadow-8);
-  transform: translateY(-2px) scale(1.002);
+  transform: translateY(-2px);
 }
 
-@media (min-width: 960px) {
-  .am-mini-player {
-    bottom: 0;
-    left: 80px;
-    right: 0;
-  }
+.am-cover-avatar {
+  box-shadow: var(--am-shadow-2);
 }
 
-.gap-2 {
-  gap: 8px;
+.am-play-toggle {
+  width: 44px !important;
+  height: 44px !important;
 }
 
 .min-width-0 {
   min-width: 0;
 }
 
-.font-weight-semibold {
-  font-weight: 600;
+@media (min-width: 960px) {
+  .am-mini-player {
+    bottom: 0;
+    left: 88px;
+    right: 0;
+    border-top: 1px solid var(--am-divider);
+  }
 }
 
 @keyframes am-mini-enter {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.99);
+    transform: translateY(14px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -134,7 +131,6 @@ function togglePlay(e: Event) {
   .am-mini-player {
     animation: none;
   }
-
   .am-mini-player:hover {
     transform: none;
   }

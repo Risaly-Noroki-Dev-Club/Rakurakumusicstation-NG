@@ -6,8 +6,6 @@ const props = defineProps<{
   coverSrc: string
 }>()
 
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-
 function extractColor(src: string) {
   const img = new Image()
   img.crossOrigin = 'anonymous'
@@ -23,14 +21,12 @@ function extractColor(src: string) {
     const data = ctx.getImageData(0, 0, size, size).data
     let r = 0, g = 0, b = 0, count = 0
 
-    // Sample every 4th pixel for performance
     for (let i = 0; i < data.length; i += 16) {
       const pr = data[i]
       const pg = data[i + 1]
       const pb = data[i + 2]
       const pa = data[i + 3]
       if (pa < 128) continue
-      // Skip near-white and near-black
       if (pr > 240 && pg > 240 && pb > 240) continue
       if (pr < 15 && pg < 15 && pb < 15) continue
       r += pr
@@ -47,7 +43,7 @@ function extractColor(src: string) {
     }
   }
   img.onerror = () => {
-    store.extractedColor = '#003D99'
+    store.extractedColor = '#6C5CE7'
   }
   img.src = src
 }
@@ -56,7 +52,7 @@ watch(() => props.coverSrc, (src) => {
   if (src) {
     extractColor(src)
   } else {
-    store.extractedColor = '#003D99'
+    store.extractedColor = '#6C5CE7'
   }
 }, { immediate: true })
 </script>
@@ -76,8 +72,8 @@ watch(() => props.coverSrc, (src) => {
   right: 0;
   bottom: 0;
   z-index: 0;
-  opacity: 0.08;
-  transition: background-color 0.9s var(--am-ease-emphasized);
+  opacity: 0.06;
+  transition: background-color 1.2s var(--am-ease-emphasized);
   pointer-events: none;
 }
 </style>

@@ -39,20 +39,19 @@ defineEmits<{ close: [] }>()
 </script>
 
 <template>
-  <div
-    class="am-lyrics-overlay"
-    :style="{ backgroundColor: store.extractedColor }"
-  >
-    <div class="am-lyrics-header d-flex align-center justify-space-between px-4 py-3">
+  <div class="am-lyrics-overlay">
+    <!-- Header -->
+    <div class="am-lyrics-header d-flex align-center justify-space-between px-6 py-4">
       <div>
-        <div class="text-body-1 font-weight-bold text-inverse">{{ store.playbackState.title }}</div>
-        <div class="text-caption text-inverse opacity-70">{{ store.playbackState.artist }}</div>
+        <div class="text-body-1 font-weight-bold am-lyrics-title">{{ store.playbackState.title }}</div>
+        <div class="text-caption am-lyrics-artist">{{ store.playbackState.artist }}</div>
       </div>
-      <v-btn icon variant="text" color="white" @click="$emit('close')">
+      <v-btn icon variant="text" size="small" class="am-lyrics-close" @click="$emit('close')">
         <v-icon>mdi-chevron-down</v-icon>
       </v-btn>
     </div>
 
+    <!-- Lyrics -->
     <div ref="lyricsBoxRef" class="am-lyrics-box">
       <div
         v-for="(line, idx) in store.lyricsLines"
@@ -79,55 +78,61 @@ defineEmits<{ close: [] }>()
   z-index: 200;
   display: flex;
   flex-direction: column;
-  animation: fadeIn 0.3s ease;
+  background: var(--am-surface-1);
+  animation: fadeIn 0.35s var(--am-ease-emphasized);
 }
 
 .am-lyrics-header {
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  position: relative;
+  z-index: 1;
+  border-bottom: 1px solid var(--am-divider);
+  background: transparent;
 }
 
-.text-inverse {
-  color: #ffffff;
+.am-lyrics-title {
+  color: var(--am-text-high);
 }
 
-.opacity-70 {
-  opacity: 0.7;
+.am-lyrics-artist {
+  color: var(--am-text-medium);
+}
+
+.am-lyrics-close {
+  color: var(--am-text-medium) !important;
 }
 
 .am-lyrics-box {
   flex: 1;
   overflow-y: auto;
-  padding: 32px 24px;
+  padding: 40px 32px;
   text-align: center;
   scroll-behavior: smooth;
+  position: relative;
+  z-index: 1;
 }
 
 .am-lyrics-line {
   padding: 10px 0;
-  transition: all 0.3s ease;
+  transition: all 0.4s var(--am-ease-smooth);
   font-family: var(--font-display);
-  font-size: 1.1rem;
-  line-height: 1.6;
-}
-
-.am-lyrics-line.inactive {
-  color: rgba(255,255,255,0.5);
+  font-size: 1.15rem;
+  line-height: 1.7;
+  color: var(--am-text-disabled);
 }
 
 .am-lyrics-line.active {
-  color: #ffffff;
+  color: var(--am-text-high);
   font-weight: 700;
-  font-size: 1.35rem;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  font-size: 1.4rem;
 }
 
 @media (min-width: 960px) {
   .am-lyrics-line {
-    font-size: 1.3rem;
+    font-size: 1.35rem;
   }
   .am-lyrics-line.active {
-    font-size: 1.6rem;
+    font-size: 1.7rem;
   }
 }
 

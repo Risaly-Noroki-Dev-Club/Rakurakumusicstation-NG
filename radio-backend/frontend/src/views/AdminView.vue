@@ -15,12 +15,12 @@ const router = useRouter()
 const subtab = computed(() => (route.params.subtab as string) || 'users')
 
 const tabs = [
-  { name: 'users', label: '用户管理', icon: 'mdi-account-group' },
-  { name: 'songs', label: '歌曲管理', icon: 'mdi-music-note' },
-  { name: 'upload', label: '上传', icon: 'mdi-cloud-upload' },
-  { name: 'download', label: '下载', icon: 'mdi-download' },
-  { name: 'ncm', label: '网易云', icon: 'mdi-music-circle' },
-  { name: 'settings', label: '设置', icon: 'mdi-cog' },
+  { name: 'users', label: '用户管理', icon: 'mdi-account-group-outline' },
+  { name: 'songs', label: '歌曲管理', icon: 'mdi-music-note-outline' },
+  { name: 'upload', label: '上传', icon: 'mdi-cloud-upload-outline' },
+  { name: 'download', label: '下载', icon: 'mdi-download-outline' },
+  { name: 'ncm', label: '网易云', icon: 'mdi-music-circle-outline' },
+  { name: 'settings', label: '设置', icon: 'mdi-cog-outline' },
   { name: 'stats', label: '统计', icon: 'mdi-chart-bar' },
 ]
 
@@ -31,12 +31,19 @@ function switchTab(name: string) {
 
 <template>
   <div class="am-admin">
-    <v-card elevation="1">
+    <!-- Page Header -->
+    <div class="am-page-header mb-5">
+      <h1 class="text-h5 font-weight-bold">管理后台</h1>
+      <p class="text-body-2 text-medium-emphasis mt-1">管理电台的内容和设置</p>
+    </div>
+
+    <v-card elevation="0" class="am-card">
       <v-tabs
         v-model="subtab"
         color="primary"
         grow
         show-arrows
+        density="comfortable"
       >
         <v-tab
           v-for="t in tabs"
@@ -49,7 +56,7 @@ function switchTab(name: string) {
         </v-tab>
       </v-tabs>
 
-      <v-card-text class="pa-4">
+      <v-card-text class="pa-5">
         <div v-show="subtab === 'users'"><AdminUsers /></div>
         <div v-show="subtab === 'songs'"><AdminSongs /></div>
         <div v-show="subtab === 'upload'"><AdminUpload /></div>
@@ -65,5 +72,23 @@ function switchTab(name: string) {
 <style scoped>
 .am-admin {
   padding-bottom: 16px;
+  animation: slideUp 0.5s var(--am-ease-emphasized);
+}
+
+.am-page-header {
+  animation: slideUp 0.4s var(--am-ease-emphasized);
+}
+
+.am-card {
+  overflow: hidden;
+}
+
+.am-card:hover {
+  border-color: transparent;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>

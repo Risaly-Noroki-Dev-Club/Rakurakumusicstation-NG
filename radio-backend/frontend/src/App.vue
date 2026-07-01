@@ -29,9 +29,7 @@ provide('audioEl', audioEl)
 useThemeSync(vuetifyTheme)
 
 async function init() {
-  // Start audio immediately in parallel — don't block on API calls
   initAudio()
-
   await loadStationInfo()
   connectWebSocket()
   await loadDeviceUser()
@@ -48,9 +46,10 @@ onUnmounted(() => {
 })
 
 const navItems = [
-  { name: 'now-playing', path: '/', label: '正在播放', icon: 'mdi-play-circle' },
-  { name: 'library', path: '/library', label: '曲库', icon: 'mdi-music-box' },
-  { name: 'settings', path: '/settings', label: '设置', icon: 'mdi-cog' },
+  { name: 'now-playing', path: '/', label: '播放', icon: 'mdi-play-circle-outline' },
+  { name: 'library', path: '/library', label: '曲库', icon: 'mdi-bookshelf' },
+  { name: 'up-next', path: '/up-next', label: '队列', icon: 'mdi-format-list-numbered' },
+  { name: 'settings', path: '/settings', label: '设置', icon: 'mdi-cog-outline' },
 ]
 
 const currentRouteName = computed(() => route.name as string)
@@ -65,6 +64,8 @@ const drawerOpen = computed({
   get: () => store.isDesktop,
   set: () => {}
 })
+
+const stationLabel = computed(() => store.stationName || 'RR')
 
 watch(() => store.showSnackbar, (val) => {
   if (!val) {
@@ -84,7 +85,7 @@ watch(
 
 <template>
   <v-app class="am-app">
-    <!-- Global audio element — declared in template so browser parses autoplay early -->
+    <!-- Global audio element -->
     <audio
       ref="audioEl"
       autoplay
@@ -99,27 +100,34 @@ watch(
       v-model="drawerOpen"
       permanent
       rail
-      rail-width="80"
-      color="surface"
+      rail-width="88"
+      color="transparent"
       class="am-drawer"
     >
-      <div class="d-flex flex-column h-100 py-4">
-        <div class="text-center mb-6">
-          <v-icon color="primary" size="36">mdi-music-circle</v-icon>
+      <div class="d-flex flex-column h-100 py-5">
+        <!-- Logo -->
+        <div class="text-center mb-8 px-2">
+          <div class="am-logo">
+            <v-icon color="primary" size="32">mdi-radio-tower</v-icon>
+          </div>
+          <div class="am-logo-label text-caption font-weight-bold mt-2 text-truncate">
+            {{ stationLabel }}
+          </div>
         </div>
 
+        <!-- Nav items -->
         <v-list nav density="compact" class="pa-0">
           <v-list-item
             v-for="item in navItems"
             :key="item.name"
             :to="item.path"
             :active="currentRouteName === item.name"
-            rounded="lg"
-            class="mb-2 mx-2 justify-center"
-            min-height="56"
+            rounded="xl"
+            class="mb-1 mx-3 justify-center am-nav-item"
+            min-height="52"
           >
             <template #prepend>
-              <v-icon :icon="item.icon" size="24" />
+              <v-icon :icon="item.icon" size="22" />
             </template>
             <v-tooltip
               :text="item.label"
@@ -128,16 +136,17 @@ watch(
             />
           </v-list-item>
 
+          <!-- Admin -->
           <v-list-item
             v-if="isAdmin"
             to="/admin"
             :active="currentRouteName === 'admin'"
-            rounded="lg"
-            class="mb-2 mx-2 justify-center"
-            min-height="56"
+            rounded="xl"
+            class="mb-1 mx-3 justify-center am-nav-item"
+            min-height="52"
           >
             <template #prepend>
-              <v-icon icon="mdi-shield-account" size="24" />
+              <v-icon icon="mdi-shield-account-outline" size="22" />
             </template>
             <v-tooltip
               text="管理"
@@ -149,15 +158,17 @@ watch(
 
         <v-spacer />
 
-        <div class="text-center">
+        <!-- Bottom: user avatar -->
+        <div class="text-center px-3">
           <v-btn
             icon
-            variant="text"
+            variant="tonal"
             size="small"
-            color="medium-emphasis"
+            color="primary"
             @click="$router.push('/settings')"
+            class="am-avatar-btn"
           >
-            <v-icon>mdi-account-circle</v-icon>
+            <v-icon size="20">mdi-account-circle-outline</v-icon>
           </v-btn>
         </div>
       </div>
@@ -169,7 +180,7 @@ watch(
         <router-view />
       </div>
 
-      <!-- Mini Player (above bottom nav on mobile, above footer on desktop) -->
+      <!-- Mini Player -->
       <MiniPlayer v-if="showMiniPlayer" />
     </v-main>
 
@@ -179,8 +190,9 @@ watch(
       v-model="currentRouteName"
       color="primary"
       grow
-      elevation="8"
+      elevation="0"
       class="am-bottom-nav"
+      height="64"
     >
       <v-btn
         v-for="item in navItems"
@@ -188,35 +200,38 @@ watch(
         :value="item.name"
         :to="item.path"
         variant="text"
+        class="am-mobile-btn"
       >
         <v-icon>{{ item.icon }}</v-icon>
-        <span class="text-caption">{{ item.label }}</span>
+        <span class="text-caption font-weight-semibold">{{ item.label }}</span>
       </v-btn>
     </v-bottom-navigation>
 
-    <!-- 浏览器 autoplay 拦截兜底：要点一下才能开始播 -->
+    <!-- Tap-to-play overlay -->
     <div
       v-if="needsTapToPlay"
       class="am-tap-overlay"
       @click="startPlaybackFromGesture"
     >
       <div class="am-tap-card">
-        <v-icon size="56" color="primary">mdi-play-circle</v-icon>
-        <div class="text-h6 mt-3">点击开始收听</div>
-        <div class="text-caption text-medium-emphasis mt-1">
+        <div class="am-tap-icon">
+          <v-icon size="52" color="primary">mdi-play-circle</v-icon>
+        </div>
+        <div class="text-h6 font-weight-bold mt-4">点击开始收听</div>
+        <div class="text-body-2 text-medium-emphasis mt-2">
           浏览器需要您的一次点击才能开始播放
         </div>
       </div>
     </div>
 
-    <!-- Global Snackbar (replaces ToastContainer) -->
+    <!-- Global Snackbar -->
     <v-snackbar
       v-model="store.showSnackbar"
       :color="store.snackbarColor"
       :timeout="3000"
       location="top"
-      rounded="lg"
-      elevation="16"
+      rounded="xl"
+      elevation="8"
     >
       {{ store.snackbarText }}
       <template #actions>
@@ -234,13 +249,24 @@ watch(
 }
 
 .am-drawer {
-  border-right: 1px solid var(--am-divider);
+  border-right: none !important;
+  background: transparent !important;
 }
 
 .am-drawer :deep(.v-list-item) {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.28s var(--am-ease-smooth);
+}
+
+.am-drawer :deep(.v-list-item--active) {
+  background: var(--am-primary) !important;
+  color: white !important;
+}
+
+.am-drawer :deep(.v-list-item--active .v-icon) {
+  color: white !important;
 }
 
 .am-drawer :deep(.v-list-item__prepend) {
@@ -256,20 +282,51 @@ watch(
   display: none;
 }
 
+.am-logo {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+  border-radius: var(--am-radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--am-surface-2);
+  border: 1px solid var(--am-divider);
+  transition: all 0.3s var(--am-ease-emphasized);
+}
+
+.am-logo:hover {
+  background: var(--am-primary);
+  border-color: var(--am-primary);
+}
+
+.am-logo:hover .v-icon {
+  color: white !important;
+}
+
+.am-logo-label {
+  color: var(--am-text-high);
+}
+
+.am-avatar-btn {
+  width: 40px;
+  height: 40px;
+}
+
 .am-main {
   background: var(--am-bg);
-  transition: padding 0.3s ease;
+  transition: padding 0.3s var(--am-ease-emphasized);
 }
 
 .am-content-wrapper {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 20px;
   min-height: 100%;
 }
 
 .pb-nav {
-  padding-bottom: 128px !important;
+  padding-bottom: 140px !important;
 }
 
 .am-bottom-nav {
@@ -278,49 +335,57 @@ watch(
   left: 0;
   right: 0;
   z-index: 100;
-  background: var(--am-surface) !important;
-  border-top: 1px solid var(--am-divider);
+  border-top: none !important;
 }
 
 .am-bottom-nav :deep(.v-btn__content) {
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 3px;
   line-height: 1.1;
 }
 
-/* Desktop content padding for rail drawer */
+/* Desktop content padding */
 @media (min-width: 960px) {
   .am-content-wrapper {
-    padding: 24px 32px;
+    padding: 28px 40px;
   }
 }
 
-/* Tap-to-play overlay (shown when browser blocks autoplay) */
+/* Tap-to-play overlay */
 .am-tap-overlay {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.70);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  animation: am-fade-in 0.2s ease;
+  animation: fadeIn 0.3s var(--am-ease-emphasized);
 }
 
 .am-tap-card {
   background: var(--am-surface);
-  border-radius: 16px;
-  padding: 32px 40px;
+  border-radius: var(--am-radius-xl);
+  padding: 40px 48px;
   text-align: center;
   box-shadow: var(--am-shadow-16);
-  max-width: 320px;
+  max-width: 340px;
+  border: 1px solid var(--am-divider);
 }
 
-@keyframes am-fade-in {
+.am-tap-icon {
+  animation: float 2s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
 }
 </style>
