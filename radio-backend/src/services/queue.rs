@@ -170,7 +170,7 @@ pub async fn add_to_queue(
 
 /// 获取带歌曲详情的队列，按 position 排序。
 pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>, AppError> {
-    let display_items = sqlx::query_as::<_, (i64, i64, i64, String, i32, String, Option<String>, Option<String>, Option<String>, Option<i64>, String)>(
+    let display_items = sqlx::query_as::<_, (i64, i64, i64, String, i32, chrono::NaiveDateTime, Option<String>, Option<String>, Option<String>, Option<i64>, String)>(
         "SELECT q.id, q.song_id, q.device_user_id, q.status, q.position, q.added_at,
                 s.title, s.artist, s.album, s.duration_ms,
                 COALESCE(d.display_name, 'unknown')
@@ -190,8 +190,10 @@ pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>,
                 id: 0,
                 title: t,
                 artist: artist.unwrap_or_default(),
-                album,
-                duration_ms,
+                album: album.unwrap_or_default(),
+                duration_ms: duration_ms.unwrap_or(0),
+                has_lyrics: false,
+                has_cover: false,
             }),
             requested_by: display_name,
             status,
