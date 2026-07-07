@@ -8,6 +8,8 @@ pub const STREAM_PUSH_INTERVAL_MS: u64 = 100;
 pub const MAX_CONNECTIONS: usize = 1024;
 /// Crossfade preload window (seconds before track end)
 pub const CROSSFADE_SECONDS: u64 = 3;
+/// Whether crossfade is enabled by default
+pub const CROSSFADE_ENABLED: bool = false;
 /// How often to publish playback state (ms)
 pub const STATE_PUBLISH_INTERVAL_MS: u64 = 500;
 /// Default audio stream port

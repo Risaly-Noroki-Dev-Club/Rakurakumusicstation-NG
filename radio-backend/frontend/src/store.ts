@@ -81,6 +81,10 @@ export interface Store {
   showSnackbar: boolean
   snackbarText: string
   snackbarColor: string
+
+  // ─── Online listeners ───
+  onlineListenerCount: number
+  onlineListenerNames: string[]
 }
 
 export const store: Store = reactive({
@@ -154,6 +158,9 @@ export const store: Store = reactive({
   showSnackbar: false,
   snackbarText: '',
   snackbarColor: 'info',
+
+  onlineListenerCount: 0,
+  onlineListenerNames: [] as string[],
 })
 
 export function formatTime(ms: number | undefined | null): string {

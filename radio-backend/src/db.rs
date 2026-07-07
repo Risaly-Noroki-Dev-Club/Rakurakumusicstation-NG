@@ -18,7 +18,11 @@ pub(crate) async fn init_database(config: &DatabaseConfig) -> anyhow::Result<Sql
 
     let options = SqliteConnectOptions::from_str(&config.url)?
         .create_if_missing(true)
-        .foreign_keys(true);
+        .foreign_keys(true)
+        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+        .busy_timeout(std::time::Duration::from_secs(5))
+        .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+        .pragma("cache_size", "-64000");
 
     let pool = SqlitePoolOptions::new()
         .max_connections(10)
@@ -27,7 +31,7 @@ pub(crate) async fn init_database(config: &DatabaseConfig) -> anyhow::Result<Sql
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    tracing::info!("Database initialized successfully");
+    tracing::info!("Database initialized successfully (WAL mode enabled)");
 
     Ok(pool)
 }

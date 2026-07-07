@@ -28,9 +28,14 @@ pub async fn run() -> anyhow::Result<()> {
 
     // 初始化音频引擎
     let media_path = config.audio_engine.media_path.clone();
+    let crossfade_enabled = config.audio_engine.crossfade_enabled;
     let ring_buffer = radio_engine::ring_buffer::RingBuffer::new(BUFFER_CAPACITY);
     let (mut player, player_handle) =
-        radio_engine::player::Player::new(ring_buffer.clone(), media_path.clone());
+        radio_engine::player::Player::new_with_crossfade(
+            ring_buffer.clone(),
+            media_path.clone(),
+            crossfade_enabled,
+        );
 
     // 初始化播放队列并启动播放器
     player.init_play_queue().await;

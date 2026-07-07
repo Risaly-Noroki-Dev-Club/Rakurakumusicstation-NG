@@ -43,4 +43,9 @@ pub enum WsMessage {
     },
     #[serde(rename = "ping")]
     Ping { timestamp: i64 },
+    #[serde(rename = "listeners_update")]
+    ListenersUpdate {
+        count: usize,
+        names: Vec<String>,
+    },
 }

@@ -105,6 +105,20 @@ app.use(vuetify)
 app.use(router)
 app.mount('#app')
 
+// Request notification permission on user interaction
+let notificationPermissionRequested = false
+function requestNotificationPermission() {
+  if (notificationPermissionRequested) return
+  if ('Notification' in window && Notification.permission === 'default') {
+    notificationPermissionRequested = true
+    Notification.requestPermission()
+  }
+}
+
+// Listen for user interaction to request permission
+document.addEventListener('click', requestNotificationPermission, { once: true })
+document.addEventListener('keydown', requestNotificationPermission, { once: true })
+
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

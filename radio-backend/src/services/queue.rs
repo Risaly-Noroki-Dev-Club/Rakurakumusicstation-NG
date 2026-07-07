@@ -170,36 +170,36 @@ pub async fn add_to_queue(
 
 /// 获取带歌曲详情的队列，按 position 排序。
 pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>, AppError> {
-    let items = sqlx::query_as::<_, QueueItem>(
-        "SELECT * FROM queue_items WHERE status IN ('pending', 'playing') ORDER BY position ASC",
+    let display_items = sqlx::query_as::<_, (i64, i64, i64, String, i32, String, Option<String>, Option<String>, Option<String>, Option<i64>, String)>(
+        "SELECT q.id, q.song_id, q.device_user_id, q.status, q.position, q.added_at,
+                s.title, s.artist, s.album, s.duration_ms,
+                COALESCE(d.display_name, 'unknown')
+         FROM queue_items q
+         LEFT JOIN songs s ON s.id = q.song_id
+         LEFT JOIN device_users d ON d.id = q.device_user_id
+         WHERE q.status IN ('pending', 'playing')
+         ORDER BY q.position ASC",
     )
     .fetch_all(db)
-    .await?;
-
-    let mut display_items = Vec::new();
-    for item in items {
-        let song = sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs WHERE id = ?")
-            .bind(item.song_id)
-            .fetch_optional(db)
-            .await?;
-
-        let display_name =
-            sqlx::query_as::<_, (String,)>("SELECT display_name FROM device_users WHERE id = ?")
-                .bind(item.device_user_id)
-                .fetch_optional(db)
-                .await?
-                .map(|(d,)| d)
-                .unwrap_or_else(|| "unknown".into());
-
-        display_items.push(QueueItemDisplay {
-            id: item.id,
-            song: song.map(SongSummary::from),
+    .await?
+    .into_iter()
+    .map(|(id, _song_id, _device_user_id, status, position, added_at, title, artist, album, duration_ms, display_name)| {
+        QueueItemDisplay {
+            id,
+            song: title.map(|t| SongSummary {
+                id: 0,
+                title: t,
+                artist: artist.unwrap_or_default(),
+                album,
+                duration_ms,
+            }),
             requested_by: display_name,
-            status: item.status,
-            position: item.position,
-            added_at: item.added_at,
-        });
-    }
+            status,
+            position,
+            added_at,
+        }
+    })
+    .collect();
 
     Ok(display_items)
 }
@@ -447,39 +447,35 @@ pub async fn get_next_song(db: &SqlitePool) -> Result<Option<crate::models::Song
 
 /// 获取最近的播放历史。
 pub async fn get_history(db: &SqlitePool, limit: i64) -> Result<Vec<serde_json::Value>, AppError> {
-    let history = sqlx::query_as::<_, crate::models::PlayHistory>(
-        "SELECT * FROM play_history ORDER BY played_at DESC LIMIT ?",
+    let result = sqlx::query_as::<_, (i64, i64, Option<i64>, String, String, Option<String>, Option<String>, Option<i64>, String)>(
+        "SELECT h.id, h.song_id, h.device_user_id, h.played_at,
+                s.title, s.artist, s.album, s.duration_ms,
+                COALESCE(d.display_name, 'system')
+         FROM play_history h
+         LEFT JOIN songs s ON s.id = h.song_id
+         LEFT JOIN device_users d ON d.id = h.device_user_id
+         ORDER BY h.played_at DESC
+         LIMIT ?",
     )
     .bind(limit)
     .fetch_all(db)
-    .await?;
-
-    let mut result = Vec::new();
-    for h in history {
-        let song = sqlx::query_as::<_, crate::models::Song>("SELECT * FROM songs WHERE id = ?")
-            .bind(h.song_id)
-            .fetch_optional(db)
-            .await?;
-
-        let display_name = match h.device_user_id {
-            Some(uid) => {
-                sqlx::query_as::<_, (String,)>("SELECT display_name FROM device_users WHERE id = ?")
-                    .bind(uid)
-                    .fetch_optional(db)
-                    .await?
-                    .map(|(d,)| d)
-                    .unwrap_or_else(|| "unknown".into())
-            }
-            None => "system".to_string(),
-        };
-
-        result.push(serde_json::json!({
-            "id": h.id,
-            "song": song.map(SongSummary::from),
+    .await?
+    .into_iter()
+    .map(|(id, _song_id, _device_user_id, played_at, title, artist, album, duration_ms, display_name)| {
+        serde_json::json!({
+            "id": id,
+            "song": {
+                "id": 0,
+                "title": title,
+                "artist": artist.unwrap_or_default(),
+                "album": album,
+                "duration_ms": duration_ms,
+            },
             "requested_by": display_name,
-            "played_at": h.played_at.format("%Y-%m-%d %H:%M:%S").to_string(),
-        }));
-    }
+            "played_at": played_at,
+        })
+    })
+    .collect();
 
     Ok(result)
 }

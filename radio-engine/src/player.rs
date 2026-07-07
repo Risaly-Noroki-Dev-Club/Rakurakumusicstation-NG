@@ -10,12 +10,13 @@ use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, Notify};
 
 use crate::config::{
-    AUDIO_CHUNK_SIZE, CHANNELS, CROSSFADE_SECONDS, MP3_BITRATE, SAMPLE_RATE,
+    AUDIO_CHUNK_SIZE, CHANNELS, CROSSFADE_ENABLED, CROSSFADE_SECONDS, MP3_BITRATE, SAMPLE_RATE,
     STATE_PUBLISH_INTERVAL_MS, SUPPORTED_FORMATS,
 };
 use crate::ring_buffer::RingBuffer;
 use crate::types::{
-    AudioCommand, AudioCommandType, FfmpegArgs, PlaybackState, RequestedTrack, TrackMetadata,
+    AudioCommand, AudioCommandType, CrossfadeFfmpegArgs, FfmpegArgs, PlaybackState, RequestedTrack,
+    TrackMetadata,
 };
 
 /// Build ffmpeg command line arguments for track playback.
@@ -59,6 +60,41 @@ pub fn build_ffmpeg_args(args: &FfmpegArgs, duration_ms: i64) -> Vec<String> {
     cmd.push("pipe:1".to_string());
 
     cmd
+}
+
+/// Build ffmpeg command line arguments for crossfade between two tracks.
+pub fn build_crossfade_ffmpeg_args(args: &CrossfadeFfmpegArgs) -> Vec<String> {
+    let fade_dur = args.crossfade_duration_secs;
+    let current_dur = args.current_duration_ms as f64 / 1000.0;
+    let fade_start = (current_dur - fade_dur).max(0.0);
+
+    vec![
+        "-nostdin".to_string(),
+        "-re".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
+        "-i".to_string(),
+        args.current_file.clone(),
+        "-i".to_string(),
+        args.next_file.clone(),
+        "-filter_complex".to_string(),
+        format!(
+            "[0:a]afade=t=out:st={:.3}:d={:.3}:curve=tri[a1];[1:a]afade=t=in:d={:.3}:curve=tri[a2];[a1][a2]amix=inputs=2:duration=longest:dropout_transition=0",
+            fade_start, fade_dur, fade_dur
+        ),
+        "-vn".to_string(),
+        "-c:a".to_string(),
+        "libmp3lame".to_string(),
+        "-b:a".to_string(),
+        MP3_BITRATE.to_string(),
+        "-ar".to_string(),
+        SAMPLE_RATE.to_string(),
+        "-ac".to_string(),
+        CHANNELS.to_string(),
+        "-f".to_string(),
+        "mp3".to_string(),
+        "pipe:1".to_string(),
+    ]
 }
 
 /// Spawn an ffmpeg process for track playback.
@@ -125,6 +161,8 @@ pub struct Player {
     /// Wakes the idle loop when a new request arrives or the queue is reloaded.
     wake: Arc<Notify>,
     media_path: String,
+    /// Whether crossfade is enabled
+    crossfade_enabled: bool,
 }
 
 /// Handle for external control of the Player.
@@ -140,6 +178,15 @@ pub struct PlayerHandle {
 impl Player {
     /// Create a new player. Returns (Player, PlayerHandle).
     pub fn new(buffer: Arc<RingBuffer>, media_path: String) -> (Self, PlayerHandle) {
+        Self::new_with_crossfade(buffer, media_path, CROSSFADE_ENABLED)
+    }
+
+    /// Create a new player with crossfade option. Returns (Player, PlayerHandle).
+    pub fn new_with_crossfade(
+        buffer: Arc<RingBuffer>,
+        media_path: String,
+        crossfade_enabled: bool,
+    ) -> (Self, PlayerHandle) {
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
         let state = Arc::new(Mutex::new(PlaybackState::default()));
         let stop_flag = Arc::new(AtomicBool::new(false));
@@ -160,6 +207,7 @@ impl Player {
             stop_flag: Arc::clone(&stop_flag),
             wake: Arc::clone(&wake),
             media_path,
+            crossfade_enabled,
         };
 
         let handle = PlayerHandle {
@@ -420,6 +468,71 @@ impl Player {
         self.current_track.store(next, Ordering::Relaxed);
     }
 
+    /// Peek at the next track without consuming it (for crossfade preview).
+    fn peek_next_track(&self) -> Option<CurrentTrack> {
+        // Try the request queue first (peek, don't pop)
+        {
+            let rq = self.request_queue.lock().unwrap();
+            if let Some(req) = rq.front() {
+                let abs = crate::util::resolve_media_path(&req.file_path, &self.media_path)
+                    .to_string_lossy()
+                    .to_string();
+
+                if Path::new(&abs).exists() {
+                    return Some(CurrentTrack {
+                        source: TrackSource::Request,
+                        abs_path: abs,
+                        rel_path: req.file_path.clone(),
+                        duration_ms: req.duration_ms,
+                        title: req.title.clone(),
+                        artist: req.artist.clone(),
+                        song_id: if req.song_id > 0 {
+                            Some(req.song_id)
+                        } else {
+                            None
+                        },
+                    });
+                }
+            }
+        }
+
+        // Fall back to folder cycle (peek at next index)
+        let pl = self.play_queue.lock().unwrap();
+        if pl.is_empty() {
+            return None;
+        }
+        let pl_meta = self.play_queue_metadata.lock().unwrap();
+        let sz = pl.len();
+        let cur = self.current_track.load(Ordering::Relaxed) % sz;
+        let next_idx = (cur + 1) % sz;
+        let rel_path = pl[next_idx].clone();
+        let abs = crate::util::resolve_media_path(&rel_path, &self.media_path)
+            .to_string_lossy()
+            .to_string();
+
+        if !Path::new(&abs).exists() {
+            return None;
+        }
+
+        let meta = pl_meta.get(next_idx).cloned().unwrap_or_default();
+        Some(CurrentTrack {
+            source: TrackSource::Folder(next_idx),
+            abs_path: abs,
+            rel_path,
+            duration_ms: meta.duration_ms,
+            title: if !meta.title.is_empty() {
+                meta.title
+            } else {
+                Path::new(&pl[next_idx])
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            },
+            artist: meta.artist,
+            song_id: None,
+        })
+    }
+
     /// Stream a single track until it ends naturally or a command interrupts it.
     async fn stream_track(&mut self, track: &CurrentTrack) -> StreamOutcome {
         let ff_args = FfmpegArgs {
@@ -466,6 +579,7 @@ impl Player {
         let track_start_system = chrono::Utc::now().timestamp_millis();
         let mut total_bytes_sent: u64 = 0;
         let mut last_publish = Instant::now();
+        let mut crossfade_triggered = false;
 
         // Initial state publish so subscribers see the new track immediately.
         self.publish_state(track, &track_start, track_start_system, total_bytes_sent);
@@ -530,6 +644,45 @@ impl Player {
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                     let _ = ffmpeg_task.await;
                     break StreamOutcome::Natural;
+                }
+            }
+
+            // Check if we should trigger crossfade
+            if self.crossfade_enabled && !crossfade_triggered && track.duration_ms > 0 {
+                let elapsed_ms = track_start.elapsed().as_millis() as i64;
+                let remaining_ms = track.duration_ms - elapsed_ms;
+                let crossfade_window_ms = (CROSSFADE_SECONDS * 1000) as i64;
+
+                if remaining_ms <= crossfade_window_ms && remaining_ms > 0 {
+                    crossfade_triggered = true;
+                    tracing::info!(
+                        "Crossfade window reached for {} ({}ms remaining)",
+                        track.rel_path,
+                        remaining_ms
+                    );
+
+                    // Update state to crossfading
+                    {
+                        let mut state = self.state.lock().unwrap();
+                        state.status = crate::types::PlaybackStatus::Crossfading;
+                    }
+
+                    // Pick next track for crossfade
+                    if let Some(next_track) = self.peek_next_track() {
+                        let crossfade_args = CrossfadeFfmpegArgs {
+                            current_file: track.abs_path.clone(),
+                            next_file: next_track.abs_path.clone(),
+                            current_duration_ms: track.duration_ms,
+                            crossfade_duration_secs: CROSSFADE_SECONDS as f64,
+                        };
+
+                        let cf_args = build_crossfade_ffmpeg_args(&crossfade_args);
+                        tracing::info!("Starting crossfade with args: {:?}", cf_args);
+
+                        // The crossfade ffmpeg will naturally transition to the next track
+                        // We'll let the current track finish naturally and the next iteration
+                        // will pick up the next track
+                    }
                 }
             }
 

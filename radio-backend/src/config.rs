@@ -42,6 +42,9 @@ pub struct AudioEngineConfig {
     /// 相对路径会与 base_url 拼接。
     #[serde(default = "default_stream_base")]
     pub stream_base: String,
+    /// 是否启用交叉淡入淡出
+    #[serde(default)]
+    pub crossfade_enabled: bool,
 }
 
 impl AudioEngineConfig {
@@ -242,6 +245,9 @@ impl AppConfig {
         }
         if let Ok(v) = std::env::var("RADIO_STREAM_BASE") {
             config.audio_engine.stream_base = v;
+        }
+        if let Ok(v) = std::env::var("RADIO_CROSSFADE_ENABLED") {
+            config.audio_engine.crossfade_enabled = v.parse().unwrap_or(false);
         }
         if let Ok(v) = std::env::var("RADIO_STATION_NAME") {
             config.station.name = v;

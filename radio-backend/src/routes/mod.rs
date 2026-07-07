@@ -26,6 +26,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .nest("/favorites", favorites::favorites_routes())
         .route("/station", get(station::station_info))
         .route("/now-playing", get(queue::now_playing))
+        .route("/listeners", get(get_listeners))
         .fallback(api_not_found);
 
     let app_routes = Router::new()
@@ -62,4 +63,23 @@ async fn api_not_found() -> (StatusCode, Json<serde_json::Value>) {
             "error": "API endpoint not found",
         })),
     )
+}
+
+/// 获取当前在线听众列表
+async fn get_listeners(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let count = state.listeners.len();
+    let listeners: Vec<serde_json::Value> = state.listeners.iter().map(|entry| {
+        serde_json::json!({
+            "display_name": entry.value().display_name,
+            "connected_at": entry.value().connected_at.to_rfc3339(),
+        })
+    }).collect();
+
+    Json(serde_json::json!({
+        "success": true,
+        "count": count,
+        "listeners": listeners,
+    }))
 }

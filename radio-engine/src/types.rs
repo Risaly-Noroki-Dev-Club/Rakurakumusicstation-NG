@@ -151,3 +151,12 @@ pub struct FfmpegArgs {
     pub fade_in: bool,
     pub start_offset_secs: Option<f64>,
 }
+
+/// FFmpeg arguments for crossfade between two tracks
+#[derive(Debug, Clone)]
+pub struct CrossfadeFfmpegArgs {
+    pub current_file: String,
+    pub next_file: String,
+    pub current_duration_ms: i64,
+    pub crossfade_duration_secs: f64,
+}

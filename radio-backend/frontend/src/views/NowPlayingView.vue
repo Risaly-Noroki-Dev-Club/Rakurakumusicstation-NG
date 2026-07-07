@@ -74,6 +74,10 @@ function onNext() {
           <p class="am-track-artist text-subtitle-1 text-medium-emphasis mt-2 text-truncate font-weight-medium">
             {{ store.playbackState.artist || '' }}
           </p>
+          <div class="am-listeners-badge mt-2" v-if="store.onlineListenerCount > 0">
+            <v-icon size="14" class="mr-1">mdi-account-group</v-icon>
+            <span>{{ store.onlineListenerCount }} 位听众在线</span>
+          </div>
         </div>
 
         <!-- Progress Bar -->
@@ -208,6 +212,17 @@ function onNext() {
 .am-track-artist {
   font-family: var(--font-display);
   letter-spacing: 0.01em;
+}
+
+.am-listeners-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  color: rgb(var(--v-theme-primary));
+  opacity: 0.8;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(var(--v-theme-primary), 0.1);
 }
 
 .am-progress-wrapper {

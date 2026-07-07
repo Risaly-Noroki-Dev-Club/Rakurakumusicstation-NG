@@ -116,7 +116,13 @@ export interface WsPing {
   timestamp: number
 }
 
-export type WsMessage = WsPlaybackState | WsQueueUpdate | WsNotice | WsPing
+export interface WsListenersUpdate {
+  type: 'listeners_update'
+  count: number
+  names: string[]
+}
+
+export type WsMessage = WsPlaybackState | WsQueueUpdate | WsNotice | WsPing | WsListenersUpdate
 
 export interface NcmStatus {
   configured: boolean

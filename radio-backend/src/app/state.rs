@@ -1,10 +1,18 @@
 //! Shared application state passed to Axum handlers.
 
 use crate::config::{AppConfig, StationConfig};
+use dashmap::DashMap;
 use radio_engine::player::PlayerHandle;
 use radio_engine::ring_buffer::RingBuffer;
 use sqlx::SqlitePool;
 use std::sync::{Arc, RwLock};
+
+/// 在线听众信息
+#[derive(Debug, Clone)]
+pub struct OnlineListener {
+    pub display_name: String,
+    pub connected_at: chrono::DateTime<chrono::Utc>,
+}
 
 /// 所有请求处理器共享的应用状态。
 pub struct AppState {
@@ -18,6 +26,8 @@ pub struct AppState {
     pub player_handle: PlayerHandle,
     /// Serializes DB queue mutations with embedded-engine request queue updates.
     pub queue_sync: tokio::sync::Mutex<()>,
+    /// 在线听众注册表 (device_token -> OnlineListener)
+    pub listeners: Arc<DashMap<String, OnlineListener>>,
 }
 
 impl AppState {
@@ -39,6 +49,7 @@ impl AppState {
             ring_buffer,
             player_handle,
             queue_sync: tokio::sync::Mutex::new(()),
+            listeners: Arc::new(DashMap::new()),
         })
     }
 }
