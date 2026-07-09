@@ -37,6 +37,11 @@ opencode.json
 .DS_Store
 Thumbs.db
 
+# 开发文档（非必要，仅本地参考）
+docs/
+UPDATE_GUIDE.md
+radio-backend/frontend/FRONTEND.md
+
 # 媒体文件目录
 media/
 media_backup/

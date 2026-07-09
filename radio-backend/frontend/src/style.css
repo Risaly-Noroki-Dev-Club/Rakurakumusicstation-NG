@@ -109,6 +109,79 @@
   --am-shadow-8: 0 16px 48px rgba(0, 0, 0, 0.48), 0 8px 16px rgba(0, 0, 0, 0.32);
 }
 
+/* ─── Listen Together 暖色主题 ─── */
+:root[data-layout="listen-together"] {
+  /* 主色调 */
+  --lt-bg: #F5F0E6;
+  --lt-sidebar-bg: #EDE8DB;
+  --lt-card-bg: #FFFFFF;
+  --lt-selected-bg: #D4C9A8;
+  --lt-divider: #DDD6C6;
+
+  /* 文字 */
+  --lt-text-primary: #1C1932;
+  --lt-text-secondary: #6B6880;
+  --lt-text-muted: rgba(107, 104, 128, 0.5);
+
+  /* 进度条 */
+  --lt-progress-track: #E0D8C8;
+  --lt-progress-fill: #5C5470;
+
+  /* 控件 */
+  --lt-btn-bg: #E8E2D4;
+  --lt-play-btn-bg: #1C1932;
+  --lt-play-btn-icon: #FFFFFF;
+
+  /* 字体 */
+  --lt-font-serif: 'Georgia', 'Noto Serif JP', serif;
+  --lt-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --lt-font-lyric: 'Noto Serif JP', Georgia, serif;
+
+  /* 圆角 */
+  --lt-radius-sm: 8px;
+  --lt-radius-md: 12px;
+  --lt-radius-lg: 16px;
+  --lt-radius-pill: 9999px;
+
+  /* 阴影 */
+  --lt-shadow-card: 0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04);
+  --lt-shadow-cover: 0 4px 16px rgba(0,0,0,0.12);
+  --lt-shadow-subtle: 0 1px 3px rgba(0,0,0,0.06);
+
+  /* 品牌色 — 可通过 station 信息配置 */
+  --lt-accent: #8BC34A;
+  --lt-accent-soft: rgba(139, 195, 74, 0.15);
+  --lt-accent-text: #5a8a2a;
+}
+
+/* ─── Listen Together 暗色模式 ─── */
+:root[data-layout="listen-together"][data-theme="dark"] {
+  --lt-bg: #1A1820;
+  --lt-sidebar-bg: #141218;
+  --lt-card-bg: #22202A;
+  --lt-selected-bg: #2E2B38;
+  --lt-divider: #2E2B3A;
+
+  --lt-text-primary: rgba(240, 236, 255, 0.94);
+  --lt-text-secondary: rgba(240, 236, 255, 0.55);
+  --lt-text-muted: rgba(240, 236, 255, 0.30);
+
+  --lt-progress-track: #2E2B3A;
+  --lt-progress-fill: #A29BFE;
+
+  --lt-btn-bg: #2A2832;
+  --lt-play-btn-bg: #F0ECFF;
+  --lt-play-btn-icon: #1C1932;
+
+  --lt-shadow-card: 0 2px 8px rgba(0,0,0,0.36), 0 8px 24px rgba(0,0,0,0.24);
+  --lt-shadow-cover: 0 4px 16px rgba(0,0,0,0.48);
+  --lt-shadow-subtle: 0 1px 3px rgba(0,0,0,0.32);
+
+  --lt-accent: #8BC34A;
+  --lt-accent-soft: rgba(139, 195, 74, 0.12);
+  --lt-accent-text: #A5D66A;
+}
+
 /* ─── Global resets ─── */
 * {
   margin: 0;

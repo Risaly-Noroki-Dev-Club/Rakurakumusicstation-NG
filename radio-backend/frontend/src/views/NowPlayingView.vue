@@ -4,6 +4,11 @@ import { store } from '../store'
 import { apiUrl, adminSkipNext, adminSkipPrev } from '../api'
 import AmProgressBar from '../components/AmProgressBar.vue'
 import LyricsView from '../components/LyricsView.vue'
+import LtSidebar from '../components/lt/LtSidebar.vue'
+import LtGroupList from '../components/lt/LtGroupList.vue'
+import LtPlayerCard from '../components/lt/LtPlayerCard.vue'
+import LtQueuePanel from '../components/lt/LtQueuePanel.vue'
+import LtLyricsPanel from '../components/lt/LtLyricsPanel.vue'
 
 const audioEl = inject<import('vue').Ref<HTMLAudioElement | null>>('audioEl')
 
@@ -42,9 +47,22 @@ function onNext() {
 </script>
 
 <template>
-  <div class="am-now-playing">
-    <!-- Desktop: side-by-side / Mobile: stacked -->
-    <div class="am-player-layout" :class="{ desktop: store.isDesktop }">
+  <!-- 桌面端：Listen Together 三栏布局 -->
+  <div v-if="store.isDesktop" class="lt-app">
+    <LtSidebar />
+
+    <main class="lt-center">
+      <LtGroupList />
+      <LtPlayerCard />
+      <LtQueuePanel />
+    </main>
+
+    <LtLyricsPanel />
+  </div>
+
+  <!-- 移动端：原有单栏布局 -->
+  <div v-else class="am-now-playing">
+    <div class="am-player-layout">
       <!-- Cover -->
       <div class="am-cover-section">
         <div class="am-cover-wrapper" :class="{ 'is-playing': isPlaying }">
@@ -67,7 +85,7 @@ function onNext() {
 
       <!-- Info & Controls -->
       <div class="am-info-section">
-        <div class="am-track-info text-center" :class="{ 'text-left': store.isDesktop }">
+        <div class="am-track-info text-center">
           <h1 class="am-track-title text-h4 font-weight-extrabold text-truncate">
             {{ store.playbackState.title || '等待播放...' }}
           </h1>
@@ -86,7 +104,7 @@ function onNext() {
         </div>
 
         <!-- Controls -->
-        <div class="am-controls d-flex align-center justify-center mt-8" :class="{ 'justify-start': store.isDesktop }">
+        <div class="am-controls d-flex align-center justify-center mt-8">
           <v-btn
             icon
             variant="text"
@@ -122,7 +140,7 @@ function onNext() {
         </div>
 
         <!-- Action row -->
-        <div class="d-flex align-center justify-center mt-6 gap-3" :class="{ 'justify-start': store.isDesktop }">
+        <div class="d-flex align-center justify-center mt-6 gap-3">
           <v-btn
             variant="tonal"
             density="comfortable"
@@ -139,12 +157,39 @@ function onNext() {
       </div>
     </div>
 
-    <!-- Lyrics Overlay -->
+    <!-- Lyrics Overlay (移动端) -->
     <LyricsView v-if="store.showLyrics" @close="store.showLyrics = false" />
   </div>
 </template>
 
 <style scoped>
+/* ─── Listen Together 三栏布局 ─── */
+.lt-app {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  background: var(--lt-bg);
+  overflow: hidden;
+  animation: lt-fade-in 0.4s var(--am-ease-emphasized);
+}
+
+.lt-center {
+  flex: 1;
+  background: var(--lt-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px;
+  gap: 16px;
+  min-width: 0;
+}
+
+@keyframes lt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ─── 移动端原有布局 ─── */
 .am-now-playing {
   position: relative;
   min-height: 100%;
@@ -164,13 +209,6 @@ function onNext() {
   gap: 32px;
   z-index: 1;
   animation: slideUp 0.6s var(--am-ease-emphasized);
-}
-
-.am-player-layout.desktop {
-  max-width: 1000px;
-  flex-direction: row;
-  align-items: center;
-  gap: 64px;
 }
 
 .am-cover-section {
@@ -249,33 +287,6 @@ function onNext() {
 
 .gap-3 {
   gap: 12px;
-}
-
-/* Desktop overrides */
-@media (min-width: 960px) {
-  .am-cover-wrapper {
-    width: 400px;
-    height: 400px;
-  }
-
-  .am-track-title {
-    font-size: 2.5rem !important;
-  }
-
-  .am-track-artist {
-    font-size: 1.25rem !important;
-  }
-
-  .am-play-btn {
-    min-width: 72px !important;
-    min-height: 72px !important;
-    width: 72px !important;
-    height: 72px !important;
-  }
-
-  .am-play-btn .v-icon {
-    size: 40px;
-  }
 }
 
 @keyframes slideUp {

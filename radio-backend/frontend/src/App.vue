@@ -9,6 +9,7 @@ import {
 } from './api'
 import { useLiveAudio } from './app/useLiveAudio'
 import { useThemeSync } from './app/useThemeSync'
+import { useListenTogetherLayout } from './composables/useListenTogetherLayout'
 import MiniPlayer from './components/MiniPlayer.vue'
 
 const route = useRoute()
@@ -27,6 +28,7 @@ const {
 } = useLiveAudio()
 provide('audioEl', audioEl)
 useThemeSync(vuetifyTheme)
+const { isActive: ltActive } = useListenTogetherLayout()
 
 async function init() {
   initAudio()
@@ -65,7 +67,7 @@ const drawerOpen = computed({
   set: () => {}
 })
 
-const stationLabel = computed(() => store.stationName || 'RR')
+const stationLabel = computed(() => store.stationName || 'Rakuraku Music Station')
 
 watch(() => store.showSnackbar, (val) => {
   if (!val) {
@@ -94,9 +96,9 @@ watch(
       class="visually-hidden"
     />
 
-    <!-- Desktop: Side Navigation -->
+    <!-- Desktop: Side Navigation (隐藏于 Listen Together 三栏布局) -->
     <v-navigation-drawer
-      v-if="store.isDesktop"
+      v-if="store.isDesktop && !ltActive"
       v-model="drawerOpen"
       permanent
       rail
@@ -175,8 +177,8 @@ watch(
     </v-navigation-drawer>
 
     <!-- Main Content -->
-    <v-main class="am-main" :class="{ 'pb-nav': !store.isDesktop }">
-      <div class="am-content-wrapper">
+    <v-main class="am-main" :class="{ 'pb-nav': !store.isDesktop, 'lt-fullscreen': ltActive }">
+      <div class="am-content-wrapper" :class="{ 'lt-content': ltActive }">
         <router-view />
       </div>
 
@@ -318,11 +320,24 @@ watch(
   transition: padding 0.3s var(--am-ease-emphasized);
 }
 
+/* Listen Together 全屏模式：移除 Vuetify drawer 预留的内边距 */
+.am-main.lt-fullscreen {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
 .am-content-wrapper {
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
   min-height: 100%;
+}
+
+.am-content-wrapper.lt-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  height: 100%;
 }
 
 .pb-nav {

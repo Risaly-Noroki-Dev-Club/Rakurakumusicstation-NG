@@ -9,7 +9,7 @@
 
 ## Commands
 
-- Full release package from repo root: `./build_release.sh`. It runs `cargo build --release` in `radio-backend`, copies the binary to `dist/`, copies existing `radio-backend/static/`, seeds `dist/config.toml` only if missing, and preserves `dist/media/`.
+- Full release package from repo root: `./build_release.sh`. It runs `npm run build` in `radio-backend/frontend` (installs deps if `node_modules` is missing), then `cargo build --release` in `radio-backend`, copies the binary to `dist/` (via temp file to avoid ETXTBSY), copies `radio-backend/static/`, seeds `dist/config.toml` only if missing, and preserves `dist/media/` and `dist/data/`. Pass `--skip-frontend` to skip the Vite build.
 - Backend-only debug build: `cd radio-backend && cargo build`.
 - Engine tests: `cd radio-engine && cargo test ring_buffer`. These are the only checked-in Rust unit tests.
 - Frontend dev server: `cd radio-backend/frontend && npm run dev`; Vite listens on `5173` and proxies `/api`, `/ws`, and `/stream` to `localhost:2241`.
@@ -45,4 +45,4 @@
 ## Local Verification Gotchas
 
 - For traffic or leak tests against localhost, bypass shell proxy variables with `curl --noproxy '*' ...`; local proxies can make closed clients look like server-side fd leaks.
-- If frontend code changed, run `npm run build` before `./build_release.sh`; the root script does not install npm deps or invoke Vite.
+- `./build_release.sh` now builds the frontend automatically; use `--skip-frontend` only when you know the static assets are already up to date.

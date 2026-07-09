@@ -89,7 +89,7 @@ export interface Store {
 
 export const store: Store = reactive({
   deviceUser: null as DeviceUser | null,
-  stationName: '电台',
+  stationName: 'Rakuraku Music Station',
   needsSetup: false,
   themeIdx: getInitialThemeIndex(),
   coverLoadError: false,

@@ -39,12 +39,18 @@ export function useLiveAudio() {
   }
 
   function startPlaybackFromGesture() {
-    if (!audioEl.value) return
-    audioEl.value.play().then(() => {
+    const audio = audioEl.value
+    if (!audio) return
+    // 重新设置最新的流地址（loadStationInfo 可能在 initAudio 之后才更新 streamUrl）
+    const separator = getStreamUrl().includes('?') ? '&' : '?'
+    audio.src = `${getStreamUrl()}${separator}t=${Date.now()}`
+    audio.load()
+    audio.play().then(() => {
       needsTapToPlay.value = false
-    }).catch(() => {
-      // 播放仍然失败（例如后端未运行）——关闭覆盖层，避免用户被困住
+    }).catch((err) => {
+      // 播放失败——关闭覆盖层并提示用户
       needsTapToPlay.value = false
+      console.error('[audio] 播放失败:', err)
     })
   }
 
