@@ -10,6 +10,7 @@ import {
 import { useLiveAudio } from './app/useLiveAudio'
 import { useThemeSync } from './app/useThemeSync'
 import { useListenTogetherLayout } from './composables/useListenTogetherLayout'
+import LtSidebar from './components/lt/LtSidebar.vue'
 import MiniPlayer from './components/MiniPlayer.vue'
 
 const route = useRoute()
@@ -96,9 +97,22 @@ watch(
       class="visually-hidden"
     />
 
-    <!-- Desktop: Side Navigation (隐藏于 Listen Together 三栏布局) -->
+    <!-- ─── 桌面端：Listen Together 统一布局 ─── -->
+    <template v-if="ltActive">
+      <div class="lt-app-root">
+        <LtSidebar />
+        <main class="lt-main">
+          <router-view />
+        </main>
+        <MiniPlayer v-if="showMiniPlayer" />
+      </div>
+    </template>
+
+    <!-- ─── 移动端：原有 Vuetify 布局 ─── -->
+    <template v-else>
+    <!-- Desktop: Side Navigation -->
     <v-navigation-drawer
-      v-if="store.isDesktop && !ltActive"
+      v-if="store.isDesktop"
       v-model="drawerOpen"
       permanent
       rail
@@ -177,8 +191,8 @@ watch(
     </v-navigation-drawer>
 
     <!-- Main Content -->
-    <v-main class="am-main" :class="{ 'pb-nav': !store.isDesktop, 'lt-fullscreen': ltActive }">
-      <div class="am-content-wrapper" :class="{ 'lt-content': ltActive }">
+    <v-main class="am-main" :class="{ 'pb-nav': !store.isDesktop }">
+      <div class="am-content-wrapper">
         <router-view />
       </div>
 
@@ -208,6 +222,7 @@ watch(
         <span class="text-caption font-weight-semibold">{{ item.label }}</span>
       </v-btn>
     </v-bottom-navigation>
+    </template>
 
     <!-- Tap-to-play overlay -->
     <div
@@ -247,7 +262,30 @@ watch(
 
 <style scoped>
 .am-app {
-  font-family: var(--font-display);
+  background: var(--am-bg);
+}
+
+/* ─── Listen Together 桌面端布局 ─── */
+.lt-app-root {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  background: var(--lt-bg);
+  overflow: hidden;
+  animation: lt-fade-in 0.4s ease;
+}
+
+.lt-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  padding: 24px;
+}
+
+@keyframes lt-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .am-drawer {
@@ -320,24 +358,11 @@ watch(
   transition: padding 0.3s var(--am-ease-emphasized);
 }
 
-/* Listen Together 全屏模式：移除 Vuetify drawer 预留的内边距 */
-.am-main.lt-fullscreen {
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
 .am-content-wrapper {
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
   min-height: 100%;
-}
-
-.am-content-wrapper.lt-content {
-  max-width: none;
-  margin: 0;
-  padding: 0;
-  height: 100%;
 }
 
 .pb-nav {

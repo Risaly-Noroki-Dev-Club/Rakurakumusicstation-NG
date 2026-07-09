@@ -4,7 +4,6 @@ import { store } from '../store'
 import { apiUrl, adminSkipNext, adminSkipPrev } from '../api'
 import AmProgressBar from '../components/AmProgressBar.vue'
 import LyricsView from '../components/LyricsView.vue'
-import LtSidebar from '../components/lt/LtSidebar.vue'
 import LtGroupList from '../components/lt/LtGroupList.vue'
 import LtPlayerCard from '../components/lt/LtPlayerCard.vue'
 import LtQueuePanel from '../components/lt/LtQueuePanel.vue'
@@ -47,16 +46,13 @@ function onNext() {
 </script>
 
 <template>
-  <!-- 桌面端：Listen Together 三栏布局 -->
-  <div v-if="store.isDesktop" class="lt-app">
-    <LtSidebar />
-
+  <!-- 桌面端：Now Playing 两栏（中栏 + 歌词），LtSidebar 由 App.vue 提供 -->
+  <div v-if="store.isDesktop" class="lt-now-playing">
     <main class="lt-center">
       <LtGroupList />
       <LtPlayerCard />
       <LtQueuePanel />
     </main>
-
     <LtLyricsPanel />
   </div>
 
@@ -163,14 +159,12 @@ function onNext() {
 </template>
 
 <style scoped>
-/* ─── Listen Together 三栏布局 ─── */
-.lt-app {
+/* ─── 桌面端 Now Playing 布局（中栏 + 歌词） ─── */
+.lt-now-playing {
   display: flex;
-  height: 100vh;
+  height: 100%;
   width: 100%;
-  background: var(--lt-bg);
   overflow: hidden;
-  animation: lt-fade-in 0.4s var(--am-ease-emphasized);
 }
 
 .lt-center {
@@ -182,11 +176,6 @@ function onNext() {
   padding: 24px;
   gap: 16px;
   min-width: 0;
-}
-
-@keyframes lt-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 /* ─── 移动端原有布局 ─── */

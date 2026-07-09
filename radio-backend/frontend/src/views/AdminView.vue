@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { store } from '../store'
 import AdminUsers from '../components/admin/AdminUsers.vue'
 import AdminSongs from '../components/admin/AdminSongs.vue'
 import AdminUpload from '../components/admin/AdminUpload.vue'
@@ -8,6 +9,7 @@ import AdminDownload from '../components/admin/AdminDownload.vue'
 import AdminNcm from '../components/admin/AdminNcm.vue'
 import AdminSettings from '../components/admin/AdminSettings.vue'
 import AdminStats from '../components/admin/AdminStats.vue'
+import LtPageShell from '../components/lt/LtPageShell.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,7 +32,37 @@ function switchTab(name: string) {
 </script>
 
 <template>
-  <div class="am-admin">
+  <!-- 桌面端：LT 风格 -->
+  <LtPageShell v-if="store.isDesktop" title="Admin Panel" subtitle="管理电台的内容和设置">
+    <div class="lt-admin-layout">
+      <!-- 左侧 tab 栏 -->
+      <div class="lt-admin-tabs">
+        <button
+          v-for="t in tabs"
+          :key="t.name"
+          :class="['lt-admin-tab', { active: subtab === t.name }]"
+          @click="switchTab(t.name)"
+        >
+          <v-icon :icon="t.icon" size="18" />
+          <span>{{ t.label }}</span>
+        </button>
+      </div>
+
+      <!-- 内容区 -->
+      <div class="lt-admin-content">
+        <div v-show="subtab === 'users'"><AdminUsers /></div>
+        <div v-show="subtab === 'songs'"><AdminSongs /></div>
+        <div v-show="subtab === 'upload'"><AdminUpload /></div>
+        <div v-show="subtab === 'download'"><AdminDownload /></div>
+        <div v-show="subtab === 'ncm'"><AdminNcm /></div>
+        <div v-show="subtab === 'settings'"><AdminSettings /></div>
+        <div v-show="subtab === 'stats'"><AdminStats /></div>
+      </div>
+    </div>
+  </LtPageShell>
+
+  <!-- 移动端：原有布局 -->
+  <div v-else class="am-admin">
     <!-- Page Header -->
     <div class="am-page-header mb-5">
       <h1 class="text-h5 font-weight-bold">管理后台</h1>
@@ -70,6 +102,60 @@ function switchTab(name: string) {
 </template>
 
 <style scoped>
+/* ─── LT 桌面端样式 ─── */
+.lt-admin-layout {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lt-admin-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  width: 160px;
+}
+
+.lt-admin-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--lt-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--lt-radius-sm);
+  transition: background 0.15s, color 0.15s;
+  font-family: var(--lt-font-sans);
+  text-align: left;
+}
+
+.lt-admin-tab:hover { background: var(--lt-btn-bg); color: var(--lt-text-primary); }
+
+.lt-admin-tab.active {
+  background: var(--lt-card-bg);
+  color: var(--lt-text-primary);
+  font-weight: 600;
+  box-shadow: var(--lt-shadow-subtle);
+}
+
+.lt-admin-content {
+  flex: 1;
+  background: var(--lt-card-bg);
+  border-radius: var(--lt-radius-md);
+  padding: 20px;
+  overflow-y: auto;
+  box-shadow: var(--lt-shadow-subtle);
+  min-width: 0;
+}
+
+/* ─── 移动端原有样式 ─── */
 .am-admin {
   padding-bottom: 16px;
   animation: slideUp 0.5s var(--am-ease-emphasized);
