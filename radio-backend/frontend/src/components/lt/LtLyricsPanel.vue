@@ -83,14 +83,16 @@ function distanceClass(idx: number): string {
 <style scoped>
 .lt-lyrics-panel {
   width: 300px;
-  min-width: 300px;
+  min-width: 260px;
+  max-width: 380px;
   background: var(--lt-sidebar-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
   overflow: hidden;
   position: relative;
-  padding: 32px 20px;
+  /* 规则3: 响应式内边距 */
+  padding: clamp(16px, 4vw, 32px) clamp(8px, 3vw, 20px);
   flex-shrink: 0;
 }
 
@@ -138,7 +140,9 @@ function distanceClass(idx: number): string {
   gap: 4px;
   width: 100%;
   overflow-y: auto;
-  padding: 40px 8px;
+  overflow-x: hidden;
+  /* 规则3: 调整内边距，窄屏时减少 padding 释放空间 */
+  padding: clamp(16px, 5vw, 40px) clamp(4px, 2vw, 8px);
   scroll-behavior: smooth;
   mask-image: linear-gradient(transparent 0%, black 8%, black 92%, transparent 100%);
   -webkit-mask-image: linear-gradient(transparent 0%, black 8%, black 92%, transparent 100%);
@@ -162,10 +166,17 @@ function distanceClass(idx: number): string {
   line-height: 1.6;
   transition: font-size 0.3s ease, color 0.3s ease, opacity 0.3s ease;
   width: 100%;
+  /* 规则1: 响应式缩小字号 */
+  font-size: clamp(12px, 2.2vw, 15px);
+  /* 规则2: 允许换行 */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  hyphens: auto;
 }
 
 .lt-lyric-line.active {
-  font-size: 18px;
+  font-size: clamp(14px, 2.5vw, 18px);
   font-weight: 700;
   color: var(--lt-text-primary);
   opacity: 1;

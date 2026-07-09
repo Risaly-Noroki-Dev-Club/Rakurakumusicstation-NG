@@ -116,7 +116,9 @@ function switchTab(name: string) {
   flex-direction: column;
   gap: 4px;
   flex-shrink: 0;
-  width: 160px;
+  /* 规则3: 响应式宽度 */
+  width: clamp(120px, 18vw, 160px);
+  min-width: 0;
 }
 
 .lt-admin-tab {
@@ -127,13 +129,19 @@ function switchTab(name: string) {
   border: none;
   background: transparent;
   color: var(--lt-text-secondary);
-  font-size: 13px;
+  /* 规则1: 响应式缩小字号 */
+  font-size: clamp(11px, 1.5vw, 13px);
   font-weight: 500;
   cursor: pointer;
   border-radius: var(--lt-radius-sm);
   transition: background 0.15s, color 0.15s;
   font-family: var(--lt-font-sans);
   text-align: left;
+  /* 规则2: 省略号截断 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .lt-admin-tab:hover { background: var(--lt-btn-bg); color: var(--lt-text-primary); }

@@ -34,10 +34,16 @@ defineProps<{
 
 .lt-page-title {
   font-family: var(--lt-font-serif);
-  font-size: 24px;
+  /* 规则1: 响应式缩小字号 */
+  font-size: clamp(16px, 3.5vw, 24px);
   font-weight: 700;
   color: var(--lt-text-primary);
   letter-spacing: -0.3px;
+  /* 规则2: 允许换行 */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .lt-page-subtitle {

@@ -859,6 +859,11 @@ async function handleAddToPlaylist(playlistId: number) {
   font-size: 12px;
   color: var(--lt-text-secondary);
   margin-top: 1px;
+  /* 规则1+2: 缩小字号 + 省略号截断 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ─── 移动端原有样式 ─── */

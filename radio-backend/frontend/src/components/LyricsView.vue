@@ -88,14 +88,32 @@ defineEmits<{ close: [] }>()
   z-index: 1;
   border-bottom: 1px solid var(--am-divider);
   background: transparent;
+  /* 规则3: 给文本区留出空间，防止被关闭按钮挤压 */
+  min-width: 0;
+}
+.am-lyrics-header > div:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .am-lyrics-title {
   color: var(--am-text-high);
+  /* 规则1+2: 响应式缩小字号 + 换行 */
+  font-size: clamp(13px, 3vw, 16px);
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .am-lyrics-artist {
   color: var(--am-text-medium);
+  /* 规则2: 允许换行 */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .am-lyrics-close {
@@ -105,7 +123,9 @@ defineEmits<{ close: [] }>()
 .am-lyrics-box {
   flex: 1;
   overflow-y: auto;
-  padding: 40px 32px;
+  overflow-x: hidden;
+  /* 规则3: 响应式内边距 */
+  padding: clamp(20px, 4vw, 40px) clamp(12px, 4vw, 32px);
   text-align: center;
   scroll-behavior: smooth;
   position: relative;
@@ -116,23 +136,30 @@ defineEmits<{ close: [] }>()
   padding: 10px 0;
   transition: all 0.4s var(--am-ease-smooth);
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  /* 规则1: 响应式缩小字号 */
+  font-size: clamp(0.9rem, 2.5vw, 1.15rem);
   line-height: 1.7;
   color: var(--am-text-disabled);
+  /* 规则2: 允许换行 */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  hyphens: auto;
 }
 
 .am-lyrics-line.active {
   color: var(--am-text-high);
   font-weight: 700;
-  font-size: 1.4rem;
+  /* 规则1: 响应式缩小字号 */
+  font-size: clamp(1.05rem, 3vw, 1.4rem);
 }
 
 @media (min-width: 960px) {
   .am-lyrics-line {
-    font-size: 1.35rem;
+    font-size: clamp(1rem, 1.8vw, 1.35rem);
   }
   .am-lyrics-line.active {
-    font-size: 1.7rem;
+    font-size: clamp(1.2rem, 2.2vw, 1.7rem);
   }
 }
 

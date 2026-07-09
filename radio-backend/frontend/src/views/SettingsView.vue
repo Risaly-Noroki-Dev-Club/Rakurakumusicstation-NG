@@ -335,13 +335,27 @@ const userName = computed(() => store.deviceUser?.display_name || 'Guest')
   flex-shrink: 0;
 }
 
-.lt-user-meta { display: flex; flex-direction: column; gap: 6px; }
+.lt-user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* 规则3: 弹性收缩 + 防溢出 */
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
 
 .lt-user-name-lg {
   font-family: var(--lt-font-serif);
-  font-size: 20px;
+  /* 规则1: 响应式缩小字号 */
+  font-size: clamp(14px, 3vw, 20px);
   font-weight: 700;
   color: var(--lt-text-primary);
+  /* 规则2: 允许换行 */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .lt-chip {

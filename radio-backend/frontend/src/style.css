@@ -133,9 +133,9 @@
   --lt-play-btn-icon: #FFFFFF;
 
   /* 字体 */
-  --lt-font-serif: 'Georgia', 'Noto Serif JP', serif;
+  --lt-font-serif: 'Lora', 'Noto Serif JP', serif;
   --lt-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --lt-font-lyric: 'Noto Serif JP', Georgia, serif;
+  --lt-font-lyric: 'Noto Serif JP', 'Lora', serif;
 
   /* 圆角 */
   --lt-radius-sm: 8px;
@@ -226,6 +226,35 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--am-text-medium);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   文本溢出统一处理规则（项目约定）
+   当文本一行写不下时，同时执行三项调整：
+   1. 缩小字号（clamp / 响应式字号）
+   2. 允许换行（word-break / overflow-wrap）
+   3. 修改组件布局（padding / margin / flex / grid）
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* 多行文本溢出：自动换行 + 防溢出 */
+.lt-text-wrap {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+/* 单行文本溢出：省略号截断 */
+.lt-text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* 响应式字号：容器越窄字号越小（多行场景使用） */
+.lt-text-responsive {
+  font-size: clamp(12px, 2.5vw, 16px);
+  line-height: 1.5;
 }
 
 /* ─── Utility helpers ─── */
