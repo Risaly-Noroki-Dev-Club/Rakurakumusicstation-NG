@@ -46,3 +46,15 @@
 
 - For traffic or leak tests against localhost, bypass shell proxy variables with `curl --noproxy '*' ...`; local proxies can make closed clients look like server-side fd leaks.
 - `./build_release.sh` now builds the frontend automatically; use `--skip-frontend` only when you know the static assets are already up to date.
+
+## Frontend CSS Conventions
+
+- When text overflows (too long for one line), always apply all three rules simultaneously:
+  1. Shrink font-size (use `clamp()` for responsive scaling)
+  2. Allow wrapping (`overflow-wrap: break-word; word-break: break-word`) or truncate (`text-overflow: ellipsis`)
+  3. Adjust component layout (responsive padding, `min-width: 0`, flex/grid adjustments)
+- Global utility classes available in `style.css`: `.lt-text-wrap`, `.lt-text-truncate`, `.lt-text-responsive`.
+
+## Git Workflow
+
+- After every code change that passes verification (type-check, lint, build), commit to the local repo and push to GitHub (`git push`). Do not leave verified changes uncommitted.
