@@ -9,9 +9,59 @@ use axum::{
     response::Response,
     Json,
 };
-use std::sync::Arc;
+use std::{
+    io::Write,
+    path::Path,
+    sync::{Arc, Mutex, OnceLock},
+};
 
 const MAX_ICON_SIZE: usize = 2 * 1024 * 1024;
+
+fn config_write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn load_config(path: &str) -> Result<toml::Value, AppError> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Read config error: {}", e)))?;
+    let value: toml::Value = toml::from_str(&content)
+        .map_err(|e| AppError::BadRequest(format!("config.toml 格式无效，未保存更改: {}", e)))?;
+
+    if !value.is_table() {
+        return Err(AppError::BadRequest(
+            "config.toml 根节点必须是表，未保存更改".into(),
+        ));
+    }
+    Ok(value)
+}
+
+fn write_config_atomically(path: &str, value: &toml::Value) -> Result<(), AppError> {
+    let content = toml::to_string_pretty(value)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?;
+    let path = Path::new(path);
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| AppError::BadRequest("配置文件路径无效".into()))?;
+    let temporary_path = parent.join(format!(".{}.{}.tmp", file_name, uuid::Uuid::new_v4()));
+
+    let result = (|| -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&temporary_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&temporary_path, path)
+    })();
+    if let Err(error) = result {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(AppError::Internal(anyhow::anyhow!(
+            "Write config error: {}",
+            error
+        )));
+    }
+    Ok(())
+}
 
 fn resolved_icon_url(station: &crate::config::StationConfig, base_path: &str) -> String {
     if !station.icon_path.trim().is_empty() {
@@ -86,12 +136,14 @@ pub async fn save_settings(
 
     let config_path = std::env::var("RADIO_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
 
-    let mut toml_value: toml::Value = {
-        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-        toml::from_str(&content).unwrap_or(toml::Value::Table(toml::value::Table::new()))
-    };
-
-    if let toml::Value::Table(ref mut root) = toml_value {
+    {
+        let _config_guard = config_write_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let mut toml_value = load_config(&config_path)?;
+        let toml::Value::Table(root) = &mut toml_value else {
+            unreachable!("load_config validates the root table");
+        };
         let station = root
             .entry("station")
             .or_insert(toml::Value::Table(toml::value::Table::new()));
@@ -112,14 +164,8 @@ pub async fn save_settings(
                 st.insert("icon_url".into(), toml::Value::String(v.clone()));
             }
         }
+        write_config_atomically(&config_path, &toml_value)?;
     }
-
-    std::fs::write(
-        &config_path,
-        toml::to_string_pretty(&toml_value)
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?,
-    )
-    .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
 
     {
         let mut station = state.station.write().unwrap_or_else(|e| e.into_inner());
@@ -188,24 +234,22 @@ pub async fn upload_icon(
 
         let config_path =
             std::env::var("RADIO_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
-        let mut toml_value: toml::Value = {
-            let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-            toml::from_str(&content).unwrap_or(toml::Value::Table(toml::value::Table::new()))
-        };
-        if let toml::Value::Table(ref mut root) = toml_value {
+        {
+            let _config_guard = config_write_lock()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let mut toml_value = load_config(&config_path)?;
+            let toml::Value::Table(root) = &mut toml_value else {
+                unreachable!("load_config validates the root table");
+            };
             let station = root
                 .entry("station")
                 .or_insert(toml::Value::Table(toml::value::Table::new()));
             if let toml::Value::Table(ref mut st) = station {
                 st.insert("icon_path".into(), toml::Value::String(rel_path.clone()));
             }
+            write_config_atomically(&config_path, &toml_value)?;
         }
-        std::fs::write(
-            &config_path,
-            toml::to_string_pretty(&toml_value)
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("TOML serialize error: {}", e)))?,
-        )
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Write config error: {}", e)))?;
 
         {
             let mut station = state.station.write().unwrap_or_else(|e| e.into_inner());

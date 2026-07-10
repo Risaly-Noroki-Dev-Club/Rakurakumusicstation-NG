@@ -2,8 +2,14 @@
 
 use crate::models::{BatchDownloadResultItem, DownloadEvent};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::{
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, Instant},
+};
 use tokio::sync::broadcast;
+
+const MAX_ACTIVE_TASKS: usize = 4;
+const TASK_RETENTION: Duration = Duration::from_secs(60 * 60);
 
 pub(crate) struct BatchTaskSnapshot {
     pub(crate) running: bool,
@@ -23,6 +29,7 @@ pub(crate) struct BatchTask {
     pub(crate) success: Arc<std::sync::atomic::AtomicUsize>,
     pub(crate) failed: Arc<std::sync::atomic::AtomicUsize>,
     pub(crate) items: Arc<Mutex<Vec<BatchDownloadResultItem>>>,
+    pub(crate) finished_at: Arc<Mutex<Option<Instant>>>,
 }
 
 impl BatchTask {
@@ -36,6 +43,7 @@ impl BatchTask {
             success: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             failed: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             items: Arc::new(Mutex::new(Vec::new())),
+            finished_at: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -45,9 +53,24 @@ pub(crate) fn batch_tasks() -> &'static Mutex<HashMap<String, BatchTask>> {
     TASKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub(crate) fn insert_task(task_id: String, task: BatchTask) {
+pub(crate) fn insert_task(task_id: String, task: BatchTask) -> bool {
     let mut tasks = batch_tasks().lock().unwrap_or_else(|e| e.into_inner());
+    tasks.retain(|_, task| {
+        task.finished_at
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .map(|finished_at| finished_at.elapsed() < TASK_RETENTION)
+            .unwrap_or(true)
+    });
+    let active_tasks = tasks
+        .values()
+        .filter(|task| task.running.load(std::sync::atomic::Ordering::SeqCst))
+        .count();
+    if active_tasks >= MAX_ACTIVE_TASKS {
+        return false;
+    }
     tasks.insert(task_id, task);
+    true
 }
 
 pub(crate) fn remove_task(task_id: &str) {
@@ -73,6 +96,12 @@ pub(crate) fn task_snapshot(task_id: &str) -> Option<BatchTaskSnapshot> {
         failed: task.failed.load(std::sync::atomic::Ordering::SeqCst),
         items,
     })
+}
+
+pub(crate) fn finish_task(task: &BatchTask) {
+    task.running
+        .store(false, std::sync::atomic::Ordering::SeqCst);
+    *task.finished_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
 }
 
 pub(crate) fn generate_task_id() -> String {

@@ -6,7 +6,7 @@ use crate::models::{
 };
 use crate::routes::admin::get_admin;
 use crate::services::download_tasks::{
-    ext_from_type, generate_task_id, insert_task, quality_to_ncm_level, remove_task,
+    ext_from_type, finish_task, generate_task_id, insert_task, quality_to_ncm_level, remove_task,
     sanitize_filename, subscribe_task, task_snapshot, BatchTask,
 };
 use crate::services::ncm::{api, NcmClient};
@@ -23,6 +23,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
+const MAX_BATCH_ITEMS: usize = 200;
+
 /// POST /api/admin/download/batch — 启动批量下载任务
 pub async fn start_batch_download(
     State(state): State<Arc<AppState>>,
@@ -34,6 +36,12 @@ pub async fn start_batch_download(
     if body.items.is_empty() {
         return Err(AppError::BadRequest("下载列表不能为空".into()));
     }
+    if body.items.len() > MAX_BATCH_ITEMS {
+        return Err(AppError::BadRequest(format!(
+            "单个下载任务最多包含 {} 项",
+            MAX_BATCH_ITEMS
+        )));
+    }
 
     let source = body.source.clone();
     let task_id = generate_task_id();
@@ -41,7 +49,11 @@ pub async fn start_batch_download(
 
     let task = BatchTask::new(source.clone(), total);
 
-    insert_task(task_id.clone(), task.clone());
+    if !insert_task(task_id.clone(), task.clone()) {
+        return Err(AppError::RateLimited(
+            "同时运行的下载任务过多，请稍后重试".into(),
+        ));
+    }
 
     let media_path = state.config.audio_engine.media_path.clone();
     let player_handle = state.player_handle.clone();
@@ -283,8 +295,7 @@ async fn run_ncm_batch(
         task_id: None,
     });
 
-    task.running
-        .store(false, std::sync::atomic::Ordering::SeqCst);
+    finish_task(&task);
 }
 
 async fn ncm_download_one(
@@ -572,8 +583,7 @@ async fn run_netdisk_batch(
         task_id: None,
     });
 
-    task.running
-        .store(false, std::sync::atomic::Ordering::SeqCst);
+    finish_task(&task);
 }
 
 async fn netdisk_download_one(
