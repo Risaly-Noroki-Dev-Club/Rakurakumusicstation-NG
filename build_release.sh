@@ -72,10 +72,13 @@ if [ "$SKIP_FRONTEND" -eq 0 ]; then
     print_status "构建前端 (Vue 3 + Vite)..."
     cd "$FRONTEND_DIR"
 
-    if [ ! -d "node_modules" ]; then
-        print_status "首次构建，安装 npm 依赖..."
-        npm ci || npm install
+    if ! command -v npm &>/dev/null; then
+        print_error "未找到 npm，无法构建前端；请先安装 Node.js。"
+        exit 1
     fi
+
+    print_status "安装 npm 依赖..."
+    npm ci
 
     npm run build
     print_success "前端构建完成，产物已写入 radio-backend/static/"
