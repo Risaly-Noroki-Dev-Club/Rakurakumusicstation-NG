@@ -13,7 +13,7 @@ async function loadStats() {
 loadStats()
 
 const stats = computed(() => [
-  { label: '用户', value: store.adminStats?.users || 0, icon: 'mdi-account', color: 'primary' },
+  { label: '已注册设备', value: store.adminStats?.users || 0, icon: 'mdi-account', color: 'primary' },
   { label: '歌曲', value: store.adminStats?.songs || 0, icon: 'mdi-music-note', color: 'secondary' },
   { label: '队列', value: store.adminStats?.queue_size || 0, icon: 'mdi-playlist-music', color: 'accent' },
   { label: '歌单', value: store.adminStats?.playlists || 0, icon: 'mdi-folder-music', color: 'info' },

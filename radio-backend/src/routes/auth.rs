@@ -23,7 +23,7 @@ async fn get_me(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let user = auth::require_device_auth(&headers, &state.db).await?;
+    let user = auth::lookup_device_auth(&headers, &state.db).await?;
 
     Ok(Json(ApiResponse::ok(serde_json::json!({
         "id": user.id,

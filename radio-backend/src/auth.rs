@@ -57,9 +57,11 @@ pub fn extract_device_token(headers: &HeaderMap) -> Option<String> {
     extract_device_token_from_cookie(headers).or_else(|| extract_device_token_from_query(headers))
 }
 
-/// 通过 device_token 查找或创建设备用户。
-/// 新设备自动以默认显示名称 "Listener-XXXX" 和 "user" 角色创建。
-pub async fn ensure_device_user(db: &SqlitePool, device_token: &str) -> Result<AuthUser, AppError> {
+/// 通过 device_token 查找已注册设备用户，不会创建新记录。
+pub async fn lookup_device_user(
+    db: &SqlitePool,
+    device_token: &str,
+) -> Result<Option<AuthUser>, AppError> {
     let user = sqlx::query_as::<_, DeviceUser>("SELECT * FROM device_users WHERE device_token = ?")
         .bind(device_token)
         .fetch_optional(db)
@@ -70,13 +72,22 @@ pub async fn ensure_device_user(db: &SqlitePool, device_token: &str) -> Result<A
             if u.is_banned() {
                 return Err(AppError::Banned);
             }
-            Ok(AuthUser {
+            Ok(Some(AuthUser {
                 id: u.id,
                 display_name: u.display_name.clone(),
                 role: u.role.clone(),
                 device_token: u.device_token.clone(),
-            })
+            }))
         }
+        None => Ok(None),
+    }
+}
+
+/// 通过 device_token 查找或创建设备用户。
+/// 新设备仅在使用需要身份的操作时以默认名称和 user 角色创建。
+pub async fn ensure_device_user(db: &SqlitePool, device_token: &str) -> Result<AuthUser, AppError> {
+    match lookup_device_user(db, device_token).await? {
+        Some(user) => Ok(user),
         None => {
             // 创建新设备用户
             let result = sqlx::query(
@@ -114,12 +125,23 @@ pub async fn require_device_auth(
     ensure_device_user(db, &device_token).await
 }
 
+/// 从 HeaderMap 查找已注册设备用户，不会为公开读取请求创建记录。
+pub async fn lookup_device_auth(
+    headers: &HeaderMap,
+    db: &SqlitePool,
+) -> Result<AuthUser, AppError> {
+    let device_token = extract_device_token(headers).ok_or(AppError::Unauthorized)?;
+    lookup_device_user(db, &device_token)
+        .await?
+        .ok_or(AppError::Unauthorized)
+}
+
 /// 从 HeaderMap 认证管理员设备用户。
 pub async fn require_admin_from_headers(
     headers: &HeaderMap,
     db: &SqlitePool,
 ) -> Result<AuthUser, AppError> {
-    let user = require_device_auth(headers, db).await?;
+    let user = lookup_device_auth(headers, db).await?;
     require_admin(&user)?;
     Ok(user)
 }
@@ -127,7 +149,7 @@ pub async fn require_admin_from_headers(
 /// 可选认证（已登录返回 Some，访客返回 None）。
 pub async fn optional_device_auth(headers: &HeaderMap, db: &SqlitePool) -> Option<AuthUser> {
     let device_token = extract_device_token(headers)?;
-    ensure_device_user(db, &device_token).await.ok()
+    lookup_device_user(db, &device_token).await.ok().flatten()
 }
 
 /// 验证 admin_setup_token 并将当前设备升级为管理员。
@@ -146,11 +168,7 @@ pub async fn claim_admin(
         return Err(AppError::Forbidden("Invalid admin setup token".into()));
     }
 
-    let user = sqlx::query_as::<_, DeviceUser>("SELECT * FROM device_users WHERE device_token = ?")
-        .bind(device_token)
-        .fetch_optional(db)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized)?;
+    let user = ensure_device_user(db, device_token).await?;
 
     sqlx::query("UPDATE device_users SET role = 'admin' WHERE id = ?")
         .bind(user.id)

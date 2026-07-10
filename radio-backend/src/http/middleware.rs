@@ -9,7 +9,10 @@ use axum::{
 };
 use std::sync::Arc;
 
-/// 中间件：确保每个请求都有一个 device_token Cookie。
+/// 中间件：确保每个浏览器都有一个 device_token Cookie。
+///
+/// 不在这里创建数据库用户。该中间件也会处理静态资源、公开 API 和
+/// 机器人请求；把这些请求登记为用户会让设备用户表无上限增长。
 pub async fn device_cookie_middleware(
     State(state): State<Arc<AppState>>,
     mut request: Request<axum::body::Body>,
@@ -19,10 +22,6 @@ pub async fn device_cookie_middleware(
     let device_token = crate::auth::extract_device_token(request.headers());
     let new_token = if device_token.is_none() {
         let new_token = crate::auth::generate_device_token();
-
-        if let Err(e) = crate::auth::ensure_device_user(&state.db, &new_token).await {
-            tracing::error!("Failed to create device user: {:?}", e);
-        }
 
         let mut cookie_header = request
             .headers()

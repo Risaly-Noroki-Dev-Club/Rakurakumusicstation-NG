@@ -29,7 +29,7 @@ export async function setDisplayName(name: string): Promise<boolean> {
     })
     const data = await res.json()
     if (data.success) {
-      if (store.deviceUser) store.deviceUser.display_name = name
+      await loadDeviceUser()
       toast('显示名称已更新', 'success')
       return true
     } else {
@@ -51,7 +51,7 @@ export async function claimAdmin(token: string): Promise<boolean> {
     })
     const data = await res.json()
     if (data.success) {
-      if (store.deviceUser) store.deviceUser.role = 'admin'
+      await loadDeviceUser()
       toast('已获得管理员权限', 'success')
       return true
     } else {
