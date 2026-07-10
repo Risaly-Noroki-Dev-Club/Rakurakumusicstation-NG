@@ -15,7 +15,7 @@
     "@fontsource/outfit": "^5.2.8",
     "@fontsource/rajdhani": "^5.2.7",
     "@fontsource/share-tech-mono": "^5.1.1",
-    "@mdi/font": "^7.4.47",
+    "@lucide/vue": "^1.24.0",
     "@tailwindcss/vite": "^4.3.0",
     "gsap": "^3.12.7",
     "vue": "^3.5.13",

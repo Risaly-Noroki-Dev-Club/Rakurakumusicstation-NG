@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Monitor, Sun, Moon, Music, KeyRound } from '@lucide/vue'
 import { store, cycleTheme, THEMES, toast } from '../store'
 import { setDisplayName, claimAdmin } from '../api'
 
 const themeIcon = computed(() => {
-  const icons: Record<string, string> = { auto: '🌓', light: '☀️', dark: '🌙' }
-  return icons[THEMES[store.themeIdx]] || '🌓'
+  const iconMap: Record<string, any> = { auto: Monitor, light: Sun, dark: Moon }
+  return iconMap[THEMES[store.themeIdx]] || Monitor
 })
 
 const displayName = computed(() => store.deviceUser?.display_name || '')
@@ -56,12 +57,12 @@ function cancelAdminClaim() {
 
 <template>
   <header>
-    <h1><span>🎵</span><span>{{ store.stationName }}</span></h1>
+    <h1><Music :size="16" /><span>{{ store.stationName }}</span></h1>
     <div>
-      <button class="theme-toggle" title="切换主题" @click="cycleTheme">{{ themeIcon }}</button>
+      <button class="theme-toggle" title="切换主题" @click="cycleTheme"><component :is="themeIcon" :size="18" /></button>
       <span v-if="displayName" class="user-display" @click="openNameEditor" title="点击修改名称">{{ displayName }}</span>
       <span v-if="!displayName" class="user-display">连接中...</span>
-      <button v-if="store.deviceUser && store.deviceUser.role !== 'admin'" class="btn btn-secondary btn-small" @click="openAdminClaim" title="使用设置令牌获取管理员权限">🔑</button>
+      <button v-if="store.deviceUser && store.deviceUser.role !== 'admin'" class="btn btn-secondary btn-small" @click="openAdminClaim" title="使用设置令牌获取管理员权限"><KeyRound :size="16" /></button>
     </div>
   </header>
 

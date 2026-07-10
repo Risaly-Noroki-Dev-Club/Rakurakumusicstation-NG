@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { store } from '../../store'
+import { ChevronLeft } from '@lucide/vue'
 
 const names = computed(() => store.onlineListenerNames)
 const count = computed(() => store.onlineListenerCount)
@@ -23,9 +24,7 @@ function initial(name: string): string {
 <template>
   <div class="lt-group-list-card">
     <div class="lt-group-header">
-      <svg class="lt-back-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="15 18 9 12 15 6"></polyline>
-      </svg>
+      <ChevronLeft :size="18" class="lt-back-icon" />
       <span class="lt-group-title">Group List</span>
       <span class="lt-group-count">{{ count }}</span>
     </div>

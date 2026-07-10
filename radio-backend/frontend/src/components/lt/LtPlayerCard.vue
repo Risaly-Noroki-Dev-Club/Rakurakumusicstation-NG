@@ -2,6 +2,7 @@
 import { computed, inject } from 'vue'
 import { store, formatTime } from '../../store'
 import { apiUrl, adminSkipNext, adminSkipPrev } from '../../api'
+import { Music2, SkipBack, CirclePause, CirclePlay, SkipForward } from '@lucide/vue'
 
 const audioEl = inject<import('vue').Ref<HTMLAudioElement | null>>('audioEl')
 
@@ -49,11 +50,7 @@ function onNext() {
     <div class="lt-cover-art">
       <img v-if="coverSrc && !store.coverLoadError" :src="coverSrc" :alt="store.playbackState.title" @error="store.coverLoadError = true" />
       <div v-else class="lt-cover-placeholder">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 18V5l12-2v13" />
-          <circle cx="6" cy="18" r="3" />
-          <circle cx="18" cy="16" r="3" />
-        </svg>
+        <Music2 :size="56" />
       </div>
     </div>
 
@@ -79,22 +76,14 @@ function onNext() {
     <!-- 控件 -->
     <div class="lt-controls">
       <button class="lt-ctrl-btn" title="上一首" :disabled="!isAdmin" @click="onPrev">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M6 6h2v12H6V6zm3.5 6l8.5 6V6l-8.5 6z" />
-        </svg>
+        <SkipBack :size="20" />
       </button>
       <button class="lt-ctrl-btn lt-ctrl-play" :title="isPlaying ? '暂停' : '播放'" @click="togglePlay">
-        <svg v-if="isPlaying" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-        </svg>
-        <svg v-else viewBox="0 0 24 24" fill="currentColor">
-          <path d="M8 5v14l11-7z" />
-        </svg>
+        <CirclePause v-if="isPlaying" :size="20" />
+        <CirclePlay v-else :size="20" />
       </button>
       <button class="lt-ctrl-btn" title="下一首" :disabled="!isAdmin" @click="onNext">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M16 18h2V6h-2v12zM5.5 6l8.5 6-8.5 6V6z" />
-        </svg>
+        <SkipForward :size="20" />
       </button>
     </div>
   </div>

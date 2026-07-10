@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { store } from '../../store'
 import { apiUrl, addToQueue, removeQueueItem, debouncedSearch } from '../../api'
+import { Plus, X, Music2 } from '@lucide/vue'
 
 const isAdmin = computed(() => store.deviceUser?.role === 'admin')
 
@@ -42,10 +43,7 @@ function hideImg(e: Event) {
     <div class="lt-queue-header">
       <span class="lt-queue-title">Play Next</span>
       <button class="lt-add-btn" @click="showSearch = true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
+        <Plus :size="14" />
         <span>Add</span>
       </button>
     </div>
@@ -60,7 +58,7 @@ function hideImg(e: Event) {
     >
       <div class="lt-queue-thumb">
         <img v-if="item.song_id" :src="thumbSrc(item.song_id, item.song?.cover_url)" @error="hideImg" />
-        <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z" /></svg>
+        <Music2 v-else :size="18" />
       </div>
       <div class="lt-queue-info">
         <div class="lt-queue-item-title">{{ item.song?.title || '未知歌曲' }}</div>
@@ -74,10 +72,7 @@ function hideImg(e: Event) {
           title="移除"
           @click="onRemove(item.id)"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+          <X :size="14" />
         </button>
       </div>
     </div>
@@ -94,10 +89,7 @@ function hideImg(e: Event) {
             @input="handleSearch"
           />
           <button class="lt-search-close" @click="showSearch = false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+            <X :size="18" />
           </button>
         </div>
         <div class="lt-search-results">
@@ -112,16 +104,13 @@ function hideImg(e: Event) {
           >
             <div class="lt-queue-thumb sm">
               <img v-if="s.cover_url" :src="s.cover_url" />
-              <svg v-else viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z" /></svg>
+              <Music2 v-else :size="18" />
             </div>
             <div class="lt-queue-info">
               <div class="lt-queue-item-title">{{ s.title }}</div>
               <div class="lt-queue-item-artist">{{ s.artist }}<span v-if="s.album"> · {{ s.album }}</span></div>
             </div>
-            <svg class="lt-search-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
+            <Plus :size="16" class="lt-search-add" />
           </div>
         </div>
       </div>

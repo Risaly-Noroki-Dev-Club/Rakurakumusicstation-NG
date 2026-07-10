@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { store } from '../../store'
+import { Music2 } from '@lucide/vue'
 
 const lyricActiveIdx = computed(() => {
   if (store.lyricsLines.length === 0) return -1
@@ -51,21 +52,13 @@ function distanceClass(idx: number): string {
     <div class="lt-lyrics-fade-bottom"></div>
 
     <div v-if="!hasLyrics" class="lt-lyrics-empty">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 18V5l12-2v13" />
-        <circle cx="6" cy="18" r="3" />
-        <circle cx="18" cy="16" r="3" />
-      </svg>
+      <Music2 :size="32" />
       <span>暂无歌词</span>
     </div>
 
     <div v-else ref="lyricsBoxRef" class="lt-lyrics-content">
       <div class="lt-lyrics-note">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 18V5l12-2v13" />
-          <circle cx="6" cy="18" r="3" />
-          <circle cx="18" cy="16" r="3" />
-        </svg>
+        <Music2 :size="20" />
       </div>
       <div
         v-for="(line, idx) in store.lyricsLines"

@@ -2,22 +2,91 @@ import { createApp } from 'vue'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
-import { aliases, mdi } from 'vuetify/iconsets/mdi'
-import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 
 import App from './App.vue'
 import router from './router'
 import './style.css'
 
+// Lucide icons for Vuetify custom icon set
+import {
+  CirclePlay, CirclePause, SkipForward, SkipBack, Repeat, X, Plus, Search,
+  Radio, BookOpen, ListOrdered, Settings, ShieldCheck, Shield, User,
+  Users, Music, Music2, ListMusic, Download, Upload, CloudUpload,
+  Image, RefreshCw, Trash2, ChevronRight, ChevronDown, ChevronLeft, FileMusic,
+  FileText, Volume2, History, Pencil, Info, Save, Cable, BarChart3,
+  CirclePlus, ListPlus, ListX, Cloud, Sun, Moon, Monitor
+} from '@lucide/vue'
+
+const lucideIcons: Record<string, any> = {
+  'mdi-play-circle-outline': CirclePlay,
+  'mdi-bookshelf': BookOpen,
+  'mdi-format-list-numbered': ListOrdered,
+  'mdi-cog-outline': Settings,
+  'mdi-radio-tower': Radio,
+  'mdi-shield-account-outline': ShieldCheck,
+  'mdi-account-circle-outline': User,
+  'mdi-play-circle': CirclePlay,
+  'mdi-music-note': Music,
+  'mdi-account-group': Users,
+  'mdi-skip-previous': SkipBack,
+  'mdi-pause': CirclePause,
+  'mdi-play': CirclePlay,
+  'mdi-skip-next': SkipForward,
+  'mdi-text-box-outline': FileText,
+  'mdi-magnify': Search,
+  'mdi-plus-circle-outline': CirclePlus,
+  'mdi-volume-high': Volume2,
+  'mdi-music-note-outline': Music2,
+  'mdi-replay': Repeat,
+  'mdi-close': X,
+  'mdi-history': History,
+  'mdi-playlist-plus': ListPlus,
+  'mdi-download-outline': Download,
+  'mdi-cloud-upload-outline': CloudUpload,
+  'mdi-playlist-music-outline': ListMusic,
+  'mdi-delete-outline': Trash2,
+  'mdi-information-outline': Info,
+  'mdi-playlist-remove': ListX,
+  'mdi-theme-light-dark': Monitor,
+  'mdi-weather-night': Moon,
+  'mdi-white-balance-sunny': Sun,
+  'mdi-account': User,
+  'mdi-pencil-outline': Pencil,
+  'mdi-chevron-right': ChevronRight,
+  'mdi-shield-key-outline': Shield,
+  'mdi-account-group-outline': Users,
+  'mdi-music-circle-outline': Music,
+  'mdi-chart-bar': BarChart3,
+  'mdi-refresh': RefreshCw,
+  'mdi-delete': Trash2,
+  'mdi-image': Image,
+  'mdi-cloud-upload': CloudUpload,
+  'mdi-download': Download,
+  'mdi-playlist-music': ListMusic,
+  'mdi-folder-music': FileMusic,
+  'mdi-content-save': Save,
+  'mdi-connection': Cable,
+}
+
 const vuetify = createVuetify({
   components,
   directives,
   icons: {
-    defaultSet: 'mdi',
-    aliases,
+    defaultSet: 'custom',
+    aliases: {
+      ...Object.fromEntries(
+        Object.entries(lucideIcons).map(([name, component]) => [name, component])
+      ),
+    },
     sets: {
-      mdi,
+      custom: {
+        component: (props: any) => {
+          const icon = lucideIcons[props.name]
+          if (!icon) return null
+          return icon
+        },
+      },
     },
   },
   theme: {
