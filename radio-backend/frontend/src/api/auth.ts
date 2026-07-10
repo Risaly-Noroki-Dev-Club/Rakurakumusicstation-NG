@@ -12,7 +12,6 @@ export async function loadDeviceUser(): Promise<void> {
         id: data.data.id,
         display_name: data.data.display_name || ('Listener-' + String(data.data.id).padStart(4, '0')),
         role: data.data.role,
-        device_token: data.data.device_token || ''
       }
       loadMyPlaylists()
       loadUserNcmStatus()

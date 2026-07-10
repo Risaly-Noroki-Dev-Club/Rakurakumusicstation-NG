@@ -1,37 +1,46 @@
 import { appPath } from '../client'
-import { store, toast } from '../../store'
+import { toast } from '../../store'
 import { handleWsMessage } from './messages'
 import type { WsMessage } from '../../types'
 
 let ws: WebSocket | null = null
 let wsReconnectAttempts = 0
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let shouldReconnect = true
 const WS_MAX_RECONNECT_ATTEMPTS = 20
 const WS_BASE_RECONNECT_DELAY = 3000
 
 function getWsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss://' : 'ws://'
-  let url = proto + window.location.host + appPath('/ws')
-  if (store.deviceUser?.device_token) {
-    url += '?device_token=' + encodeURIComponent(store.deviceUser.device_token)
-  }
-  return url
+  return proto + window.location.host + appPath('/ws')
 }
 
 export function connectWebSocket(): void {
+  shouldReconnect = true
+  if (ws?.readyState === WebSocket.CONNECTING || ws?.readyState === WebSocket.OPEN) return
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
+  }
+
   try {
-    ws = new WebSocket(getWsUrl())
-    ws.onopen = () => {
+    const socket = new WebSocket(getWsUrl())
+    ws = socket
+    socket.onopen = () => {
       wsReconnectAttempts = 0
       console.log('[WS] Connected')
       toast('已连接到电台服务器', 'success')
     }
-    ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
       try {
         const msg: WsMessage = JSON.parse(event.data)
-        handleWsMessage(msg, ws)
+        handleWsMessage(msg, socket)
       } catch { /* ignore */ }
     }
-    ws.onclose = () => {
+    socket.onclose = () => {
+      if (ws !== socket) return
+      ws = null
+      if (!shouldReconnect) return
       wsReconnectAttempts++
       if (wsReconnectAttempts > WS_MAX_RECONNECT_ATTEMPTS) {
         console.log('[WS] Max reconnection attempts reached')
@@ -40,18 +49,29 @@ export function connectWebSocket(): void {
       }
       const delay = Math.min(WS_BASE_RECONNECT_DELAY * Math.pow(1.5, wsReconnectAttempts - 1), 30000)
       console.log(`[WS] Disconnected, reconnecting in ${delay}ms (attempt ${wsReconnectAttempts})...`)
-      setTimeout(connectWebSocket, delay)
+      wsReconnectTimer = setTimeout(() => {
+        wsReconnectTimer = null
+        connectWebSocket()
+      }, delay)
     }
-    ws.onerror = () => { /* ignore */ }
+    socket.onerror = () => { /* ignore */ }
   } catch {
-    setTimeout(connectWebSocket, 3000)
+    if (shouldReconnect) wsReconnectTimer = setTimeout(connectWebSocket, 3000)
   }
 }
 
 export function getWs(): WebSocket | null { return ws }
 
 export function closeWebSocket(): void {
-  if (ws) ws.close()
+  shouldReconnect = false
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
+  }
+  if (ws) {
+    ws.close()
+    ws = null
+  }
 }
 
 export function isWebSocketOpen(): boolean {

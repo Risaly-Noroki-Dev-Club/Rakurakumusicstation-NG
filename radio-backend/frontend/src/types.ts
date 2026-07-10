@@ -2,7 +2,6 @@ export interface DeviceUser {
   id: number
   display_name: string
   role: string
-  device_token: string
   created_at?: string
   banned_until?: string | null
 }

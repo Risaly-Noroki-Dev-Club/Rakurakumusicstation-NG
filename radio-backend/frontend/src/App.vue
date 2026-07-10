@@ -34,8 +34,8 @@ const { isActive: ltActive } = useListenTogetherLayout()
 async function init() {
   initAudio()
   await loadStationInfo()
-  connectWebSocket()
   await loadDeviceUser()
+  connectWebSocket()
   const pollers = startPollers()
   queuePoller = pollers.queuePoller
 }

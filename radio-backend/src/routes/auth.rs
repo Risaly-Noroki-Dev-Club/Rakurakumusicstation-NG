@@ -29,7 +29,6 @@ async fn get_me(
         "id": user.id,
         "display_name": user.display_name,
         "role": user.role,
-        "device_token": user.device_token,
     }))))
 }
 

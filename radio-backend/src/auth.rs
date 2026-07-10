@@ -1,5 +1,4 @@
 /// 基于设备的身份验证：通过 httpOnly Cookie 中的 device_token 识别设备。
-/// 兼容 WebSocket：支持从 Cookie 头或查询参数读取 device_token。
 use crate::error::AppError;
 use crate::models::DeviceUser;
 use axum::http::{header, HeaderMap};
@@ -41,20 +40,9 @@ pub fn extract_device_token_from_cookie(headers: &HeaderMap) -> Option<String> {
         })
 }
 
-/// 从查询参数提取 device_token（WebSocket 回退）。
-pub fn extract_device_token_from_query(headers: &HeaderMap) -> Option<String> {
-    // Axum 将 WebSocket 查询参数放在 Sec-WebSocket-Protocol 或自定义头中未直接暴露。
-    // 最可靠的方案是在 WebSocket 升级 URL 中解析查询字符串。
-    // 这里从前端传入的 custom header 作为回退。
-    headers
-        .get("x-device-token")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.to_string())
-}
-
-/// 从请求中提取 device_token（优先 Cookie，回退到 header）。
+/// 从请求中提取 device_token。
 pub fn extract_device_token(headers: &HeaderMap) -> Option<String> {
-    extract_device_token_from_cookie(headers).or_else(|| extract_device_token_from_query(headers))
+    extract_device_token_from_cookie(headers)
 }
 
 /// 通过 device_token 查找已注册设备用户，不会创建新记录。

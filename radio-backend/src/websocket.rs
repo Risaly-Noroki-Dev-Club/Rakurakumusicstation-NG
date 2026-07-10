@@ -2,62 +2,60 @@
 ///
 /// 从内嵌音频引擎直接获取播放状态（不再通过 HTTP 轮询 C++ 引擎）。
 use crate::app::state::{AppState, OnlineListener};
+use crate::auth::{self, AuthUser};
 use crate::error::AppError;
 use crate::models::WsMessage;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Query, State,
+        State,
     },
-    response::IntoResponse,
+    http::HeaderMap,
+    response::{IntoResponse, Response},
 };
 use futures_util::{SinkExt, StreamExt};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 /// WebSocket 升级处理器 — GET /ws
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
-    Query(params): Query<HashMap<String, String>>,
     State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    let device_token = params.get("device_token").cloned().unwrap_or_default();
-    ws.on_upgrade(move |socket| handle_socket(socket, state, device_token))
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    // New visitors receive a cookie from the global middleware but are not
+    // persisted until they use an identity-requiring action. They may listen
+    // anonymously, but only known devices affect listener presence.
+    let device = match auth::extract_device_token(&headers) {
+        Some(device_token) => auth::lookup_device_user(&state.db, &device_token).await?,
+        None => None,
+    };
+
+    Ok(ws
+        .on_upgrade(move |socket| handle_socket(socket, state, device))
+        .into_response())
 }
 
 /// 处理单个 WebSocket 连接的生命周期。
-async fn handle_socket(socket: WebSocket, state: Arc<AppState>, device_token: String) {
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>, device: Option<AuthUser>) {
     let (mut sender, mut receiver) = socket.split();
 
     let mut rx = state.ws_tx.subscribe();
 
-    // 查询设备用户信息并注册到在线听众列表
-    let display_name = if !device_token.is_empty() {
-        let user = sqlx::query_as::<_, (String,)>(
-            "SELECT display_name FROM device_users WHERE device_token = ?",
-        )
-        .bind(&device_token)
-        .fetch_optional(&state.db)
-        .await
-        .ok()
-        .flatten()
-        .map(|(name,)| name)
-        .unwrap_or_else(|| "Anonymous".into());
-
+    // Only persisted, non-banned devices may appear in listener presence.
+    let (device_token, display_name) = if let Some(user) = device {
+        let device_token = user.device_token;
+        let display_name = user.display_name;
         state.listeners.insert(
             device_token.clone(),
             OnlineListener {
-                display_name: user.clone(),
+                display_name: display_name.clone(),
                 connected_at: chrono::Utc::now(),
             },
         );
-
-        // 广播在线听众更新
         broadcast_listeners_update(&state);
-
-        user
+        (Some(device_token), display_name)
     } else {
-        "Anonymous".into()
+        (None, "Anonymous".into())
     };
 
     let welcome = serde_json::to_string(&WsMessage::Notice {
@@ -68,8 +66,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, device_token: St
 
     if sender.send(Message::Text(welcome.into())).await.is_err() {
         // 连接失败，清理注册
-        if !device_token.is_empty() {
-            state.listeners.remove(&device_token);
+        if let Some(device_token) = &device_token {
+            state.listeners.remove(device_token);
             broadcast_listeners_update(&state);
         }
         return;
@@ -127,8 +125,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, device_token: St
     }
 
     // 清理：从在线听众列表移除
-    if !device_token.is_empty() {
-        state.listeners.remove(&device_token);
+    if let Some(device_token) = &device_token {
+        state.listeners.remove(device_token);
         broadcast_listeners_update(&state);
     }
 
@@ -142,7 +140,11 @@ fn broadcast_listeners_update(state: &Arc<AppState>) {
     }
 
     let count = state.listeners.len();
-    let names: Vec<String> = state.listeners.iter().map(|entry| entry.value().display_name.clone()).collect();
+    let names: Vec<String> = state
+        .listeners
+        .iter()
+        .map(|entry| entry.value().display_name.clone())
+        .collect();
 
     let msg = WsMessage::ListenersUpdate { count, names };
     let json = serde_json::to_string(&msg).unwrap_or_default();
