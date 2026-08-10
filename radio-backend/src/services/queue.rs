@@ -451,9 +451,10 @@ pub async fn get_next_song(db: &SqlitePool) -> Result<Option<crate::models::Song
 
 /// 获取最近的播放历史。
 pub async fn get_history(db: &SqlitePool, limit: i64) -> Result<Vec<serde_json::Value>, AppError> {
-    let result = sqlx::query_as::<_, (i64, i64, Option<i64>, String, String, Option<String>, Option<String>, Option<i64>, String)>(
+    let result = sqlx::query_as::<_, (i64, i64, Option<i64>, String, Option<String>, Option<String>, Option<String>, Option<i64>, Option<String>, Option<String>, String)>(
         "SELECT h.id, h.song_id, h.device_user_id, h.played_at,
                 s.title, s.artist, s.album, s.duration_ms,
+                s.lyrics_path, s.cover_path,
                 COALESCE(d.display_name, 'system')
          FROM play_history h
          LEFT JOIN songs s ON s.id = h.song_id
@@ -465,15 +466,20 @@ pub async fn get_history(db: &SqlitePool, limit: i64) -> Result<Vec<serde_json::
     .fetch_all(db)
     .await?
     .into_iter()
-    .map(|(id, _song_id, _device_user_id, played_at, title, artist, album, duration_ms, display_name)| {
+    .map(|(id, song_id, device_user_id, played_at, title, artist, album, duration_ms, lyrics_path, cover_path, display_name)| {
         serde_json::json!({
             "id": id,
+            // 顶层真实 song_id（此前响应只有内嵌 song.id=0，前端无法取用）。
+            "song_id": song_id,
+            "device_user_id": device_user_id,
             "song": {
-                "id": 0,
+                "id": song_id,
                 "title": title,
                 "artist": artist.unwrap_or_default(),
                 "album": album,
                 "duration_ms": duration_ms,
+                "has_lyrics": !lyrics_path.unwrap_or_default().is_empty(),
+                "has_cover": !cover_path.unwrap_or_default().is_empty(),
             },
             "requested_by": display_name,
             "played_at": played_at,
