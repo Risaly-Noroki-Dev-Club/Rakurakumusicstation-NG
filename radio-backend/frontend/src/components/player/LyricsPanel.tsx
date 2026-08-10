@@ -40,6 +40,11 @@ export function LyricsPanel({ playback, positionMs, className }: LyricsPanelProp
   }, [activeIndex, songKey])
 
   if (!lines) {
+    // lines === null: the full lyrics frame hasn't arrived (or the server
+    // never re-sends it after a WS reconnect for the same song). If the song
+    // change was already observed (lyricsKnown), treat it as no-lyrics
+    // instead of showing an infinite loading state.
+    const noLyrics = playback?.lyricsKnown === true
     return (
       <div
         className={cn(
@@ -47,7 +52,9 @@ export function LyricsPanel({ playback, positionMs, className }: LyricsPanelProp
           className,
         )}
       >
-        <p className="text-foreground-subtle text-sm">{playback ? '歌词加载中…' : '等待开播…'}</p>
+        <p className="text-foreground-subtle text-sm">
+          {noLyrics ? '当前歌曲暂无歌词' : playback ? '歌词加载中…' : '等待开播…'}
+        </p>
       </div>
     )
   }

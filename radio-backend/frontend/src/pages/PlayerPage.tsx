@@ -97,7 +97,7 @@ export default function PlayerPage() {
   const playback = useStore((s) => s.playback)
   const names = useStore((s) => s.listeners.names)
   const count = useStore((s) => s.listeners.count)
-  const displayName = useStore((s) => s.auth?.display_name ?? '匿名')
+  const displayName = useStore((s) => s.auth?.display_name ?? '')
   const queueCount = useStore((s) => s.queue.length)
   const position = usePlaybackClock(playback)
   // The server includes this device in `names`; show only *other* listeners,
@@ -125,7 +125,7 @@ export default function PlayerPage() {
           ) : (
             <span className="text-foreground-muted text-xs">还没有其他听众，快邀请朋友一起来吧</span>
           )}
-          <span className="text-foreground-muted ms-auto truncate text-xs">{displayName}</span>
+          {displayName && <span className="text-foreground-muted ms-auto truncate text-xs">{displayName}</span>}
           <ChevronDown
             className="text-foreground-muted size-4 shrink-0 transition-transform duration-200 group-data-panel-open:rotate-180 motion-reduce:transition-none"
             aria-hidden="true"
@@ -154,7 +154,7 @@ export default function PlayerPage() {
                   {displayName.trim().charAt(0).toUpperCase() || '我'}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-foreground-intense min-w-0 truncate text-sm font-medium">{displayName}</span>
+              <span className="text-foreground-intense min-w-0 truncate text-sm font-medium">{displayName || '我'}</span>
               <span className="text-foreground-muted ms-auto shrink-0 text-xs">我 · 当前设备</span>
             </li>
           </ul>

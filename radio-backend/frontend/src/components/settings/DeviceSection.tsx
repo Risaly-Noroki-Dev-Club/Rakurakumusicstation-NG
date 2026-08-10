@@ -7,6 +7,16 @@ import {
   AlertTitle,
 } from '@appica/ui-react/alert'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogBody,
+  DialogFooter,
+  DialogClose,
+} from '@appica/ui-react/dialog'
+import {
   AlertDialog,
   AlertDialogClose,
   AlertDialogContent,
@@ -21,15 +31,15 @@ import { Field, FieldDescription, FieldLabel } from '@appica/ui-react/field'
 import { Input } from '@appica/ui-react/input'
 import { Spinner } from '@appica/ui-react/spinner'
 import {
-  AlertTriangleFilled,
   Check,
   DeviceMobile,
   InfoCircleFilled,
-  Key,
   LayoutDashboard,
   Logout,
+  Pencil,
   ShieldCheckFilled,
   UserFilled,
+  X,
 } from '@appica/icons-react'
 import { adminLogout, claimAdmin, fetchMe, fetchStation, setDisplayName } from '@/api'
 import { useStore } from '@/store'
@@ -42,8 +52,8 @@ function errMsg(err: unknown): string {
   return err instanceof Error && err.message ? err.message : '操作失败，请重试'
 }
 
-/** 首次部署：持有管理员令牌时可激活管理员身份。 */
-function ClaimAdminBlock() {
+/** 管理员提权：输入部署时生成的令牌，激活管理员身份。 */
+function ClaimAdminDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [token, setToken] = useState('')
   const [claiming, setClaiming] = useState(false)
 
@@ -58,6 +68,7 @@ function ClaimAdminBlock() {
       useStore.getState().setAuth(me)
       useStore.getState().setStation(st)
       setToken('')
+      onOpenChange(false)
       toast('管理员身份已激活', 'success')
     } catch (err) {
       toast(errMsg(err), 'error')
@@ -67,36 +78,41 @@ function ClaimAdminBlock() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <Alert variant="warning">
-        <AlertIcon>
-          <AlertTriangleFilled />
-        </AlertIcon>
-        <AlertTitle>首次部署：需要管理员令牌</AlertTitle>
-        <AlertDescription>电台尚未配置管理员。持有部署时生成的管理员令牌即可完成初始化。</AlertDescription>
-      </Alert>
-      <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Input
-          type="password"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder="管理员令牌"
-          aria-label="管理员令牌"
-          autoComplete="off"
-          className="min-w-0 flex-1"
-        />
-        <Button type="submit" variant="secondary" disabled={!token.trim() || claiming} className="shrink-0">
-          {claiming ? <Spinner currentColor /> : <Key data-icon="start" />}
-          {claiming ? '验证中…' : '申请管理员'}
-        </Button>
-      </form>
-    </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:w-105">
+        <DialogHeader>
+          <DialogTitle>申请管理员</DialogTitle>
+          <DialogDescription>输入电台部署时生成的管理员令牌即可提权为管理员。</DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <form id="claim-admin-form" onSubmit={submit} className="flex flex-col gap-3">
+            <Field name="admin_setup_token">
+              <FieldLabel>管理员令牌</FieldLabel>
+              <Input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                autoComplete="off"
+                placeholder="管理员令牌"
+              />
+            </Field>
+          </form>
+        </DialogBody>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline">取消</Button>} />
+          <Button type="submit" form="claim-admin-form" disabled={!token.trim() || claiming}>
+            {claiming ? <Spinner currentColor /> : <ShieldCheckFilled data-icon="start" />}
+            {claiming ? '验证中…' : '申请管理员'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-/** 尚未设置设备身份时，提示命名（setDisplayName 会创建设备）。 */
-function DeviceNameForm() {
-  const [name, setName] = useState('')
+/** 设备命名/改名表单（setDisplayName 会创建设备并持久化）。 */
+function DeviceNameForm({ initialValue = '' }: { initialValue?: string }) {
+  const [name, setName] = useState(initialValue)
   const [saving, setSaving] = useState(false)
 
   const submit = async (e: FormEvent) => {
@@ -108,7 +124,7 @@ function DeviceNameForm() {
       await setDisplayName(trimmed)
       const me = await fetchMe()
       useStore.getState().setAuth(me)
-      toast('设备名称已设置', 'success')
+      toast('设备名称已保存', 'success')
     } catch (err) {
       toast(errMsg(err), 'error')
     } finally {
@@ -148,13 +164,46 @@ function DeviceNameForm() {
   )
 }
 
-/** 已登录设备：展示身份，管理员可进入后台或退出登录（需确认）。 */
+/** 已登录设备：身份展示 + 行内改名（铅笔）+ 提权（盾牌）+ 退出（需确认）。 */
 function DeviceIdentity() {
   const auth = useStore((s) => s.auth)
   const navigate = useNavigate()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [claimOpen, setClaimOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const isAdmin = auth?.role === 'admin'
+
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(auth?.display_name ?? '')
+  const [savingName, setSavingName] = useState(false)
+
+  const startEdit = () => {
+    setName(auth?.display_name ?? '')
+    setEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setName(auth?.display_name ?? '')
+    setEditing(false)
+  }
+
+  const saveName = async (e: FormEvent) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed || savingName) return
+    setSavingName(true)
+    try {
+      await setDisplayName(trimmed)
+      const me = await fetchMe()
+      useStore.getState().setAuth(me)
+      setEditing(false)
+      toast('设备名称已保存', 'success')
+    } catch (err) {
+      toast(errMsg(err), 'error')
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   const handleLogout = async () => {
     if (loggingOut) return
@@ -174,16 +223,46 @@ function DeviceIdentity() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex items-center gap-3">
         <span className="bg-background-muted flex size-10 shrink-0 items-center justify-center rounded-full">
           <UserFilled className="text-foreground-muted size-5" />
         </span>
-        <div className="min-w-0">
-          <p className="text-foreground-intense truncate text-sm font-semibold">{auth?.display_name ?? '未命名设备'}</p>
-          <Badge variant={isAdmin ? 'primary' : 'soft'} size="xs" className="mt-0.5">
-            {isAdmin ? <ShieldCheckFilled /> : <UserFilled />}
-            {isAdmin ? '管理员' : '普通用户'}
-          </Badge>
+        {editing ? (
+          <form onSubmit={saveName} className="flex min-w-0 flex-1 items-center gap-1.5">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={32}
+              autoFocus
+              inputSize="sm"
+              aria-label="设备名称"
+              className="min-w-0 flex-1"
+            />
+            <Button type="submit" variant="soft" size="icon-sm" aria-label="保存名称" disabled={!name.trim() || savingName}>
+              {savingName ? <Spinner currentColor /> : <Check />}
+            </Button>
+            <Button type="button" variant="ghost" size="icon-sm" aria-label="取消" onClick={cancelEdit}>
+              <X />
+            </Button>
+          </form>
+        ) : (
+          <div className="min-w-0">
+            <p className="text-foreground-intense truncate text-sm font-semibold">{auth?.display_name ?? '未命名设备'}</p>
+            <Badge variant={isAdmin ? 'primary' : 'soft'} size="xs" className="mt-0.5">
+              {isAdmin ? <ShieldCheckFilled /> : <UserFilled />}
+              {isAdmin ? '管理员' : '普通用户'}
+            </Badge>
+          </div>
+        )}
+        <div className="ms-auto flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="icon-sm" aria-label="改名" onClick={startEdit}>
+            <Pencil />
+          </Button>
+          {!isAdmin && (
+            <Button variant="ghost" size="icon-sm" aria-label="申请管理员" onClick={() => setClaimOpen(true)}>
+              <ShieldCheckFilled />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -199,6 +278,8 @@ function DeviceIdentity() {
           </Button>
         </div>
       )}
+
+      <ClaimAdminDialog open={claimOpen} onOpenChange={setClaimOpen} />
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
@@ -223,8 +304,6 @@ function DeviceIdentity() {
 
 export function DeviceSection() {
   const auth = useStore((s) => s.auth)
-  const station = useStore((s) => s.station)
-  const needsSetup = station?.needs_setup === true
 
   return (
     <section aria-labelledby="settings-device-heading" className="rounded-2xl border border-border-muted bg-background-subtle p-4 sm:p-5">
@@ -233,7 +312,6 @@ export function DeviceSection() {
         设备
       </h2>
       <div className="flex flex-col gap-4">
-        {needsSetup && <ClaimAdminBlock />}
         {auth ? <DeviceIdentity /> : <DeviceNameForm />}
       </div>
     </section>

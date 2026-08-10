@@ -188,7 +188,9 @@ export function QueueList({ items, onChanged }: QueueListProps) {
     >
       {queue.map((item, index) => {
         const meta = STATUS_META[item.status] ?? STATUS_META.pending
-        const secondary = [item.song?.artist, item.requested_by].filter(Boolean).join(' · ')
+        // 后端对非管理员点歌将 requested_by 置为 "匿名"——不展示。
+        const requester = item.requested_by && item.requested_by !== '匿名' ? item.requested_by : ''
+        const secondary = [item.song?.artist, requester].filter(Boolean).join(' · ')
         const realSong = indexReady ? resolveSong(item.song) : null
         const artworkSong = realSong ?? item.song
         return (
