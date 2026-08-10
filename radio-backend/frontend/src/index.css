@@ -1,7 +1,6 @@
 @import 'tailwindcss';
 @import '@appica/ui-react/styles.css';
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/jetbrains-mono';
+@import './fonts.css';
 
 @source '../node_modules/@appica/ui-react/dist';
 
