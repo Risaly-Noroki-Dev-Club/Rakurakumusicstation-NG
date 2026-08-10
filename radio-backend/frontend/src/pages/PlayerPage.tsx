@@ -14,7 +14,6 @@ import { ChevronDown, Headphones, Playlist } from '@appica/icons-react'
 import { SongArtwork } from '@/components/SongArtwork'
 import { useStore, type Playback } from '@/store'
 import { usePlaybackClock } from '@/hooks/usePlaybackClock'
-import { cn } from '@/lib/cn'
 import { LyricsPanel } from '@/components/player/LyricsPanel'
 import { QueueList } from '@/components/queue/QueueList'
 
@@ -25,7 +24,6 @@ import { QueueList } from '@/components/queue/QueueList'
 function PlayerPane({ playback, position }: { playback: Playback | null; position: number }) {
   const station = useStore((s) => s.station)
   const onAir = playback !== null && playback.title.length > 0
-  const spinning = onAir && (playback?.status === 'playing' || playback?.status === 'crossfading')
   const artwork = onAir ? (playback?.coverUrl ?? undefined) : (station?.icon_url ?? undefined)
 
   return (
@@ -36,19 +34,9 @@ function PlayerPane({ playback, position }: { playback: Playback | null; positio
           coverSrc={artwork}
           alt={onAir ? `${playback.title} 封面` : station?.name ? `${station.name} 图标` : ''}
           size="2xl"
-          shape={onAir ? 'circle' : 'rounded'}
-          className={cn(
-            'size-52 sm:size-60 lg:size-72',
-            spinning && 'animate-[spin_18s_linear_infinite]',
-          )}
+          shape="rounded"
+          className="size-52 sm:size-60 lg:size-72"
         />
-        {/* 唱片中心轴点 */}
-        {onAir && (
-          <span
-            aria-hidden="true"
-            className="bg-background absolute top-1/2 left-1/2 size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border"
-          />
-        )}
       </div>
 
       <div className="mt-5 w-full min-w-0 text-center">
