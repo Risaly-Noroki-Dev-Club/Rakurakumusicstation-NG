@@ -90,6 +90,12 @@ pub async fn ensure_cover_cached(
 
     // 先用 ffprobe 快速探测是否真的存在封面流；没有就直接落 .missing
     // 标记并返回，避免对每首无封面歌曲都跑一次最长 30s 的 ffmpeg 提取。
+    // 探测/提取是 CPU 密集的子进程操作：用全局信号量限制并发，
+    // 防止 rescan 大批量入库时同时 fork 数十个 ffmpeg/ffprobe。
+    let _permit = COVER_PROBE_SEM
+        .acquire()
+        .await
+        .map_err(|_| anyhow::anyhow!("cover semaphore closed"))?;
     if !has_cover_stream(&audio_full).await? {
         let _ = tokio::fs::write(&missing_marker, b"").await;
         return Ok(None);
@@ -105,6 +111,10 @@ pub async fn ensure_cover_cached(
         Ok(None)
     }
 }
+
+/// 封面探测/提取的并发上限（ffprobe/ffmpeg 子进程）。
+static COVER_PROBE_SEM: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(4));
 
 /// 快速探测音频文件是否内嵌封面流（attached pic 在 ffprobe 中是 video 流）。
 async fn has_cover_stream(audio_full: &Path) -> anyhow::Result<bool> {
