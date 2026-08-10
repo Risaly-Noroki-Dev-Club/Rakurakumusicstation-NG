@@ -16,7 +16,6 @@ import { Skeleton } from '@appica/ui-react/skeleton'
 import { ChevronDown, ChevronUp, Library, Loader, Music, Trash } from '@appica/icons-react'
 import { fetchQueue, moveQueueItem, removeQueueItem, coverUrl } from '@/api'
 import { SongArtwork } from '@/components/SongArtwork'
-import { loadSongIndex, resolveSong } from '@/lib/songIndex'
 import { useStore, type Toast } from '@/store'
 import type { QueueItemDisplay } from '@/types'
 import { formatDateTime } from '@/lib/format'
@@ -91,21 +90,6 @@ export function QueueList({ items, onChanged }: QueueListProps) {
   const queue = items ?? storeQueue
   const [loaded, setLoaded] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
-  const [indexReady, setIndexReady] = useState(false)
-
-  // Build the title|artist → real SongSummary index so queue rows (whose
-  // embedded song.id is hardcoded to 0 by the backend) can load covers.
-  useEffect(() => {
-    let cancelled = false
-    loadSongIndex()
-      .then(() => {
-        if (!cancelled) setIndexReady(true)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   // First load (store mode only — an `items` prop implies the owner fetches).
   useEffect(() => {
@@ -188,19 +172,18 @@ export function QueueList({ items, onChanged }: QueueListProps) {
     >
       {queue.map((item, index) => {
         const meta = STATUS_META[item.status] ?? STATUS_META.pending
-        // 后端对非管理员点歌将 requested_by 置为 "匿名"——不展示。
+        // 后端现在返回真实 song.id / has_cover，直接用于封面加载。
+        const song = item.song
         const requester = item.requested_by && item.requested_by !== '匿名' ? item.requested_by : ''
-        const secondary = [item.song?.artist, requester].filter(Boolean).join(' · ')
-        const realSong = indexReady ? resolveSong(item.song) : null
-        const artworkSong = realSong ?? item.song
+        const secondary = [song?.artist, requester].filter(Boolean).join(' · ')
         return (
           <li key={item.id} className="flex items-center gap-3 px-3 py-3 sm:px-4">
             <span className="text-foreground-muted w-6 shrink-0 text-center text-xs font-medium tabular-nums">
               {item.position}
             </span>
             <SongArtwork
-              hasCover={artworkSong?.has_cover ?? false}
-              coverSrc={realSong && realSong.id > 0 ? coverUrl(realSong.id) : undefined}
+              hasCover={song?.has_cover ?? false}
+              coverSrc={song && song.id > 0 ? coverUrl(song.id) : undefined}
               size="sm"
               className="shrink-0"
             />
