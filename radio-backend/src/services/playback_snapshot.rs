@@ -16,6 +16,8 @@ pub(crate) struct PlaybackSnapshotCache {
     cached: Option<CachedSong>,
     /// 记录已向客户端发送过全量歌词的歌曲 ID，避免重复克隆。
     lyrics_broadcast_song_id: Option<i64>,
+    /// 最近一次含全量歌词的序列化消息 — 新 WS 连接补发用。
+    last_full_message: Option<String>,
 }
 
 impl PlaybackSnapshotCache {
@@ -24,7 +26,13 @@ impl PlaybackSnapshotCache {
             last_file_path: String::new(),
             cached: None,
             lyrics_broadcast_song_id: None,
+            last_full_message: None,
         }
+    }
+
+    /// 最近一条含全量歌词的 playback_state 消息（若有）。
+    pub(crate) fn last_full_message(&self) -> Option<String> {
+        self.last_full_message.clone()
     }
 
     pub(crate) async fn build_message(
@@ -66,8 +74,7 @@ impl PlaybackSnapshotCache {
         } else {
             None
         };
-
-        WsMessage::PlaybackState {
+        let full = WsMessage::PlaybackState {
             song_id,
             title,
             artist,
@@ -102,7 +109,14 @@ impl PlaybackSnapshotCache {
                 None
             },
             timestamp_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        if should_send_full_lyrics {
+            self.last_full_message =
+                Some(serde_json::to_string(&full).unwrap_or_default());
         }
+
+        full
     }
 
     async fn refresh_on_song_change(

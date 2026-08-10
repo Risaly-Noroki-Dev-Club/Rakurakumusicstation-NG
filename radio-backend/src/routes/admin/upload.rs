@@ -75,6 +75,9 @@ pub async fn upload_song(
             String::new()
         };
 
+        // 同一连接执行 INSERT + last_insert_rowid（连接级状态，避免并发池
+        // 拿错 id）。
+        let mut conn = state.db.acquire().await?;
         sqlx::query(
             "INSERT INTO songs (title, artist, file_path, lyrics_path, cover_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
@@ -85,8 +88,30 @@ pub async fn upload_song(
         .bind(&cover_path)
         .bind(duration_ms)
         .bind(data.len() as i64)
-        .execute(&state.db)
+        .execute(&mut *conn)
         .await?;
+
+        // 后台预热封面缓存（探测/提取），避免首个 cover 请求触发 30s ffmpeg。
+        let song_id: i64 = sqlx::query_scalar("SELECT last_insert_rowid()")
+            .fetch_one(&mut *conn)
+            .await?;
+        let db = state.db.clone();
+        let media_path_owned = media_path.to_path_buf();
+        let file_path = rel_str.clone();
+        let cover_path_owned = cover_path.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::services::metadata::ensure_cover_cached(
+                &db,
+                song_id,
+                &file_path,
+                &cover_path_owned,
+                &media_path_owned,
+            )
+            .await
+            {
+                tracing::warn!("Cover pre-cache failed for song {}: {:?}", song_id, e);
+            }
+        });
     }
 
     if uploaded_filename.is_empty() {

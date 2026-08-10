@@ -51,7 +51,10 @@ pub fn find_cover(audio_path: &Path, media_root: &Path) -> String {
 
 /// Resolve a song cover path, lazily extracting embedded artwork to
 /// `media/.covers/{song_id}.jpg` when no sidecar cover is already known.
-pub async fn resolve_or_extract_cover(
+///
+/// Called both on demand (GET /api/songs/:id/cover) and eagerly right after
+/// a song is ingested (upload / rescan), so cover requests hit the cache.
+pub async fn ensure_cover_cached(
     db: &SqlitePool,
     song_id: i64,
     file_path: &str,
@@ -85,6 +88,13 @@ pub async fn resolve_or_extract_cover(
         return Ok(None);
     }
 
+    // 先用 ffprobe 快速探测是否真的存在封面流；没有就直接落 .missing
+    // 标记并返回，避免对每首无封面歌曲都跑一次最长 30s 的 ffmpeg 提取。
+    if !has_cover_stream(&audio_full).await? {
+        let _ = tokio::fs::write(&missing_marker, b"").await;
+        return Ok(None);
+    }
+
     let extracted = extract_embedded_cover(&audio_full, &cover_full).await?;
     if extracted {
         let _ = tokio::fs::remove_file(&missing_marker).await;
@@ -93,6 +103,34 @@ pub async fn resolve_or_extract_cover(
     } else {
         let _ = tokio::fs::write(&missing_marker, b"").await;
         Ok(None)
+    }
+}
+
+/// 快速探测音频文件是否内嵌封面流（attached pic 在 ffprobe 中是 video 流）。
+async fn has_cover_stream(audio_full: &Path) -> anyhow::Result<bool> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(10),
+        tokio::process::Command::new("ffprobe")
+            .arg("-v")
+            .arg("error")
+            .arg("-select_streams")
+            .arg("v")
+            .arg("-show_entries")
+            .arg("stream=codec_type")
+            .arg("-of")
+            .arg("csv=p=0")
+            .arg(audio_full)
+            .output(),
+    )
+    .await;
+
+    match output {
+        Ok(Ok(out)) if out.status.success() => {
+            Ok(String::from_utf8_lossy(&out.stdout).contains("video"))
+        }
+        // ffprobe 不可用/失败：保守起见当作没有封面（快速路径），
+        // 封面提取仍然可以事后通过显式上传补充。
+        _ => Ok(false),
     }
 }
 

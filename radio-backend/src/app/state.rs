@@ -28,6 +28,9 @@ pub struct AppState {
     pub queue_sync: tokio::sync::Mutex<()>,
     /// 在线听众注册表 (device_token -> OnlineListener)
     pub listeners: Arc<DashMap<String, OnlineListener>>,
+    /// 最近一条含全量歌词的 playback_state 消息（JSON）。
+    /// 新 WebSocket 连接建立时补发，避免重连客户端永远收不到当前歌曲的歌词。
+    pub ws_full_snapshot: std::sync::RwLock<Option<String>>,
 }
 
 impl AppState {
@@ -50,6 +53,7 @@ impl AppState {
             player_handle,
             queue_sync: tokio::sync::Mutex::new(()),
             listeners: Arc::new(DashMap::new()),
+            ws_full_snapshot: std::sync::RwLock::new(None),
         })
     }
 }

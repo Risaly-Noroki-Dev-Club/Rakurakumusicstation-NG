@@ -26,6 +26,15 @@ pub fn start_engine_state_poller(state: Arc<AppState>) {
             if state_clone.ws_tx.receiver_count() > 0 {
                 let enriched = snapshot_cache.build_message(&state_clone, &ps).await;
 
+                // 同步最近的全量帧（含歌词），供新连接补发。
+                if let Some(full) = snapshot_cache.last_full_message() {
+                    let mut guard = state_clone
+                        .ws_full_snapshot
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner());
+                    *guard = Some(full);
+                }
+
                 let _ = state_clone
                     .ws_tx
                     .send(serde_json::to_string(&enriched).unwrap_or_default());

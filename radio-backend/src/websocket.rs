@@ -73,6 +73,23 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, device: Option<A
         return;
     }
 
+    // 补发最近一条含全量歌词的 playback_state，重连/新连接的客户端才能
+    // 立刻拿到当前歌曲的歌词（广播模式下普通帧只带行索引）。
+    if let Some(full) = state
+        .ws_full_snapshot
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+    {
+        if sender.send(Message::Text(full.into())).await.is_err() {
+            if let Some(device_token) = &device_token {
+                state.listeners.remove(device_token);
+                broadcast_listeners_update(&state);
+            }
+            return;
+        }
+    }
+
     let mut heartbeat = tokio::time::interval(tokio::time::Duration::from_secs(30));
     let mut last_pong = chrono::Utc::now();
     let pong_timeout = chrono::Duration::seconds(60);

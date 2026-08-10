@@ -170,9 +170,10 @@ pub async fn add_to_queue(
 
 /// 获取带歌曲详情的队列，按 position 排序。
 pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>, AppError> {
-    let display_items = sqlx::query_as::<_, (i64, i64, i64, String, i32, chrono::NaiveDateTime, Option<String>, Option<String>, Option<String>, Option<i64>, String)>(
+    let display_items = sqlx::query_as::<_, (i64, i64, i64, String, i32, chrono::NaiveDateTime, Option<String>, Option<String>, Option<String>, Option<i64>, Option<String>, Option<String>, String)>(
         "SELECT q.id, q.song_id, q.device_user_id, q.status, q.position, q.added_at,
                 s.title, s.artist, s.album, s.duration_ms,
+                s.lyrics_path, s.cover_path,
                 COALESCE(d.display_name, 'unknown')
          FROM queue_items q
          LEFT JOIN songs s ON s.id = q.song_id
@@ -183,17 +184,18 @@ pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>,
     .fetch_all(db)
     .await?
     .into_iter()
-    .map(|(id, _song_id, _device_user_id, status, position, added_at, title, artist, album, duration_ms, display_name)| {
+    .map(|(id, song_id, _device_user_id, status, position, added_at, title, artist, album, duration_ms, lyrics_path, cover_path, display_name)| {
         QueueItemDisplay {
             id,
             song: title.map(|t| SongSummary {
-                id: 0,
+                // 真实歌曲 id（此前硬编码 0，导致前端无法按 id 加载封面）。
+                id: song_id,
                 title: t,
                 artist: artist.unwrap_or_default(),
                 album: album.unwrap_or_default(),
                 duration_ms: duration_ms.unwrap_or(0),
-                has_lyrics: false,
-                has_cover: false,
+                has_lyrics: !lyrics_path.unwrap_or_default().is_empty(),
+                has_cover: !cover_path.unwrap_or_default().is_empty(),
             }),
             requested_by: display_name,
             status,

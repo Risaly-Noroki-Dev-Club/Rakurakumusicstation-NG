@@ -7,12 +7,6 @@ pub async fn station_info(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> axum::Json<serde_json::Value> {
-    let ws_host = if state.config.server.host == "0.0.0.0" {
-        "localhost"
-    } else {
-        &state.config.server.host
-    };
-
     let has_admin =
         sqlx::query_as::<_, (i64,)>("SELECT COUNT(*) FROM device_users WHERE role = 'admin'")
             .fetch_one(&state.db)
@@ -21,6 +15,24 @@ pub async fn station_info(
             .unwrap_or(false);
 
     let station = state.station.read().unwrap_or_else(|e| e.into_inner());
+
+    // ws_url 跟随请求头推断；没有 Host/X-Forwarded 头时返回相对路径，
+    // 由客户端基于自身 origin 解析（绑定 0.0.0.0 时不再错误地给出 localhost）。
+    let ws_proto = match headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+    {
+        Some("https") => "wss",
+        _ => "ws",
+    };
+    let ws_host = headers
+        .get("x-forwarded-host")
+        .and_then(|v| v.to_str().ok())
+        .or_else(|| headers.get(axum::http::header::HOST).and_then(|v| v.to_str().ok()));
+    let ws_url = match ws_host {
+        Some(h) => format!("{}://{}/ws", ws_proto, h),
+        None => join_base_path(&state.config.server.base_path, "/ws"),
+    };
 
     axum::Json(serde_json::json!({
         "name": station.name,
@@ -34,7 +46,7 @@ pub async fn station_info(
             state.config.server.port,
             &state.config.server.base_path,
         ),
-        "ws_url": format!("ws://{}:{}/ws", ws_host, state.config.server.port),
+        "ws_url": ws_url,
         "needs_setup": !has_admin,
     }))
 }
