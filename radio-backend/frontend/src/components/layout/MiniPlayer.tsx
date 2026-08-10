@@ -3,20 +3,31 @@ import { Button } from '@appica/ui-react/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@appica/ui-react/popover'
 import { Progress } from '@appica/ui-react/progress'
 import { Slider } from '@appica/ui-react/slider'
-import { PlayerPause, PlayerPlay, Maximize, Volume2, VolumeOff } from '@appica/icons-react'
+import { PlayerPause, PlayerPlay, PlayerSkipBack, PlayerSkipForward, Maximize, Volume2, VolumeOff } from '@appica/icons-react'
 import { SongArtwork } from '@/components/SongArtwork'
 import { useStore } from '@/store'
 import { usePlaybackClock } from '@/hooks/usePlaybackClock'
 import { formatTime } from '@/lib/format'
 import { isAudioPlaying, pauseAudio, resumeAudio, setAudioVolume } from '@/audio/streamAudio'
+import { adminSkipNext, adminSkipPrev } from '@/api'
 
-/** Docked bottom player bar, visible whenever a track is on air. */
+/** Docked bottom player bar: transport (play/pause + admin skip) + volume. */
 export function MiniPlayer() {
   const playback = useStore((s) => s.playback)
   const volume = useStore((s) => s.volume)
+  const isAdmin = useStore((s) => s.auth?.role === 'admin')
   const navigate = useNavigate()
   const position = usePlaybackClock(playback)
   const playing = isAudioPlaying()
+
+  const skip = async (dir: 'prev' | 'next') => {
+    try {
+      if (dir === 'prev') await adminSkipPrev()
+      else await adminSkipNext()
+    } catch (e) {
+      useStore.getState().addToast(e instanceof Error ? e.message : '操作失败', 'error')
+    }
+  }
 
   if (!playback || !playback.title) return null
 
@@ -88,6 +99,16 @@ export function MiniPlayer() {
           </PopoverContent>
         </Popover>
 
+        {isAdmin && (
+          <Button
+            variant="ghost"
+            size="icon-md"
+            aria-label="上一首"
+            onClick={() => void skip('prev')}
+          >
+            <PlayerSkipBack />
+          </Button>
+        )}
         <Button
           variant="outline"
           size="icon-md"
@@ -96,6 +117,16 @@ export function MiniPlayer() {
         >
           {playing ? <PlayerPause /> : <PlayerPlay />}
         </Button>
+        {isAdmin && (
+          <Button
+            variant="ghost"
+            size="icon-md"
+            aria-label="下一首"
+            onClick={() => void skip('next')}
+          >
+            <PlayerSkipForward />
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-md"

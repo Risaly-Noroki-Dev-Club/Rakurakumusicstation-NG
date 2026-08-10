@@ -1,85 +1,68 @@
 import { Badge } from '@appica/ui-react/badge'
 import { Carousel, CarouselContent, CarouselSlide, CarouselPagination } from '@appica/ui-react/carousel'
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@appica/ui-react/collapsible'
-import { Progress } from '@appica/ui-react/progress'
 import { ScrollArea } from '@appica/ui-react/scroll-area'
 import { Avatar, AvatarFallback, AvatarGroup } from '@appica/ui-react/avatar'
 import { ChevronDown, FileMusic, Headphones, Playlist } from '@appica/icons-react'
 import { SongArtwork } from '@/components/SongArtwork'
 import { useStore, type Playback } from '@/store'
 import { usePlaybackClock } from '@/hooks/usePlaybackClock'
-import { formatTime } from '@/lib/format'
 import { LyricsPanel } from '@/components/player/LyricsPanel'
-import { PlayerControls } from '@/components/player/PlayerControls'
 import { QueueList } from '@/components/queue/QueueList'
 
-/** 正在播放卡：封面 + 标题 + 控制 + 进度。 */
-function NowPlayingPane({ playback, position }: { playback: Playback | null; position: number }) {
+/**
+ * 播放器主栏：封面 banner + 歌名，下方直接是歌词（原控制栏位置）。
+ * 播放控制（含管理员切歌）移入底部 MiniPlayer。
+ */
+function PlayerPane({ playback, position }: { playback: Playback | null; position: number }) {
   const station = useStore((s) => s.station)
   const onAir = playback !== null && playback.title.length > 0
   const artwork = onAir ? (playback?.coverUrl ?? undefined) : (station?.icon_url ?? undefined)
-  const duration = playback?.durationMs ?? 0
-  const pct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0
 
   return (
-    <div className="flex min-w-0 flex-col items-center gap-5">
+    <div className="flex min-w-0 flex-col items-center">
       <SongArtwork
         hasCover={artwork !== undefined}
         coverSrc={artwork}
         alt={onAir ? `${playback.title} 封面` : station?.name ? `${station.name} 图标` : ''}
         size="2xl"
-        className="size-52 shadow-lg shadow-black/10 sm:size-64 lg:size-72"
+        className="size-52 sm:size-60 lg:size-72"
       />
 
-      <div className="w-full min-w-0 text-center">
-        <h1 className="text-foreground-intense text-[clamp(1.5rem,4vw,2.25rem)] leading-tight font-bold break-words">
+      <div className="mt-5 w-full min-w-0 text-center">
+        <h1
+          className="text-foreground-intense truncate text-3xl font-bold sm:text-4xl"
+          title={onAir ? playback.title : station?.name}
+        >
           {onAir ? playback.title : station?.name ?? 'Rakuraku Music Station'}
         </h1>
-        <p className="text-foreground-muted mt-1.5 truncate text-base">
+        <p className="text-foreground-muted mt-1 truncate text-base">
           {onAir ? playback.artist || '\u00a0' : station?.subtitle || '\u00a0'}
         </p>
       </div>
 
-      <PlayerControls className="w-full" />
-
-      <div className="w-full min-w-0">
-        <Progress value={pct} className="w-full" aria-label="播放进度" />
-        <div className="text-foreground-subtle mt-1.5 flex w-full justify-between text-xs tabular-nums">
-          <span>{formatTime(position)}</span>
-          <span>{formatTime(duration)}</span>
-        </div>
+      {/* 歌词占据原控制栏的位置 */}
+      <div className="mt-8 w-full max-w-xl">
+        <h2 className="text-foreground-intense mb-3 flex items-center gap-1.5 text-sm font-semibold">
+          <FileMusic className="text-foreground-muted size-4" aria-hidden="true" />
+          歌词
+        </h2>
+        <ScrollArea className="max-h-[45vh] min-h-0 w-full" scrollShadow scrollbarVisibility="auto">
+          <LyricsPanel playback={playback} positionMs={position} className="max-h-none overflow-visible" />
+        </ScrollArea>
       </div>
     </div>
   )
 }
 
-/** 歌词卡。 */
-function LyricsPane({ playback, position, tall }: { playback: Playback | null; position: number; tall: boolean }) {
-  return (
-    <div className="min-w-0">
-      <h2 className="text-foreground-intense mb-3 flex items-center gap-1.5 text-base font-semibold">
-        <FileMusic className="text-primary size-4.5" aria-hidden="true" />
-        歌词
-      </h2>
-      <ScrollArea
-        className={tall ? 'max-h-[70vh] min-h-0 w-full' : 'max-h-[50vh] min-h-0 w-full'}
-        scrollShadow
-        scrollbarVisibility="auto"
-      >
-        <LyricsPanel playback={playback} positionMs={position} className="max-h-none overflow-visible" />
-      </ScrollArea>
-    </div>
-  )
-}
-
-/** 点歌队列卡。 */
+/** 点歌队列（xl 起右栏）。 */
 function QueuePane({ count }: { count: number }) {
   return (
-    <aside aria-label="点歌队列" className="min-w-0">
+    <aside aria-label="点歌队列" className="min-w-0 xl:border-border-muted xl:border-l xl:ps-8">
       <div className="mb-3 flex items-center gap-2">
-        <Playlist className="text-primary size-4.5" aria-hidden="true" />
+        <Playlist className="text-foreground-muted size-4" aria-hidden="true" />
         <h2 className="text-foreground-intense text-sm font-semibold">点歌队列</h2>
-        <Badge variant="secondary" size="sm" aria-label={`队列中共 ${count} 首`}>
+        <Badge variant="soft" size="xs" aria-label={`队列中共 ${count} 首`}>
           {count}
         </Badge>
       </div>
@@ -89,19 +72,15 @@ function QueuePane({ count }: { count: number }) {
 }
 
 /**
- * Home page: the full player merged with the "listen together" presence.
- * Mobile: the three cards (player / lyrics / queue) are swipeable carousel
- * pages with a dot indicator; lg+: a multi-column grid.
+ * 首页：封面 banner + 歌词为主角；播放控制全部在底部 MiniPlayer。
  */
 export default function PlayerPage() {
   const playback = useStore((s) => s.playback)
   const names = useStore((s) => s.listeners.names)
   const count = useStore((s) => s.listeners.count)
-  const displayName = useStore((s) => s.auth?.display_name ?? '')
+  const displayName = useStore((s) => s.auth?.display_name ?? '匿名')
   const queueCount = useStore((s) => s.queue.length)
   const position = usePlaybackClock(playback)
-  // The server includes this device in `names`; show only *other* listeners,
-  // since "我" has its own row at the bottom of the expanded list.
   const others = names.filter((name) => name !== displayName)
 
   return (
@@ -125,7 +104,9 @@ export default function PlayerPage() {
           ) : (
             <span className="text-foreground-muted text-xs">还没有其他听众，快邀请朋友一起来吧</span>
           )}
-          {displayName && <span className="text-foreground-muted ms-auto truncate text-xs">{displayName}</span>}
+          {displayName !== '匿名' && (
+            <span className="text-foreground-muted ms-auto truncate text-xs">{displayName}</span>
+          )}
           <ChevronDown
             className="text-foreground-muted size-4 shrink-0 transition-transform duration-200 group-data-panel-open:rotate-180 motion-reduce:transition-none"
             aria-hidden="true"
@@ -154,35 +135,31 @@ export default function PlayerPage() {
                   {displayName.trim().charAt(0).toUpperCase() || '我'}
                 </AvatarFallback>
               </Avatar>
-              <span className="text-foreground-intense min-w-0 truncate text-sm font-medium">{displayName || '我'}</span>
+              <span className="text-foreground-intense min-w-0 truncate text-sm font-medium">{displayName}</span>
               <span className="text-foreground-muted ms-auto shrink-0 text-xs">我 · 当前设备</span>
             </li>
           </ul>
         </CollapsibleContent>
       </Collapsible>
 
-      {/* Mobile (<lg): swipeable card pages */}
+      {/* 移动端（<lg）：播放器（含歌词）/ 队列 两卡滑动 */}
       <div className="lg:hidden">
         <Carousel align="start" slidesToScroll={1}>
           <CarouselContent>
             <CarouselSlide className="basis-full">
-              <NowPlayingPane playback={playback} position={position} />
-            </CarouselSlide>
-            <CarouselSlide className="basis-full">
-              <LyricsPane playback={playback} position={position} tall={false} />
+              <PlayerPane playback={playback} position={position} />
             </CarouselSlide>
             <CarouselSlide className="basis-full">
               <QueuePane count={queueCount} />
             </CarouselSlide>
           </CarouselContent>
-          <CarouselPagination className="mt-5 justify-center" />
+          <CarouselPagination className="mt-4 justify-center" />
         </Carousel>
       </div>
 
-      {/* Desktop (lg+): multi-column grid */}
-      <div className="hidden gap-10 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-12 xl:grid-cols-[minmax(0,4fr)_minmax(0,5fr)_320px]">
-        <NowPlayingPane playback={playback} position={position} />
-        <LyricsPane playback={playback} position={position} tall />
+      {/* 桌面（lg+）：主栏 + xl 右队列 */}
+      <div className="hidden gap-10 lg:block xl:grid xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-12">
+        <PlayerPane playback={playback} position={position} />
         <QueuePane count={queueCount} />
       </div>
     </div>
