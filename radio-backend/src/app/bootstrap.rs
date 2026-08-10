@@ -69,6 +69,24 @@ pub async fn run() -> anyhow::Result<()> {
     // 启动引擎状态轮询器，将播放状态转发给 WebSocket 客户端
     crate::services::playback_broadcast::start_engine_state_poller(state.clone());
 
+    // 定期清理僵尸设备用户（启动时一次，之后每 24h 一次）
+    {
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(24 * 3600));
+            loop {
+                match crate::services::cleanup::prune_inactive_default_users(&db).await {
+                    Ok(n) if n > 0 => {
+                        tracing::info!("Pruned {} inactive default device users", n);
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("Device cleanup task failed: {:?}", e),
+                }
+                interval.tick().await;
+            }
+        });
+    }
+
     // 构建路由
     let app = crate::routes::build_router(state.clone())
         .layer(middleware::from_fn_with_state(

@@ -1,3 +1,4 @@
+pub mod cleanup;
 pub mod download_tasks;
 pub mod metadata;
 pub mod ncm;
