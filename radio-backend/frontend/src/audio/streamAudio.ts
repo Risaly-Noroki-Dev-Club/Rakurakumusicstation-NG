@@ -36,6 +36,9 @@ function ensureAudio(): HTMLAudioElement {
   if (audio) return audio
   const el = new Audio()
   el.preload = 'none'
+  // 恢复持久化的音量（默认 0.8）。
+  const raw = Number(localStorage.getItem('rakuraku.volume'))
+  el.volume = Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.8
   el.addEventListener('ended', () => {
     // Server closed the stream (skip/prev resync or idle timeout) → rejoin live edge.
     reconnect()
@@ -149,6 +152,12 @@ export function pauseAudio() {
 
 export function isAudioPlaying(): boolean {
   return audio !== null && !audio.paused && !audio.ended
+}
+
+/** 应用音量（0–1）到音频元素。 */
+export function setAudioVolume(volume: number) {
+  const el = ensureAudio()
+  el.volume = Math.min(1, Math.max(0, volume))
 }
 
 export function isUserAuthorized(): boolean {

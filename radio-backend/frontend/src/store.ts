@@ -92,6 +92,7 @@ interface AppStore {
   audioPaused: boolean
   needsPlay: boolean
   accent: AccentTheme
+  volume: number
 
   setStation: (station: StationInfo | null) => void
   setAuth: (auth: AuthUser | null) => void
@@ -101,6 +102,7 @@ interface AppStore {
   setAudioPaused: (paused: boolean) => void
   setNeedsPlay: (needs: boolean) => void
   setAccent: (accent: AccentTheme) => void
+  setVolume: (volume: number) => void
   addToast: (message: string, level?: ToastLevel) => void
   toggleFavorite: (song: SongSummary) => void
   applyPlaybackState: (msg: PlaybackStateWs) => void
@@ -124,6 +126,10 @@ export const useStore = create<AppStore>((set, get) => ({
   audioPaused: false,
   needsPlay: false,
   accent: loadAccent(),
+  volume: (() => {
+    const raw = Number(localStorage.getItem('rakuraku.volume'))
+    return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.8
+  })(),
 
   setStation: (station) => set({ station }),
   setAuth: (auth) => set({ auth }),
@@ -135,6 +141,12 @@ export const useStore = create<AppStore>((set, get) => ({
   setAccent: (accent) => {
     persistAccent(accent)
     set({ accent })
+  },
+
+  setVolume: (volume) => {
+    const clamped = Math.min(1, Math.max(0, volume))
+    localStorage.setItem('rakuraku.volume', String(clamped))
+    set({ volume: clamped })
   },
 
   addToast: (message, level = 'info') => {
