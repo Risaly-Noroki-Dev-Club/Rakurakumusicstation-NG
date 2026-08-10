@@ -27,7 +27,7 @@ import {
 } from '@appica/ui-react/alert-dialog'
 import { Badge } from '@appica/ui-react/badge'
 import { Button } from '@appica/ui-react/button'
-import { Field, FieldDescription, FieldLabel } from '@appica/ui-react/field'
+import { Field, FieldDescription, FieldLabel } from '@/components/Field'
 import { Input } from '@appica/ui-react/input'
 import { Spinner } from '@appica/ui-react/spinner'
 import {

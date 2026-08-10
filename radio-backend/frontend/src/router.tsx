@@ -3,6 +3,7 @@ import App from './App'
 import PlayerPage from './pages/PlayerPage'
 import LibraryPage from './pages/LibraryPage'
 import SettingsPage from './pages/SettingsPage'
+import ErrorPage from './pages/ErrorPage'
 
 /**
  * The player is the home page (hosts the "listen together" presence and the
@@ -14,6 +15,7 @@ export const router = createBrowserRouter(
     {
       path: '/',
       element: <App />,
+      errorElement: <ErrorPage />,
       children: [
         { index: true, element: <PlayerPage /> },
         { path: 'player', element: <PlayerPage /> },

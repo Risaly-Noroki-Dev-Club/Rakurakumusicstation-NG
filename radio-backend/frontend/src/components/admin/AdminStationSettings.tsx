@@ -3,11 +3,11 @@ import { fetchStationSettings, saveStationSettings, uploadStationIcon } from '@/
 import type { StationSettings } from '@/types'
 import { useStore } from '@/store'
 import { Button } from '@appica/ui-react/button'
-import { Field, FieldLabel, FieldDescription } from '@appica/ui-react/field'
+import { Field, FieldLabel, FieldDescription } from '@/components/Field'
 import { Input } from '@appica/ui-react/input'
 import { Skeleton } from '@appica/ui-react/skeleton'
 import { Spinner } from '@appica/ui-react/spinner'
-import { Textarea } from '@appica/ui-react/textarea'
+import { Textarea } from '@/components/Textarea'
 import { Thumbnail } from '@appica/ui-react/thumbnail'
 import { Check, Radio, Upload } from '@appica/icons-react'
 

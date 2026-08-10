@@ -3,12 +3,12 @@ import { fetchBatchDownloadStatus, startBatchDownload } from '@/api'
 import type { BatchDownloadStatus } from '@/types'
 import { useStore } from '@/store'
 import { Button } from '@appica/ui-react/button'
-import { Field, FieldLabel, FieldDescription } from '@appica/ui-react/field'
+import { Field, FieldLabel, FieldDescription } from '@/components/Field'
 import { Input } from '@appica/ui-react/input'
-import { Progress, ProgressLabel } from '@appica/ui-react/progress'
+import { Progress } from '@/components/Progress'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 import { Spinner } from '@appica/ui-react/spinner'
-import { Textarea } from '@appica/ui-react/textarea'
+import { Textarea } from '@/components/Textarea'
 import { CircleCheckFilled, CircleXFilled, Download, Rotate360 } from '@appica/icons-react'
 
 const POLL_INTERVAL_MS = 2000
@@ -183,12 +183,12 @@ export function AdminDownloads() {
       {taskId !== null && (
         <section aria-label="下载进度" className="space-y-3">
           <div className="flex items-center justify-between text-sm">
-            <ProgressLabel className="text-foreground-muted">下载进度</ProgressLabel>
+            <span className="text-foreground-muted text-sm font-medium">下载进度</span>
             <span className="text-foreground-muted tabular-nums">
               {processed} / {total}
             </span>
           </div>
-          <Progress value={percent} variant="bar" className="w-full" />
+          <Progress value={percent} className="w-full" />
           <p className="text-foreground-muted text-xs">
             成功 {status?.success ?? 0} · 失败 {status?.failed ?? 0}
             {done && total > 0 && ` · 进度 ${percent}%`}
