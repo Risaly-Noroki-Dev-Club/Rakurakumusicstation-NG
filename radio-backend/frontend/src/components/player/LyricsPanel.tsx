@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react'
-import { FileMusic } from '@appica/icons-react'
 import type { Playback } from '@/store'
 import { activeLyricsIndex } from '@/hooks/usePlaybackClock'
 import { cn } from '@/lib/cn'
@@ -42,35 +41,17 @@ export function LyricsPanel({ playback, positionMs, className }: LyricsPanelProp
   if (!lines) {
     // lines === null: the full lyrics frame hasn't arrived (or the server
     // never re-sends it after a WS reconnect for the same song). If the song
-    // change was already observed (lyricsKnown), treat it as no-lyrics
-    // instead of showing an infinite loading state.
+    // change was already observed (lyricsKnown), treat it as no-lyrics.
     const noLyrics = playback?.lyricsKnown === true
     return (
-      <div
-        className={cn(
-          'flex min-h-28 items-center justify-center rounded-xl border border-dashed border-border-muted px-4 py-8',
-          className,
-        )}
-      >
-        <p className="text-foreground-subtle text-sm">
-          {noLyrics ? '当前歌曲暂无歌词' : playback ? '歌词加载中…' : '等待开播…'}
-        </p>
-      </div>
+      <p className={cn('text-foreground-subtle py-10 text-center text-sm', className)}>
+        {noLyrics ? '暂无歌词' : playback ? '歌词加载中…' : ''}
+      </p>
     )
   }
 
   if (lines.length === 0) {
-    return (
-      <div
-        className={cn(
-          'flex min-h-28 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-muted px-4 py-8',
-          className,
-        )}
-      >
-        <FileMusic className="text-foreground-subtle size-5" />
-        <p className="text-foreground-subtle text-sm">当前歌曲暂无歌词</p>
-      </div>
-    )
+    return <p className={cn('text-foreground-subtle py-10 text-center text-sm', className)}>暂无歌词</p>
   }
 
   return (
