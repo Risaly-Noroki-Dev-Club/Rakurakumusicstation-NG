@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchAdminLogs, fetchAdminStats } from '@/api'
-import type { AdminLogEntry, AdminStats } from '@/types'
+import { fetchAdminLogs, fetchAdminStats, fetchHistory } from '@/api'
+import type { AdminLogEntry, AdminStats, HistoryItem } from '@/types'
 import { useStore } from '@/store'
 import { ScrollArea } from '@appica/ui-react/scroll-area'
 import { Skeleton } from '@appica/ui-react/skeleton'
@@ -33,15 +33,17 @@ export function AdminOverview() {
   const addToast = useStore((s) => s.addToast)
   const [stats, setStats] = useState<AdminStats | null>(null)
   const [logs, setLogs] = useState<AdminLogEntry[]>([])
+  const [history, setHistory] = useState<HistoryItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([fetchAdminStats(), fetchAdminLogs()])
-      .then(([s, l]) => {
+    Promise.all([fetchAdminStats(), fetchAdminLogs(), fetchHistory()])
+      .then(([s, l, h]) => {
         if (cancelled) return
         setStats(s)
         setLogs(Array.isArray(l) ? l : [])
+        setHistory(Array.isArray(h) ? h : [])
       })
       .catch((e) => {
         if (!cancelled) addToast(e instanceof Error ? e.message : '加载失败', 'error')
@@ -82,6 +84,42 @@ export function AdminOverview() {
               </div>
             ))}
           </div>
+        )}
+      </section>
+
+      <section aria-labelledby="admin-history-title">
+        <h2 id="admin-history-title" className="text-foreground-muted mb-3 text-sm font-semibold">
+          播放历史
+        </h2>
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-foreground-muted text-sm">暂无播放历史</p>
+        ) : (
+          <ScrollArea orientation="horizontal" scrollShadow className="w-full">
+            <Table size="sm" hoverableRows className="w-full min-w-[420px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-32">歌曲</TableHead>
+                  <TableHead className="w-36">播放时间</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {history.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-medium whitespace-nowrap">歌曲 #{item.song_id}</TableCell>
+                    <TableCell className="text-foreground-muted whitespace-nowrap">
+                      {formatDateTime(item.played_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
         )}
       </section>
 

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { useTheme } from '@appica/ui-react/hooks/use-theme'
 import { fetchMe, fetchStation } from '@/api'
 import { connectWebSocket, startPollers } from '@/api/ws'
@@ -13,7 +13,6 @@ import { StreamPlayer } from '@/components/StreamPlayer'
 export default function App() {
   const station = useStore((s) => s.station)
   const accent = useStore((s) => s.accent)
-  const location = useLocation()
   const { mounted, resolvedTheme } = useTheme()
 
   // Bootstrap: station info, identity, websocket, fallback pollers.
@@ -47,10 +46,8 @@ export default function App() {
     document.title = station?.name ? `${station.name} · Rakuraku` : 'Rakuraku Music Station'
   }, [station?.name])
 
-  const isListen = location.pathname.startsWith('/listen')
-
   return (
-    <div className={isListen ? 'lt-layout flex h-full flex-col' : 'flex h-full flex-col'}>
+    <div className="flex h-full flex-col">
       <header className="border-border-muted bg-background/85 sticky top-0 z-40 border-b backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4">
           <MainNav />

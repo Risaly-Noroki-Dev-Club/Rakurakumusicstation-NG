@@ -1,28 +1,25 @@
 import { createBrowserRouter } from 'react-router-dom'
 import App from './App'
-import NowPlayingPage from './pages/NowPlayingPage'
 import PlayerPage from './pages/PlayerPage'
-import QueuePage from './pages/QueuePage'
-import UpNextPage from './pages/UpNextPage'
 import LibraryPage from './pages/LibraryPage'
 import SettingsPage from './pages/SettingsPage'
 import AdminPage from './pages/AdminPage'
-import ListenPage from './pages/ListenPage'
 
+/**
+ * The player is the home page and also hosts the "listen together" presence
+ * (listeners strip + shared queue), so there is no separate listen route.
+ */
 export const router = createBrowserRouter(
   [
     {
       path: '/',
       element: <App />,
       children: [
-        { index: true, element: <NowPlayingPage /> },
+        { index: true, element: <PlayerPage /> },
         { path: 'player', element: <PlayerPage /> },
-        { path: 'queue', element: <QueuePage /> },
-        { path: 'up-next', element: <UpNextPage /> },
         { path: 'library', element: <LibraryPage /> },
         { path: 'settings', element: <SettingsPage /> },
         { path: 'admin', element: <AdminPage /> },
-        { path: 'listen', element: <ListenPage /> },
       ],
     },
   ],

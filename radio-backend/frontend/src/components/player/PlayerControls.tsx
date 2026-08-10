@@ -65,51 +65,37 @@ export function PlayerControls({ className }: PlayerControlsProps) {
   return (
     <div className={cn('flex flex-col items-center gap-3', className)}>
       <div className="flex items-center gap-3">
-        {isAdmin ? (
-          <>
-            <Button
-              variant="outline"
-              size="icon-md"
-              aria-label="上一首"
-              disabled={!canPlay}
-              onClick={() => void skip('prev')}
-            >
-              <PlayerSkipBack />
-            </Button>
-            <Button
-              variant="primary"
-              size="icon-lg"
-              className="rounded-full"
-              aria-label={playing ? '暂停播放' : '开始播放'}
-              disabled={!canPlay}
-              onClick={togglePlayback}
-            >
-              {playing ? <PlayerPause /> : <PlayerPlay />}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon-md"
-              aria-label="下一首"
-              disabled={!canPlay}
-              onClick={() => void skip('next')}
-            >
-              <PlayerSkipForward />
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              variant="primary"
-              size="icon-lg"
-              className="rounded-full"
-              aria-label={playing ? '暂停播放' : '开始播放'}
-              disabled={!canPlay}
-              onClick={togglePlayback}
-            >
-              {playing ? <PlayerPause /> : <PlayerPlay />}
-            </Button>
-            <p className="text-foreground-subtle text-xs">电台由管理员控制切歌</p>
-          </>
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="icon-md"
+            aria-label="上一首"
+            disabled={!canPlay}
+            onClick={() => void skip('prev')}
+          >
+            <PlayerSkipBack />
+          </Button>
+        )}
+        <Button
+          variant="primary"
+          size="icon-lg"
+          className="rounded-full"
+          aria-label={playing ? '暂停播放' : '开始播放'}
+          disabled={!canPlay}
+          onClick={togglePlayback}
+        >
+          {playing ? <PlayerPause /> : <PlayerPlay />}
+        </Button>
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="icon-md"
+            aria-label="下一首"
+            disabled={!canPlay}
+            onClick={() => void skip('next')}
+          >
+            <PlayerSkipForward />
+          </Button>
         )}
       </div>
       <p className="flex items-center gap-2 text-sm">

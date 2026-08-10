@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@appica/ui-react/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@appica/ui-react/tabs'
-import { Lock } from '@appica/icons-react'
+import { LayoutDashboard, Lock } from '@appica/icons-react'
 import { useStore } from '@/store'
 import { AdminOverview } from '@/components/admin/AdminOverview'
 import { AdminSongs } from '@/components/admin/AdminSongs'
@@ -30,7 +30,10 @@ export default function AdminPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
-      <h1 className="mb-4 text-2xl font-semibold">管理后台</h1>
+      <h1 className="mb-4 flex items-center gap-2 text-2xl font-semibold">
+        <LayoutDashboard className="text-primary size-5.5" aria-hidden="true" />
+        管理后台
+      </h1>
       <Tabs variant="line" defaultValue="overview">
         <TabsList className="w-full overflow-x-auto">
           <TabsTrigger value="overview">概览</TabsTrigger>

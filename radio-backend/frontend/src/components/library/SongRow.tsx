@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@appica/ui-react/button'
 import { Badge } from '@appica/ui-react/badge'
-import { Thumbnail } from '@appica/ui-react/thumbnail'
 import { Spinner } from '@appica/ui-react/spinner'
 import {
   DropdownMenu,
@@ -9,8 +8,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from '@appica/ui-react/dropdown-menu'
-import { FileText, Heart, HeartFilled, Music, PlayerPlay, PlaylistAdd } from '@appica/icons-react'
+import { FileText, Heart, HeartFilled, PlayerPlay, PlaylistAdd } from '@appica/icons-react'
 import { addSongToPlaylist, addToQueue, coverUrl, fetchPlaylists } from '@/api'
+import { SongArtwork } from '@/components/SongArtwork'
 import { formatTime } from '@/lib/format'
 import { useStore, type Toast } from '@/store'
 import type { PlaylistWithCount, SongSummary } from '@/types'
@@ -82,9 +82,7 @@ export function SongRow({ song, favorited, onToggleFavorite }: SongRowProps) {
 
   return (
     <div className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-background-subtle sm:gap-3">
-      <Thumbnail variant="image" shape="rounded" size="md" src={coverUrl(song.id)} alt="" className="shrink-0">
-        <Music />
-      </Thumbnail>
+      <SongArtwork hasCover={song.has_cover} coverSrc={coverUrl(song.id)} size="md" className="shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <p className="min-w-0 truncate text-sm font-medium">{song.title}</p>

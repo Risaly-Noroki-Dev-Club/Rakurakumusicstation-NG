@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@appica/ui-react/button'
 import { Progress } from '@appica/ui-react/progress'
-import { Thumbnail } from '@appica/ui-react/thumbnail'
-import { Music, PlayerPause, PlayerPlay, Maximize } from '@appica/icons-react'
+import { PlayerPause, PlayerPlay, Maximize } from '@appica/icons-react'
+import { SongArtwork } from '@/components/SongArtwork'
 import { useStore } from '@/store'
 import { usePlaybackClock } from '@/hooks/usePlaybackClock'
 import { formatTime } from '@/lib/format'
@@ -23,15 +23,11 @@ export function MiniPlayer() {
   return (
     <div className="border-border-muted bg-background/95 sticky bottom-0 z-40 border-t backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4">
-        <Thumbnail
+        <SongArtwork
+          hasCover={playback.coverUrl !== null}
+          coverSrc={playback.coverUrl ?? undefined}
           size="sm"
-          shape="rounded"
-          variant={playback.coverUrl ? 'image' : 'icon-soft'}
-          src={playback.coverUrl ?? undefined}
-          alt=""
-        >
-          <Music />
-        </Thumbnail>
+        />
         <div className="min-w-0 flex-1">
           <p className="text-foreground-intense truncate text-sm font-medium">{playback.title}</p>
           <p className="text-foreground-muted truncate text-xs">{playback.artist || '\u00a0'}</p>

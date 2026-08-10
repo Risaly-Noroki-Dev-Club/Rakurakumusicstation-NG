@@ -63,7 +63,6 @@ function desiredStreamUrl(): string | null {
 export function reconnect() {
   const url = desiredStreamUrl()
   if (!url) return
-  if (Date.now() < retryThrottleUntil) return
   reconnectNonce += 1
   const el = ensureAudio()
   const sep = url.includes('?') ? '&' : '?'
@@ -76,15 +75,22 @@ async function tryPlay(el: HTMLAudioElement) {
   if (audioPaused || needsPlay) return
   try {
     await el.play()
-  } catch {
-    if (userAuthorized) {
-      // Already unlocked by the user — a rejection here is transient (e.g. a
-      // retry outside a gesture right after an error). Stay silent; the next
-      // sync tick or reconnect retries.
+  } catch (e) {
+    if (!userAuthorized) {
+      // First contact: browser blocks sound until a user gesture.
+      useStore.getState().setNeedsPlay(true)
       return
     }
-    // First contact: browser blocks sound until a user gesture.
-    useStore.getState().setNeedsPlay(true)
+    const notAllowed = e instanceof DOMException && e.name === 'NotAllowedError'
+    if (notAllowed || Date.now() < retryThrottleUntil) {
+      // Autoplay gate (unlikely after first unlock) or throttled retry window:
+      // stay silent; the next sync tick / error event retries.
+      return
+    }
+    // Stream-level failure on a dead element: rejoin the live edge by
+    // re-pointing the src (play() alone keeps rejecting on an errored
+    // element, which is what made reconnects after network drops dead).
+    window.setTimeout(reconnect, 2000)
   }
 }
 

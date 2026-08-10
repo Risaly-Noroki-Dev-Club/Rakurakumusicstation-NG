@@ -10,12 +10,10 @@ import type {
   QueueUpdateWs,
   StationInfo,
 } from '@/types'
+import { showToast, type ToastLevel } from '@/lib/toast'
 
-export interface Toast {
-  id: number
-  message: string
-  level: 'info' | 'success' | 'warning' | 'error'
-}
+/** Re-exported so existing call sites (`Toast['level']`) keep compiling. */
+export type Toast = { level: ToastLevel }
 
 export interface Playback {
   songId: number
@@ -42,7 +40,6 @@ interface AppStore {
   queue: QueueItemDisplay[]
   history: HistoryItem[]
   listeners: { count: number; names: string[] }
-  toasts: Toast[]
   wsConnected: boolean
   audioPaused: boolean
   needsPlay: boolean
@@ -56,14 +53,11 @@ interface AppStore {
   setAudioPaused: (paused: boolean) => void
   setNeedsPlay: (needs: boolean) => void
   setAccent: (accent: string) => void
-  addToast: (message: string, level?: Toast['level']) => void
-  removeToast: (id: number) => void
+  addToast: (message: string, level?: ToastLevel) => void
   applyPlaybackState: (msg: PlaybackStateWs) => void
   applyQueueUpdate: (msg: QueueUpdateWs) => void
   applyListeners: (msg: ListenersUpdateWs) => void
 }
-
-let toastSeq = 0
 
 function songKey(p: Playback | null): string {
   return p ? `${p.songId}|${p.title}|${p.streamUrl}` : ''
@@ -76,7 +70,6 @@ export const useStore = create<AppStore>((set, get) => ({
   queue: [],
   history: [],
   listeners: { count: 0, names: [] },
-  toasts: [],
   wsConnected: false,
   audioPaused: false,
   needsPlay: false,
@@ -95,11 +88,8 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   addToast: (message, level = 'info') => {
-    const id = ++toastSeq
-    set((s) => ({ toasts: [...s.toasts, { id, message, level }] }))
-    window.setTimeout(() => get().removeToast(id), 4000)
+    showToast(message, level)
   },
-  removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
   applyPlaybackState: (msg) => {
     const prev = get().playback
@@ -146,5 +136,10 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  applyListeners: (msg) => set({ listeners: { count: msg.count, names: msg.names } }),
+  applyListeners: (msg) => {
+    // Multiple devices can share a display name; dedupe for rendering while
+    // keeping the authoritative server count.
+    const names = Array.from(new Set(msg.names))
+    set({ listeners: { count: msg.count, names } })
+  },
 }))
