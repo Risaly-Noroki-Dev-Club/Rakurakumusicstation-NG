@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Thumbnail } from '@appica/ui-react/thumbnail'
 import { Music } from '@appica/icons-react'
 import { isCoverKnownGood, rememberCoverSuccess } from '@/lib/coverCache'
+import { cn } from '@/lib/cn'
 
 export interface SongArtworkProps {
   /** Whether the track has artwork (song.has_cover / playback.coverUrl != null). */
@@ -64,7 +65,7 @@ export function SongArtwork({ hasCover, coverSrc, alt = '', size = 'md', shape =
       size={size}
       src={showImage ? coverSrc : undefined}
       alt={alt}
-      className={className}
+      className={cn(shape === 'rounded' && 'rounded-lg', className)}
     >
       {showImage ? null : <Music />}
     </Thumbnail>

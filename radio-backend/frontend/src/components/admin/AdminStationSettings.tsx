@@ -169,7 +169,7 @@ export function AdminStationSettings() {
             <h2 className="text-sm font-semibold">电台图标</h2>
             <div className="flex flex-wrap items-center gap-4">
               <Thumbnail
-                size="lg"
+                size="xl"
                 shape="rounded"
                 variant="image"
                 src={iconDisplaySrc || undefined}
@@ -177,7 +177,7 @@ export function AdminStationSettings() {
                 onLoadingStatusChange={(s) => {
                   if (s === 'error') setIconFailed(true)
                 }}
-                className="shrink-0"
+                className="shrink-0 rounded-lg"
               >
                 {(!iconSrc || iconFailed) && <Radio className="size-5" aria-hidden />}
               </Thumbnail>
