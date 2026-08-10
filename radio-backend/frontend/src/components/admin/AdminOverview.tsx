@@ -111,7 +111,10 @@ export function AdminOverview() {
               <TableBody>
                 {history.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium whitespace-nowrap">歌曲 #{item.song_id}</TableCell>
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {item.song?.title || `歌曲 #${item.song_id ?? item.song?.id ?? '?'}`}
+                      {item.song?.artist ? <span className="text-foreground-muted"> · {item.song.artist}</span> : null}
+                    </TableCell>
                     <TableCell className="text-foreground-muted whitespace-nowrap">
                       {formatDateTime(item.played_at)}
                     </TableCell>

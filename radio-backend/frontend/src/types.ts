@@ -62,9 +62,18 @@ export interface QueueItemDisplay {
 
 export interface HistoryItem {
   id: number
-  song_id: number
-  device_user_id: number | null
+  /** Top-level song id — absent on old backends; prefer song.title. */
+  song_id?: number
+  device_user_id?: number | null
   played_at: string
+  /** Embedded song summary; title/artist present on all backend versions. */
+  song?: {
+    id: number
+    title: string
+    artist: string
+    album?: string | null
+    duration_ms?: number
+  }
 }
 
 export interface NowPlaying {
