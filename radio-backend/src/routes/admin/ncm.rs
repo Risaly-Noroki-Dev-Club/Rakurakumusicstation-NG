@@ -3,7 +3,7 @@ use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, ImportPlaylistRequest, ImportPlaylistResponse, NcmImportTask};
 use crate::routes::admin::get_admin;
-use crate::services::ncm::{cookie, get_playlist_track_all, NcmClient};
+use crate::services::ncm::{cookie, get_playlist_track_all, get_song_detail, NcmClient};
 use axum::{extract::State, http::HeaderMap, Json};
 use std::sync::Arc;
 
@@ -136,7 +136,16 @@ fn extract_playlist_id(link: &str) -> Option<i64> {
     link.trim().parse().ok()
 }
 
-/// POST /api/admin/ncm/playlist — 解析网易云歌单链接并写入导入任务表
+/// 从网易云单曲链接中提取歌曲 id（`song?id=…`）或裸数字。
+fn extract_song_id(link: &str) -> Option<i64> {
+    let re = regex::Regex::new(r"song\?id=(\d+)").ok()?;
+    if let Some(caps) = re.captures(link) {
+        return caps.get(1)?.as_str().parse().ok();
+    }
+    link.trim().parse().ok()
+}
+
+/// POST /api/admin/ncm/playlist — 解析网易云歌单/单曲链接并写入导入任务表
 pub async fn import_playlist(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -144,21 +153,38 @@ pub async fn import_playlist(
 ) -> Result<Json<ApiResponse<ImportPlaylistResponse>>, AppError> {
     let _admin = get_admin(&state, &headers).await?;
 
-    let playlist_id = extract_playlist_id(&body.link)
-        .ok_or_else(|| AppError::BadRequest("无法解析歌单链接".into()))?;
-
     let ncm_cookie = read_admin_ncm_cookie();
     let client = NcmClient::new(None, ncm_cookie);
 
-    let tracks = get_playlist_track_all(&client, playlist_id)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("获取歌单失败: {}", e)))?;
+    // 统一为 (song_id, name, artists) 列表：歌单链接 → 全曲目；单曲链接 → 1 首。
+    let tracks = if let Some(song_id) = extract_song_id(&body.link) {
+        let details = get_song_detail(&client, &[song_id])
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("获取歌曲失败: {}", e)))?;
+        details
+            .into_iter()
+            .filter(|d| d.id > 0)
+            .map(|d| (d.id, d.name, d.ar))
+            .collect::<Vec<_>>()
+    } else {
+        let playlist_id = extract_playlist_id(&body.link)
+            .ok_or_else(|| AppError::BadRequest("无法解析歌单/歌曲链接".into()))?;
+        get_playlist_track_all(&client, playlist_id)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("获取歌单失败: {}", e)))?
+            .into_iter()
+            .map(|t| (t.id, t.name, t.ar))
+            .collect::<Vec<_>>()
+    };
+
+    if tracks.is_empty() {
+        return Err(AppError::BadRequest("未解析到任何歌曲".into()));
+    }
 
     let batch_id = uuid::Uuid::new_v4().to_string();
 
-    for track in &tracks {
-        let artist_names = track
-            .ar
+    for (song_id, name, artists) in &tracks {
+        let artist_names = artists
             .iter()
             .map(|a| a.name.clone())
             .collect::<Vec<_>>()
@@ -166,8 +192,8 @@ pub async fn import_playlist(
         sqlx::query(
             "INSERT INTO ncm_import_tasks (song_id, name, artists, batch_id) VALUES (?, ?, ?, ?)",
         )
-        .bind(track.id)
-        .bind(&track.name)
+        .bind(song_id)
+        .bind(name)
         .bind(&artist_names)
         .bind(&batch_id)
         .execute(&state.db)
