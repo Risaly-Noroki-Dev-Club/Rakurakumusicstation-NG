@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg)
 
-> Rust 全栈：嵌入式音频引擎 + Web 后端 + Vue 单页面前端。
+> Rust 全栈：嵌入式音频引擎 + Web 后端 + React 单页面前端。
 > 一个自托管的网络电台，设备免密认证，WebSocket 实时同步，内嵌 Rust 音频引擎。
 
 **v3 大版本 "Adventure Island"**
@@ -48,11 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/Risaly-Noroki-Dev-Club/Rakurakumusi
 # 依赖 (Debian/Ubuntu)
 apt install ffmpeg
 
-# 构建前端静态文件 (需要 Node.js)
-cd radio-backend/frontend && npm run build
-cd ../..
-
-# 构建发布包 (需要 Rust toolchain)
+# 一键构建前端 + 后端 + 发布目录（需要 Node.js ≥ 18 与 Rust toolchain）
 ./build_release.sh
 
 # 放入音乐
@@ -78,36 +74,119 @@ cd dist && ./stop.sh
 
 ---
 
+## 构建流程（完整说明）
+
+```
+                        ┌──────────────────────────────────────────────┐
+                        │                build_release.sh               │
+                        │                                              │
+  radio-backend/frontend│  1. npm ci            （安装依赖）            │
+  ─────────────────────▶│  2. npm run build     （前端生产构建）         │
+                        │     ├─ prebuild: node scripts/fetch-fonts.mjs│
+                        │     │    从 CDN 下载可变字体到 src/assets/fonts│
+                        │     ├─ tsc --noEmit    （类型检查）           │
+                        │     └─ vite build      → radio-backend/static/│
+                        │                                              │
+  radio-backend         │  3. cargo build --release                    │
+  ─────────────────────▶│     → 单二进制（axum + 内嵌 radio-engine）    │
+                        │                                              │
+                        │  4. 组装 dist/                               │
+                        │     ├─ 二进制（经临时文件复制，避免 ETXTBSY）  │
+                        │     ├─ static/（前端产物）                    │
+                        │     ├─ config.toml（仅缺失时生成）            │
+                        │     ├─ start.sh / stop.sh（生成）             │
+                        │     └─ 保留已有 media/ 与 data/               │
+                        └──────────────────────────────────────────────┘
+```
+
+### 前端构建细节
+
+```bash
+cd radio-backend/frontend
+npm ci                          # 安装依赖
+npm run build                   # = prebuild + tsc --noEmit + vite build
+```
+
+1. **prebuild — 字体获取**（`scripts/fetch-fonts.mjs`）：构建/dev 前从 CDN 下载
+   Inter Variable 与 JetBrains Mono Variable 的可变字重 woff2 子集（共 13 个文件）
+   到 `src/assets/fonts/`（gitignore，不入库）：
+
+   - 主源：`fastly.jsdelivr.net`（字节与 @fontsource-variable 包一致，国内访问快）
+   - 回退：`gcore.jsdelivr.net` → `unpkg.com`
+   - 幂等：文件已存在且校验通过（wOF2 魔数）则跳过；部分失败回退系统字体；
+     全部失败才中断构建
+   - 字体声明在 `src/fonts.css`（`@font-face` + unicode-range），`url()` 相对路径
+     由 Vite 指纹化并加 base 前缀，子路径部署（`/radio/`）自动正确
+
+2. **类型检查**：`tsc --noEmit`（strict，全绿才继续）。
+
+3. **Vite 构建**：产物输出到 `../static/`（即 `radio-backend/static/`），由后端
+   `ServeDir::new("static")` 托管；`/` 未知路径回退到 `static/index.html` 进入前端路由。
+
+> 离线构建：字体已缓存则直接复用；无缓存时构建继续但界面回退系统字体
+> （`--font-sans` 栈保留 fallback），构建日志会提示。
+
+### 后端构建细节
+
+```bash
+cd radio-backend && cargo build --release
+```
+
+单二进制包含：Axum 业务层 + 内嵌 `radio-engine`（ffmpeg 解码 → 环形缓冲 → `/stream`）。
+运行时依赖 `ffmpeg`（播放）与 `ffprobe`（时长/封面探测，仅入库扫描与首次封面请求时调用）。
+
+### 发布目录（dist/）
+
+`./build_release.sh` 产出可独立运行的 `dist/`：
+
+- `dist/rakuraku-music-station`（二进制）
+- `dist/static/`（前端产物）
+- `dist/config.toml`（缺失时由 `config.toml.example` 生成）
+- `dist/media/`、`dist/data/`（已有数据**保留**不覆盖）
+- 二进制复制经过临时文件，避免覆盖正在运行的进程时 `ETXTBSY`
+
+### 本地开发
+
+```bash
+cd radio-backend/frontend
+npm run dev          # = predev（字体下载）+ vite dev server :5173
+```
+
+- dev server 将 `/api`、`/ws`、`/stream`、`/manifest.json`、`/site-icon` 代理到
+  后端 `localhost:2241`（后端需另行启动）。
+- 代理后端可切换：`VITE_PROXY_TARGET=https://your-host npm run dev`（如远程演示站）。
+- 子路径开发：`VITE_BASE_PATH=/radio/ npm run dev`，需与后端 `base_path` 一致。
+
+---
+
 ## 使用指南
 
 ### 首次启动
 
 浏览器打开 `http://localhost:2241`，设备自动获得 `device_token` Cookie。无需注册。
 
-获取管理员权限：在「设置」页面输入 `config.toml` 中的 `admin_setup_token` 申请提权。
+获取管理员权限：设置页 → 设备 → 盾牌图标 → 输入 `config.toml` 中的
+`admin_setup_token` 提权。
 
 ### 页面导航
 
 | 页面 | 路径 | 功能 |
 |------|------|------|
-| **播放器** | `/` | 封面、进度条、同步歌词、播放控制 |
-| **曲库** | `/library` | 搜索歌曲、点歌、上传、歌单、网易云账号绑定 |
-| **队列** | `/up-next` | 待播队列；管理员可查看播放历史；`/queue` 会兼容跳转到此页 |
-| **设置** | `/settings` | 显示名称、亮色/暗色/自动主题、管理员提权 |
+| **播放器** | `/`（首页） | 封面、进度条、同步歌词、播放控制；移动端三卡滑动分页；顶部「正在收听」听众条（可展开）；右侧点歌队列（管理员可移除/排序） |
+| **曲库** | `/library` | 歌曲搜索（分页加载）、本地收藏（localStorage，点击即存） |
+| **设置** | `/settings` | 设备（改名/提权/退出）、外观（深浅色 + Material You 动态主题色）、桌面通知、网易云账号；管理员另有「电台管理」分区 |
 
-页面顶部有音频进度条常驻，曲目封面、歌词通过 WebSocket 实时同步。
+### 主题
+
+设置 → 外观：
+
+- 主题：浅色 / 深色 / 跟随系统
+- 主题色：9 个预设种子色 + 自定义色，基于 **Material You 动态取色**
+  （`@material/material-color-utilities`）自动生成浅色/深色两套手调配色
 
 ### 点歌
 
-曲库搜索 → 点击 **📻 点歌** 加入队列。请求队列优先于文件夹循环，点歌后会在当前曲目结束后立即播放。
-
-### 上传歌曲
-
-曲库页面下方 **⬆️ 上传歌曲**，支持 MP3 / FLAC / WAV / OGG / M4A / AAC（最大 100 MB）。上传后自动加入曲库并刷新播放队列。
-
-### 网易云账号
-
-曲库页面下方 **☁️ 网易云账号**，可填入个人网易云 Cookie 或手机号 + 密码。每设备独立存储，可下载 VIP 歌曲。
+曲库搜索 → 点击 ▶ 点歌加入队列。请求队列优先于文件夹循环，点歌后会在当前曲目结束后立即播放。
 
 ### 外部播放器
 
@@ -117,36 +196,34 @@ VLC、mpv、ffplay 可直接播放 `http://localhost:2241/stream`。
 
 ## 管理员指南
 
-管理员在侧栏看到 **🛡️ 管理** 入口。
+管理员在设置页看到 **电台管理** 分区（不再有独立管理页）。
 
 ### 管理面板
 
 | 子标签 | 功能 |
 |--------|------|
-| 📊 统计 | 用户数、歌曲数、队列数、歌单数 |
-| 👥 用户 | 设备列表、封禁/解封、提权/降权、操作日志 |
-| 🎵 歌曲 | 歌曲列表、删除、重新扫描、上一首/下一首 |
-| ⬆️ 上传 | 上传音频文件 |
-| ⬇️ 下载 | 批量网易云下载（粘贴歌单，SSE 实时日志） |
-| ☁️ 网易云 | 全局网易云账号配置 |
-| ⚙️ 设置 | 电台名称、副标题、主题色 |
+| 📊 概览 | 统计卡片、管理日志、播放历史 |
+| 🎵 歌曲 | 歌曲列表、删除、试听、重新扫描、上传 |
+| 👥 用户 | 设备列表、封禁/解封、提权/降权 |
+| ⬇️ 下载 | 批量下载（粘贴链接，轮询实时进度） |
+| ☁️ 网易云 | 全局网易云账号配置、歌单导入 |
+| ⚙️ 电台设置 | 电台名称、副标题、描述、站点图标上传 |
+
+播放器与点歌队列中的**切歌（上一首/下一首）**、**队列移除/排序** 按钮仅管理员可见。
 
 ### 批量下载
 
-管理 → 下载，输入歌单（每行 `艺术家 - 歌名`），选择音质和格式，即可通过原生 Rust NCM 引擎批量下载。进度通过 SSE 实时推送到页面。
-
-### 提权设备
-
-用户管理 → 点击 **提权** 升级为管理员；**降权** 撤销。
-
-SQL 备选方案：
-```bash
-sqlite3 dist/data/radio.db "UPDATE device_users SET role='admin' WHERE id=设备ID;"
-```
+电台管理 → 下载，粘贴链接（每行一条），选择音质/格式，后端原生 Rust NCM 引擎批量下载。
 
 ### 重新扫描
 
-直接放文件到 `media/` 后，歌曲管理中点击 **🔄 重新扫描**（需要 ffprobe）。
+直接放文件到 `media/` 后，电台管理 → 歌曲 → **重新扫描**。新入库歌曲会**立即后台
+预热封面缓存**（ffprobe 探测 → 提取或写 missing 标记），首个封面请求直接命中缓存。
+
+### 上传图标
+
+电台管理 → 电台设置 → 上传站点图标（PNG/SVG/WebP/JPEG，≤ 2MB）。上传后浏览器
+标签页 favicon（`/site-icon`）与 PWA manifest 图标自动跟随；未上传时使用默认电台图标。
 
 ---
 
@@ -157,11 +234,12 @@ sqlite3 dist/data/radio.db "UPDATE device_users SET role='admin' WHERE id=设备
 | 无法连接 | 确认启动：`cd dist && ./start.sh`；查看日志 `tail -f dist/server.log` |
 | 无声音 | 确认 `media/` 有音频文件；检查 `/api/station` 的 `stream_url` |
 | 反代后流地址不正确 | 确保代理传递 `Host` / `X-Forwarded-*` 头，或 `stream_base` 设为绝对 URL |
-| 曲库无歌曲 | 管理面板点击 **重新扫描**，或重启服务 |
+| 曲库无歌曲 | 电台管理 → 重新扫描，或重启服务 |
 | 无法获取管理员 | 确认 `dist/config.toml` 中 `admin_setup_token` 已设置 |
 | 设置不生效 | 需重启服务 (`./stop.sh && ./start.sh`) |
-| 封面不显示 | 需内嵌封面(ID3)；缺失时显示默认音符图标 |
-| 歌词不显示 | 仅支持同名 `.lrc` 放同目录；后端自动解析推送 |
+| 封面不显示 | 需内嵌封面(ID3) 或同目录 `cover.jpg/png`；缺失时显示音符图标 |
+| 歌词不显示 | 仅支持同名 `.lrc` 放同目录；后端自动解析推送（WS 重连后自动补发全量歌词） |
+| 构建时字体下载失败 | 检查网络；已缓存字体直接复用，无缓存时回退系统字体，日志有提示 |
 
 ---
 
@@ -180,7 +258,7 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
              │  WebSocket + 歌词 + 队列管理   │
              └──────────────────────────────┘
                              │
-                      Vue SPA 静态文件 (`radio-backend/static/`)
+                  React SPA 静态文件 (`radio-backend/static/`)
 ```
 
 ### 服务划分
@@ -189,21 +267,21 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 |------|------|------|
 | 音频引擎 | Rust | `radio-engine/`，ffmpeg 解码 → 环形缓冲 → async 推流 |
 | 业务后端 | Rust | `radio-backend/`，REST API、WebSocket、SQLite、静态文件服务 |
-| Web 前端 | Vue 3 + TypeScript | `radio-backend/frontend/`，Vite 构建到 `radio-backend/static/` |
+| Web 前端 | React 19 + TypeScript | `radio-backend/frontend/`，Appica UI（Base UI + Tailwind v4）组件库，zustand 状态，Vite 构建到 `radio-backend/static/` |
 
-### v3.0.0 主要特性
+### 主要特性
 
 | 特性 | 说明 |
 |------|------|
-| **单页面前端** | Vue SPA 由后端静态托管；页面路径通过 `static/index.html` fallback 进入前端路由 |
-| **公开曲库** | 曲库页默认展示全站歌曲、总数和分页加载，搜索复用同一公开接口 |
-| **主题模式** | 支持自动/浅色/深色，自动模式跟随系统主题并同步 Vuetify 与自定义 CSS 变量 |
-| **非线性动效** | 列表、迷你播放器、背景和主题切换使用强调曲线动效，并尊重 reduced-motion |
+| **单页面前端** | React SPA 由后端静态托管；未知路径回退 `static/index.html` 进入前端路由 |
+| **实时同步** | 引擎状态 500ms 经 WebSocket 推送；切歌首帧携带全量歌词，新连接自动补发 |
+| **Material You 主题** | 种子色经动态取色生成浅/深两套配色，深浅色独立适配 |
+| **移动端分页** | 播放器 / 歌词 / 队列三卡滑动分页，桌面端多栏布局 |
+| **本地收藏** | 收藏存 localStorage 快照，点击即存即取，无网络延迟 |
 | **请求队列** | 用户点歌优先级高于文件夹循环；Wake/Notify 机制即时响应 |
-| **批量下载** | 管理面板粘贴歌单批量下载，SSE 推送实时进度 |
+| **封面缓存** | 入库即预热（ffprobe 探测 + 提取/标记），请求命中缓存；前端按 `has_cover` 门控 |
 | **stream_base** | 自动检测反代(X-Forwarded-*)构建流地址，也支持相对/绝对路径 |
-| **base_path** | 后端可原生挂载到子路径（如 `/radio`），前端路由、PWA、API、WebSocket、音频流同步适配 |
-| **路径标准化** | engine 内部统一相对路径存储，`resolve_media_path` 处理绝对/相对 |
+| **base_path** | 后端可原生挂载到子路径（如 `/radio`），前端路由、API、WebSocket、音频流同步适配 |
 | **歌词预解析** | 后端 LRC → 结构化数组 WebSocket 推送，前端零解析 |
 | **NCM 导入任务** | 网易云下载状态持久化到 SQLite，支持掉线恢复 |
 
@@ -213,27 +291,25 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| `GET` | `/` `/library` `/up-next` `/queue` `/settings` `/admin/*` | 无 | Vue SPA 入口（`/queue` 兼容跳转到 `/up-next`） |
-| `GET` | `/api/station` | 无 | 电台信息 |
-| `GET` | `/api/now-playing` | 无 | 当前曲目 |
-| `GET` | `/api/songs?q=` | 无 | 搜索歌曲 |
+| `GET` | `/` `/player` `/library` `/settings` | 无 | React SPA 入口（后端 fallback 到 `static/index.html`） |
+| `GET` | `/api/station` | 无 | 电台信息（含 stream_url、ws_url、needs_setup） |
+| `GET` | `/api/now-playing` | 无 | 当前曲目快照 |
+| `GET` | `/api/songs?q=&limit=&offset=` | 无 | 搜索/分页歌曲 |
 | `GET` | `/api/songs/:id` | 无 | 歌曲详情 |
-| `GET` | `/api/songs/:id/cover` | 无 | 封面图片 |
+| `GET` | `/api/songs/:id/cover` | 无 | 封面（无封面时快速返回占位 SVG） |
 | `GET` | `/api/songs/:id/download` | Device | 下载歌曲 |
-| `POST` | `/api/songs/upload` | Device | 上传歌曲 |
-| `GET` | `/api/queue` | 无 | 待播队列；普通用户不返回真实点歌人 |
+| `GET` | `/api/queue` | 无 | 待播队列（含真实 song id / has_cover） |
 | `GET` | `/api/queue/history` | Admin | 播放历史 |
 | `POST` | `/api/queue` | Device | 点歌 |
-| `GET` `POST` `DELETE` | `/api/playlists` | Device | 歌单管理 |
 | `GET` `POST` | `/api/ncm` | Device | 个人网易云账号 |
-| `POST` | `/api/ncm/test` | Device | 测试网易云登录 |
-| `POST` | `/api/auth/name` | Device | 修改显示名称 |
+| `POST` | `/api/auth/name` | Device | 设置/修改显示名称 |
 | `POST` | `/api/auth/claim-admin` | 无 | 管理员提权(token) |
-| `*` | `/api/admin/*` | Admin | 管理端点 |
-| `WS` | `/ws` | Device (query) | WebSocket 实时推送 |
-| `GET` | `/stream` | 无 | 音频流 (`audio/mpeg`) |
+| `*` | `/api/admin/*` | Admin | 管理端点（设置/用户/歌曲/上传/下载/NCM/统计/日志） |
+| `WS` | `/ws` | Device (cookie) | WebSocket 实时推送（回 `"pong"` 保活） |
+| `GET` | `/stream` | 无 | 音频流 (`audio/mpeg`，外部播放器可直接播放) |
+| `GET` | `/manifest.json` `/site-icon` | 无 | PWA manifest / 站点图标（未上传时返回默认 SVG） |
 
-`/api/now-playing.position_ms` 是电台引擎进度，保留给外部集成兼容使用。官方前端不会用它暴露用户侧的点歌历史。播放历史和真实点歌人只对管理员开放。
+`/api/now-playing.position_ms` 是电台引擎进度，保留给外部集成兼容使用。播放历史和真实点歌人只对管理员开放。
 
 ---
 
@@ -245,9 +321,12 @@ media/  ──ffmpeg──▶  RingBuffer (radio-engine)  ──notify──▶ 
 [audio_engine]    # media_path、stream_base（auto / 相对路径 / 绝对 URL）
 [device]          # cookie_max_age_days、admin_setup_token
 [queue]           # max_size、rate_limit
-[station]         # name、subtitle、主题色
+[station]         # name、short_name、subtitle、description、icon_path
 [logging]         # level
+[ncm]             # device_id、download_concurrency
 ```
+
+所有配置均可通过同名环境变量覆盖（`RADIO_*` 前缀），见 `radio-backend/.env.example`。
 
 ### 子路径部署 (`base_path`)
 
@@ -284,33 +363,34 @@ VITE_BASE_PATH=/radio/ npm run build
 
 ### PWA
 
-前端已支持根路径和子路径 PWA：`manifest.json`、`sw.js`、service worker scope、Vue Router base 都由 `VITE_BASE_PATH` 控制。反代 HTTPS 域名下应确认：
+前端支持根路径和子路径 PWA：`manifest.json` 由后端动态生成（含站点图标）。
+反代 HTTPS 域名下应确认：
 
 - `/manifest.json` 或 `<base_path>/manifest.json` 返回 JSON。
-- `/sw.js` 或 `<base_path>/sw.js` 返回 JavaScript，不应被反代改写成 HTML。
-- `icon.svg`、`icon-192.png`、`icon-512.png` 可访问。
-- 如果更换 `base_path`，必须重新运行对应 `VITE_BASE_PATH` 的前端构建。
+- `icon.svg`、`/site-icon` 可访问（未上传站点图标时返回默认 SVG）。
+
+如果更换 `base_path`，必须重新运行对应 `VITE_BASE_PATH` 的前端构建。
 
 ---
 
 ## 构建手册
 
 ```bash
-# 依赖: ffmpeg, Rust toolchain
+# 依赖: ffmpeg, Node.js ≥ 18, Rust toolchain
 
-# 前端生产构建（会更新 radio-backend/static/）
-cd radio-backend/frontend && npm run build
-cd ../..
-
-# 子路径部署示例（需与 [server].base_path 一致）
-cd radio-backend/frontend && VITE_BASE_PATH=/radio/ npm run build
-cd ../..
-
-# 一键打包发布目录（复制现有 static/，不会自动运行 Vite）
+# 一键完整发布（前端 + 后端 + dist/ 组装）
 ./build_release.sh
+# 跳过前端（仅编译后端 + 组装）
+./build_release.sh --skip-frontend
 
-# 仅 Rust
+# 仅前端（更新 radio-backend/static/；构建时自动下载字体）
+cd radio-backend/frontend && npm run build
+
+# 仅后端
 cd radio-backend && cargo build --release
+
+# 引擎单元测试
+cd radio-engine && cargo test ring_buffer
 ```
 
 支持格式: MP3、WAV、FLAC、OGG、M4A、AAC
@@ -330,7 +410,8 @@ MIT
 - 知夏 (Zhixia) — 项目协作者
 - [FFmpeg](https://ffmpeg.org/) — 音频解码
 - [Axum](https://github.com/tokio-rs/axum) — Rust HTTP 框架
-- [Vue](https://vuejs.org/) / [Vite](https://vite.dev/) — Web 前端
+- [React](https://react.dev/) / [Appica UI](https://appica.dev/) / [Vite](https://vite.dev/) — Web 前端
+- [Material Color Utilities](https://github.com/material-foundation/material-color-utilities) — Material You 动态取色
 - [SQLx](https://github.com/launchbadge/sqlx) — Rust SQL 工具集
 - [Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) — 网易云 API 参考 (GPL-3.0)
 
