@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { Button } from '@appica/ui-react/button'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@appica/ui-react/context-menu'
 import { Spinner } from '@appica/ui-react/spinner'
 import { FileText, Heart, HeartFilled, PlayerPlay } from '@appica/icons-react'
 import { addToQueue, coverUrl } from '@/api'
@@ -17,8 +23,8 @@ function errorMessage(e: unknown): string {
 }
 
 /**
- * One song row: cover, title/artist, duration, lyrics indicator and row
- * actions (点歌 / 本地收藏). Favorites live in localStorage via the store.
+ * 一首歌的行。操作收纳在 Context Menu（桌面右键 / 移动端长按）：
+ * 点歌、收藏。行本体点击 = 点歌。
  */
 export function SongRow({ song }: SongRowProps) {
   const addToast = useStore((s) => s.addToast)
@@ -41,35 +47,48 @@ export function SongRow({ song }: SongRowProps) {
   }
 
   return (
-    <div className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-background-subtle sm:gap-3">
-      <SongArtwork hasCover={song.has_cover} coverSrc={coverUrl(song.id)} size="md" className="shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <p className="min-w-0 truncate text-sm font-medium">{song.title}</p>
-          {song.has_lyrics && (
-            <FileText aria-label="有歌词" className="size-3.5 shrink-0 text-foreground-subtle" />
-          )}
-        </div>
-        <p className="min-w-0 truncate text-xs text-foreground-muted">
-          {song.artist}
-          {song.album ? ` · ${song.album}` : ''}
-        </p>
-      </div>
-      <span className="shrink-0 text-xs tabular-nums text-foreground-subtle">{formatTime(song.duration_ms)}</span>
-      <div className="flex shrink-0 items-center">
-        <Button variant="ghost" size="icon-md" aria-label="点歌" disabled={queuing} onClick={() => void handleQueue()}>
-          {queuing ? <Spinner className="size-4.5" currentColor /> : <PlayerPlay />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-md"
-          aria-label={favorited ? '取消收藏' : '收藏'}
-          aria-pressed={favorited}
-          onClick={() => toggleFavorite(song)}
+    <ContextMenu>
+      <ContextMenuTrigger className="block w-full">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={`点歌：${song.title}`}
+          onClick={() => void handleQueue()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              void handleQueue()
+            }
+          }}
+          className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-background-subtle sm:gap-3"
         >
-          {favorited ? <HeartFilled className="text-error" /> : <Heart />}
-        </Button>
-      </div>
-    </div>
+          <SongArtwork hasCover={song.has_cover} coverSrc={coverUrl(song.id)} size="md" className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="min-w-0 truncate text-sm font-medium">{song.title}</p>
+              {song.has_lyrics && (
+                <FileText aria-label="有歌词" className="size-3.5 shrink-0 text-foreground-subtle" />
+              )}
+            </div>
+            <p className="min-w-0 truncate text-xs text-foreground-muted">
+              {song.artist}
+              {song.album ? ` · ${song.album}` : ''}
+            </p>
+          </div>
+          <span className="shrink-0 text-xs tabular-nums text-foreground-subtle">{formatTime(song.duration_ms)}</span>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-44">
+        <ContextMenuItem disabled={queuing} onClick={() => void handleQueue()}>
+          {queuing ? <Spinner className="size-4" currentColor /> : <PlayerPlay data-icon="start" />}
+          点歌
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => toggleFavorite(song)}>
+          {favorited ? <HeartFilled data-icon="start" className="text-error" /> : <Heart data-icon="start" />}
+          {favorited ? '取消收藏' : '收藏'}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

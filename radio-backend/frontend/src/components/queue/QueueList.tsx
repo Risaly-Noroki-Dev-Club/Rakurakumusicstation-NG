@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertDialog,
-  AlertDialogTrigger,
   AlertDialogContent,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -10,10 +9,17 @@ import {
   AlertDialogFooter,
   AlertDialogClose,
 } from '@appica/ui-react/alert-dialog'
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@appica/ui-react/context-menu'
 import { Badge } from '@appica/ui-react/badge'
 import { Button } from '@appica/ui-react/button'
 import { Skeleton } from '@appica/ui-react/skeleton'
-import { ChevronDown, ChevronUp, Library, Loader, Music, Trash } from '@appica/icons-react'
+import { Library, Loader, Music, Trash } from '@appica/icons-react'
 import { fetchQueue, moveQueueItem, removeQueueItem, coverUrl } from '@/api'
 import { SongArtwork } from '@/components/SongArtwork'
 import { loadSongIndex, resolveSong } from '@/lib/songIndex'
@@ -39,51 +45,9 @@ function itemTitle(item: QueueItemDisplay): string {
   return item.song?.title ?? '未知歌曲'
 }
 
-/** Trash button + AlertDialog confirm; closes only after the request settles. */
-function RemoveItemButton({ item, onRemoved }: { item: QueueItemDisplay; onRemoved: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-
-  const confirm = async () => {
-    setBusy(true)
-    try {
-      // NOTE: backend quirk — item.song.id is always 0; use item.id.
-      await removeQueueItem(item.id)
-      useStore.getState().addToast('已从队列移除', 'success' as Toast['level'])
-      onRemoved()
-    } catch (err) {
-      useStore.getState().addToast(err instanceof Error ? err.message : '移除失败', 'error')
-    } finally {
-      setBusy(false)
-      setOpen(false)
-    }
-  }
-
-  return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`移除 ${itemTitle(item)}`} />}>
-        <Trash />
-      </AlertDialogTrigger>
-      <AlertDialogContent className="sm:w-110">
-        <AlertDialogHeader>
-          <AlertDialogTitle>移除歌曲？</AlertDialogTitle>
-          <AlertDialogDescription>确定要将「{itemTitle(item)}」从队列中移除吗？</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" disabled={busy}>取消</Button>} />
-          <Button variant="destructive" onClick={confirm} disabled={busy}>
-            {busy ? <Loader data-icon="start" className="animate-spin" /> : <Trash data-icon="start" />}
-            移除
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  )
-}
-
 /**
- * Queue list. Renders the store's queue (or an explicit `items` override)
- * with admin remove/move actions; mutations refetch and push into the store.
+ * Queue list. Renders the store's queue (or an explicit `items` override).
+ * 管理员的排序/移除操作收纳在 Context Menu（右键/长按）中。
  */
 export function QueueList({ items, onChanged }: QueueListProps) {
   const storeQueue = useStore((s) => s.queue)
@@ -92,6 +56,8 @@ export function QueueList({ items, onChanged }: QueueListProps) {
   const [loaded, setLoaded] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
   const [indexReady, setIndexReady] = useState(false)
+  const [removeTarget, setRemoveTarget] = useState<QueueItemDisplay | null>(null)
+  const [removing, setRemoving] = useState(false)
 
   // 兜底：后端尚未部署真实 song.id 修复时（id 恒为 0），按 title|artist
   // 从曲库索引解析真实 id 以加载封面；新后端 id>0 时 resolveSong 直接返回。
@@ -147,6 +113,22 @@ export function QueueList({ items, onChanged }: QueueListProps) {
     }
   }
 
+  const confirmRemove = async () => {
+    if (!removeTarget || removing) return
+    setRemoving(true)
+    try {
+      // NOTE: backend quirk — item.song.id is always 0; use item.id.
+      await removeQueueItem(removeTarget.id)
+      useStore.getState().addToast('已从队列移除', 'success' as Toast['level'])
+      refresh()
+    } catch (err) {
+      useStore.getState().addToast(err instanceof Error ? err.message : '移除失败', 'error')
+    } finally {
+      setRemoving(false)
+      setRemoveTarget(null)
+    }
+  }
+
   if (!loaded && queue.length === 0) {
     return (
       <ul
@@ -182,63 +164,88 @@ export function QueueList({ items, onChanged }: QueueListProps) {
   }
 
   return (
-    <ul
-      aria-label="点歌队列"
-      className="divide-border-muted divide-y overflow-hidden rounded-xl border border-border-muted bg-background"
-    >
-      {queue.map((item, index) => {
-        const meta = STATUS_META[item.status] ?? STATUS_META.pending
-        // 后端对非管理员点歌将 requested_by 置为 "匿名"——不展示。
-        const requester = item.requested_by && item.requested_by !== '匿名' ? item.requested_by : ''
-        const secondary = [item.song?.artist, requester].filter(Boolean).join(' · ')
-        // 统一封面行为：id>0（新后端）直接用；id=0（旧后端）用索引匹配。
-        const realSong = indexReady ? resolveSong(item.song) : null
-        const artworkSong = realSong ?? item.song
-        return (
-          <li key={item.id} className="flex items-center gap-3 px-3 py-3 sm:px-4">
-            <span className="text-foreground-muted w-6 shrink-0 text-center text-xs font-medium tabular-nums">
-              {item.position}
-            </span>
-            <SongArtwork
-              hasCover={artworkSong?.has_cover ?? false}
-              coverSrc={artworkSong && artworkSong.id > 0 ? coverUrl(artworkSong.id) : undefined}
-              size="sm"
-              className="shrink-0"
-            />
-            <div className="min-w-0 flex-1">
-              <p className="text-foreground-intense truncate text-sm font-medium">{itemTitle(item)}</p>
-              {secondary && <p className="text-foreground-muted truncate text-xs">{secondary}</p>}
-              <p className="text-foreground-subtle truncate text-xs">{formatDateTime(item.added_at)}</p>
-            </div>
-            <Badge variant={meta.variant} size="sm" className="shrink-0">
-              {meta.label}
-            </Badge>
-            {isAdmin && (
-              <div className="flex shrink-0 items-center gap-0.5">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`上移 ${itemTitle(item)}`}
-                  disabled={busyId !== null || index === 0}
-                  onClick={() => void handleMove(item, -1)}
-                >
-                  <ChevronUp />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`下移 ${itemTitle(item)}`}
-                  disabled={busyId !== null || index === queue.length - 1}
-                  onClick={() => void handleMove(item, 1)}
-                >
-                  <ChevronDown />
-                </Button>
-                <RemoveItemButton item={item} onRemoved={refresh} />
-              </div>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+    <>
+      <ul
+        aria-label="点歌队列"
+        className="divide-border-muted divide-y overflow-hidden rounded-xl border border-border-muted bg-background"
+      >
+        {queue.map((item, index) => {
+          const meta = STATUS_META[item.status] ?? STATUS_META.pending
+          // 后端对非管理员点歌将 requested_by 置为 "匿名"——不展示。
+          const requester = item.requested_by && item.requested_by !== '匿名' ? item.requested_by : ''
+          const secondary = [item.song?.artist, requester].filter(Boolean).join(' · ')
+          // 统一封面行为：id>0（新后端）直接用；id=0（旧后端）用索引匹配。
+          const realSong = indexReady ? resolveSong(item.song) : null
+          const artworkSong = realSong ?? item.song
+          return (
+            <li key={item.id} className="flex items-center gap-3 px-3 py-3 sm:px-4">
+              <span className="text-foreground-muted w-6 shrink-0 text-center text-xs font-medium tabular-nums">
+                {item.position}
+              </span>
+              <ContextMenu>
+                <ContextMenuTrigger className="flex min-w-0 flex-1 items-center gap-3">
+                  <SongArtwork
+                    hasCover={artworkSong?.has_cover ?? false}
+                    coverSrc={artworkSong && artworkSong.id > 0 ? coverUrl(artworkSong.id) : undefined}
+                    size="sm"
+                    className="shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground-intense truncate text-sm font-medium">{itemTitle(item)}</p>
+                    {secondary && <p className="text-foreground-muted truncate text-xs">{secondary}</p>}
+                    <p className="text-foreground-subtle truncate text-xs">{formatDateTime(item.added_at)}</p>
+                  </div>
+                  <Badge variant={meta.variant} size="sm" className="shrink-0">
+                    {meta.label}
+                  </Badge>
+                </ContextMenuTrigger>
+                {isAdmin && (
+                  <ContextMenuContent className="w-40">
+                    <ContextMenuItem
+                      disabled={busyId !== null || index === 0}
+                      onClick={() => void handleMove(item, -1)}
+                    >
+                      上移
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      disabled={busyId !== null || index === queue.length - 1}
+                      onClick={() => void handleMove(item, 1)}
+                    >
+                      下移
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      className="text-error-emphasis! data-highlighted:before:bg-error-subtle!"
+                      onClick={() => setRemoveTarget(item)}
+                    >
+                      <Trash data-icon="start" />
+                      移除
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                )}
+              </ContextMenu>
+            </li>
+          )
+        })}
+      </ul>
+
+      <AlertDialog open={removeTarget !== null} onOpenChange={(open) => !open && setRemoveTarget(null)}>
+        <AlertDialogContent className="sm:w-110">
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除歌曲？</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要将「{removeTarget ? itemTitle(removeTarget) : ''}」从队列中移除吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" disabled={removing}>取消</Button>} />
+            <Button variant="destructive" onClick={() => void confirmRemove()} disabled={removing}>
+              {removing ? <Loader data-icon="start" className="animate-spin" /> : <Trash data-icon="start" />}
+              移除
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

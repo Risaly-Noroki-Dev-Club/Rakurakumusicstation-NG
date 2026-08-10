@@ -1,5 +1,5 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@appica/ui-react/tabs'
-import { LayoutDashboard, Settings } from '@appica/icons-react'
+import { LayoutDashboard } from '@appica/icons-react'
 import { DeviceSection } from '@/components/settings/DeviceSection'
 import { AppearanceSection } from '@/components/settings/AppearanceSection'
 import { NcmSection } from '@/components/settings/NcmSection'
@@ -20,13 +20,6 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
-      <header className="mb-5">
-        <h1 className="text-foreground-intense flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <Settings className="text-primary size-5.5" aria-hidden="true" />
-          设置
-        </h1>
-        <p className="text-foreground-muted mt-1 text-sm">管理设备身份、外观主题与账号信息</p>
-      </header>
       <div className="flex flex-col gap-4">
         <DeviceSection />
         <AppearanceSection />

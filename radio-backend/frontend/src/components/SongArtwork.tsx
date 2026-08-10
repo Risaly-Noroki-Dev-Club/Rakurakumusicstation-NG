@@ -10,6 +10,7 @@ export interface SongArtworkProps {
   coverSrc?: string
   alt?: string
   size?: '2xs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | number
+  shape?: 'circle' | 'rounded'
   className?: string
 }
 
@@ -22,7 +23,7 @@ export interface SongArtworkProps {
  *   fallback is a broken-image icon and its `children` are ignored)
  * - cover loaded → `variant="image"` (served from the browser cache, no flash)
  */
-export function SongArtwork({ hasCover, coverSrc, alt = '', size = 'md', className }: SongArtworkProps) {
+export function SongArtwork({ hasCover, coverSrc, alt = '', size = 'md', shape = 'rounded', className }: SongArtworkProps) {
   // Covers that loaded successfully before skip the preload round-trip.
   const [imgReady, setImgReady] = useState(() => (hasCover && coverSrc ? isCoverKnownGood(coverSrc) : false))
   const [failed, setFailed] = useState(false)
@@ -59,7 +60,7 @@ export function SongArtwork({ hasCover, coverSrc, alt = '', size = 'md', classNa
   return (
     <Thumbnail
       variant={showImage ? 'image' : 'icon-soft'}
-      shape="rounded"
+      shape={shape}
       size={size}
       src={showImage ? coverSrc : undefined}
       alt={alt}
