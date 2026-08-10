@@ -1,208 +1,150 @@
-import { reactive } from 'vue'
+import { create } from 'zustand'
 import type {
-  DeviceUser, Song, QueueItem, PlaybackState, LyricsLine,
-  Toast, Playlist, AdminStats, ThemeName, NcmStatus
-} from './types'
+  AuthUser,
+  HistoryItem,
+  ListenersUpdateWs,
+  LyricsLine,
+  PlaybackStateWs,
+  PlaybackStatus,
+  QueueItemDisplay,
+  QueueUpdateWs,
+  StationInfo,
+} from '@/types'
 
-export const THEMES: ThemeName[] = ['auto', 'dark', 'light']
-
-function getInitialThemeIndex(): number {
-  const saved = localStorage.getItem('radio_theme') || 'auto'
-  const idx = THEMES.indexOf(saved as ThemeName)
-  return idx >= 0 ? idx : 0
+export interface Toast {
+  id: number
+  message: string
+  level: 'info' | 'success' | 'warning' | 'error'
 }
 
-export interface Store {
-  deviceUser: DeviceUser | null
-  stationName: string
-  needsSetup: boolean
-  themeIdx: number
-  coverLoadError: boolean
-  playbackState: PlaybackState
-  displayPositionMs: number
-  lyricsLines: LyricsLine[]
-  useFileMode: boolean
-  queue: QueueItem[]
-  history: QueueItem[]
-  searchQuery: string
-  searchResults: Song[]
-  searchTotal: number
-  searchOffset: number
-  searchLoading: boolean
-  myPlaylists: Playlist[]
-  newPlaylistName: string
-  users: DeviceUser[]
-  adminLogs: Array<{ created_at: string; action: string; details: string }>
-  adminSongs: Song[]
-  adminStats: AdminStats | null
-  uploadFile: File | null
-  uploadFileName: string
-  uploadStatus: string
-  uploadStatusType: string
-  downloadPlaylist: string
-  downloadQuality: string
-  downloadFormat: string
-  downloadRunning: boolean
-  downloadStatusMsg: string
-  downloadStatusType: string
-  downloadLog: string
-  ncmBadge: string
-  ncmBadgeClass: string
-  ncmActiveTab: 'cookie' | 'phone'
-  ncmCookie: string
-  ncmPhone: string
-  ncmPassword: string
-  ncmResult: string
-  ncmResultType: string
-  settingsStationName: string
-  settingsShortName: string
-  settingsSubtitle: string
-  settingsDescription: string
-  settingsIconUrl: string
-  settingsResolvedIconUrl: string
-  settingsIconFileName: string
-  settingsAdminPassword: string
-  settingsResult: string
-  settingsResultType: string
-  userNcmBadge: string
-  userNcmBadgeClass: string
-  userNcmActiveTab: 'cookie' | 'phone'
-  userNcmCookie: string
-  userNcmPhone: string
-  userNcmPassword: string
-  userNcmResult: string
-  userNcmResultType: string
+export interface Playback {
+  songId: number
+  title: string
+  artist: string
+  positionMs: number
+  durationMs: number
+  lyricsLine: number | null
+  /** Full lyrics for the current song; null until the song-change frame arrives. */
+  lyricsLines: LyricsLine[] | null
+  /** [] means "no lyrics for this song" — distinct from null ("not resent"). */
+  lyricsKnown: boolean
+  status: PlaybackStatus
+  streamUrl: string
+  fileUrl: string | null
+  coverUrl: string | null
+  timestampMs: number
+}
+
+interface AppStore {
+  station: StationInfo | null
+  auth: AuthUser | null
+  playback: Playback | null
+  queue: QueueItemDisplay[]
+  history: HistoryItem[]
+  listeners: { count: number; names: string[] }
   toasts: Toast[]
+  wsConnected: boolean
+  audioPaused: boolean
+  needsPlay: boolean
+  accent: string
 
-  // ─── Player states ───
-  showLyrics: boolean
-  extractedColor: string
-  isDesktop: boolean
-  showSnackbar: boolean
-  snackbarText: string
-  snackbarColor: string
-
-  // ─── Online listeners ───
-  onlineListenerCount: number
-  onlineListenerNames: string[]
+  setStation: (station: StationInfo | null) => void
+  setAuth: (auth: AuthUser | null) => void
+  setQueue: (queue: QueueItemDisplay[]) => void
+  setHistory: (history: HistoryItem[]) => void
+  setWsConnected: (connected: boolean) => void
+  setAudioPaused: (paused: boolean) => void
+  setNeedsPlay: (needs: boolean) => void
+  setAccent: (accent: string) => void
+  addToast: (message: string, level?: Toast['level']) => void
+  removeToast: (id: number) => void
+  applyPlaybackState: (msg: PlaybackStateWs) => void
+  applyQueueUpdate: (msg: QueueUpdateWs) => void
+  applyListeners: (msg: ListenersUpdateWs) => void
 }
 
-export const store: Store = reactive({
-  deviceUser: null as DeviceUser | null,
-  stationName: 'Rakuraku Music Station',
-  needsSetup: false,
-  themeIdx: getInitialThemeIndex(),
-  coverLoadError: false,
-  playbackState: {
-    song_id: 0, title: '', artist: '', position_ms: 0,
-    duration_ms: 0, lyrics_line: null, status: 'stopped', cover_url: ''
+let toastSeq = 0
+
+function songKey(p: Playback | null): string {
+  return p ? `${p.songId}|${p.title}|${p.streamUrl}` : ''
+}
+
+export const useStore = create<AppStore>((set, get) => ({
+  station: null,
+  auth: null,
+  playback: null,
+  queue: [],
+  history: [],
+  listeners: { count: 0, names: [] },
+  toasts: [],
+  wsConnected: false,
+  audioPaused: false,
+  needsPlay: false,
+  accent: localStorage.getItem('rakuraku.accent') ?? '#764ba2',
+
+  setStation: (station) => set({ station }),
+  setAuth: (auth) => set({ auth }),
+  setQueue: (queue) => set({ queue }),
+  setHistory: (history) => set({ history }),
+  setWsConnected: (wsConnected) => set({ wsConnected }),
+  setAudioPaused: (audioPaused) => set({ audioPaused }),
+  setNeedsPlay: (needsPlay) => set({ needsPlay }),
+  setAccent: (accent) => {
+    localStorage.setItem('rakuraku.accent', accent)
+    set({ accent })
   },
-  displayPositionMs: 0,
-  lyricsLines: [] as LyricsLine[],
-  useFileMode: false,
-  queue: [] as QueueItem[],
-  history: [] as QueueItem[],
-  searchQuery: '',
-  searchResults: [] as Song[],
-  searchTotal: 0,
-  searchOffset: 0,
-  searchLoading: false,
-  myPlaylists: [] as Playlist[],
-  newPlaylistName: '',
-  users: [] as DeviceUser[],
-  adminLogs: [],
-  adminSongs: [] as Song[],
-  adminStats: null,
-  uploadFile: null as File | null,
-  uploadFileName: '',
-  uploadStatus: '',
-  uploadStatusType: '',
-  downloadPlaylist: '',
-  downloadQuality: 'exhigh',
-  downloadFormat: 'mp3',
-  downloadRunning: false,
-  downloadStatusMsg: '',
-  downloadStatusType: '',
-  downloadLog: '',
-  ncmBadge: '未配置',
-  ncmBadgeClass: 'none',
-  ncmActiveTab: 'cookie' as 'cookie' | 'phone',
-  ncmCookie: '',
-  ncmPhone: '',
-  ncmPassword: '',
-  ncmResult: '',
-  ncmResultType: '',
-  settingsStationName: '',
-  settingsShortName: '',
-  settingsSubtitle: '',
-  settingsDescription: '',
-  settingsIconUrl: '',
-  settingsResolvedIconUrl: '',
-  settingsIconFileName: '',
-  settingsAdminPassword: '',
-  settingsResult: '',
-  settingsResultType: '',
-  userNcmBadge: '未配置',
-  userNcmBadgeClass: 'none',
-  userNcmActiveTab: 'cookie' as 'cookie' | 'phone',
-  userNcmCookie: '',
-  userNcmPhone: '',
-  userNcmPassword: '',
-  userNcmResult: '',
-  userNcmResultType: '',
-  toasts: [] as Toast[],
 
-  showLyrics: false,
-  extractedColor: '#6C5CE7',
-  isDesktop: window.innerWidth >= 960,
-  showSnackbar: false,
-  snackbarText: '',
-  snackbarColor: 'info',
+  addToast: (message, level = 'info') => {
+    const id = ++toastSeq
+    set((s) => ({ toasts: [...s.toasts, { id, message, level }] }))
+    window.setTimeout(() => get().removeToast(id), 4000)
+  },
+  removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
-  onlineListenerCount: 0,
-  onlineListenerNames: [] as string[],
-})
+  applyPlaybackState: (msg) => {
+    const prev = get().playback
+    const changedSong = songKey(prev) !== `${msg.song_id}|${msg.title}|${msg.stream_url}`
+    const lyricsLines = changedSong && msg.lyrics_lines !== null ? msg.lyrics_lines : prev?.lyricsLines ?? null
+    const lyricsKnown = changedSong ? true : (prev?.lyricsKnown ?? false)
 
-export function formatTime(ms: number | undefined | null): string {
-  if (!ms || ms < 0) return '0:00'
-  const secs = Math.floor(ms / 1000)
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
-  return m + ':' + s.toString().padStart(2, '0')
-}
+    set({
+      playback: {
+        songId: msg.song_id,
+        title: msg.title,
+        artist: msg.artist,
+        positionMs: msg.position_ms,
+        durationMs: msg.duration_ms,
+        lyricsLine: msg.lyrics_line,
+        lyricsLines,
+        lyricsKnown,
+        status: msg.status,
+        streamUrl: msg.stream_url,
+        fileUrl: msg.file_url,
+        coverUrl: msg.cover_url,
+        timestampMs: msg.timestamp_ms,
+      },
+    })
 
-export function toast(message: string, level: 'info' | 'success' | 'error' = 'info'): void {
-  const id = Date.now() + Math.random()
-  store.toasts.push({ id, message, level })
-  store.snackbarText = message
-  store.snackbarColor = level
-  store.showSnackbar = true
-  setTimeout(() => {
-    const idx = store.toasts.findIndex(t => t.id === id)
-    if (idx >= 0) store.toasts.splice(idx, 1)
-  }, 4000)
-}
+    // Browser notification on song change when the tab is hidden.
+    if (changedSong && document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification(msg.title, { body: msg.artist })
+      } catch {
+        // some browsers reject construction without a service worker
+      }
+    }
+  },
 
-const ROOT = document.documentElement
+  applyQueueUpdate: (msg) => {
+    const { queue } = get()
+    if (msg.action === 'added' && msg.song_title) {
+      get().addToast(`已点播：${msg.song_title}`, 'info')
+      void import('@/api').then(({ fetchQueue }) => fetchQueue().then((q) => get().setQueue(q)).catch(() => undefined))
+    }
+    if (queue.length !== msg.queue_size) {
+      void import('@/api').then(({ fetchQueue }) => fetchQueue().then((q) => get().setQueue(q)).catch(() => undefined))
+    }
+  },
 
-export function applyTheme(): void {
-  const theme = THEMES[store.themeIdx]
-  if (theme === 'auto') {
-    ROOT.removeAttribute('data-theme')
-  } else {
-    ROOT.setAttribute('data-theme', theme)
-  }
-  localStorage.setItem('radio_theme', theme)
-}
-
-export function cycleTheme(): void {
-  store.themeIdx = (store.themeIdx + 1) % THEMES.length
-  applyTheme()
-}
-
-applyTheme()
-
-// Responsive listener
-window.addEventListener('resize', () => {
-  store.isDesktop = window.innerWidth >= 960
-})
+  applyListeners: (msg) => set({ listeners: { count: msg.count, names: msg.names } }),
+}))

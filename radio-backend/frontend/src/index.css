@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+@import '@appica/ui-react/styles.css';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+@source '../node_modules/@appica/ui-react/dist';
+
+/* ─── Radio brand theming ────────────────────────────────────────────
+   The app allows a custom accent color (Settings → 外观), stored in the
+   zustand store and applied to <html style="--accent: …">. Everything
+   below derives from it; the default is the classic station purple. */
+
+:root,
+.dark {
+  --accent: #764ba2;
+  --primary: var(--accent);
+  --primary-strong: color-mix(in oklab, var(--accent) 82%, #000);
+  --primary-muted: color-mix(in oklab, var(--accent) 72%, var(--foreground-muted));
+  --primary-soft: color-mix(in oklab, var(--accent) 16%, var(--background));
+  --primary-subtle: color-mix(in oklab, var(--accent) 8%, var(--background));
+  --primary-foreground: oklch(1 0 0);
+  --focus-ring-primary: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+:root {
+  --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─── Base layout ─────────────────────────────────────────────────── */
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+#root {
+  overflow: auto;
+}
+
+/* Thin scrollbars that follow the theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--background-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Lyrics highlight */
+.lyrics-active {
+  color: var(--foreground-intense);
+  transform: scale(1.02);
+  transition:
+    color 300ms ease,
+    transform 300ms ease;
+}
+.lyrics-inactive {
+  color: var(--foreground-muted);
+  transition:
+    color 300ms ease,
+    transform 300ms ease;
+}

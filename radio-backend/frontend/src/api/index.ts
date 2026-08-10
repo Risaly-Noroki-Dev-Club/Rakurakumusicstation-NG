@@ -1,0 +1,282 @@
+// Typed endpoints — every call site should import from here, not fetch directly.
+// Contract source: local://api-contract.md (verified against radio-backend source).
+
+import { apiFetch, appUrl } from './client'
+import type {
+  AdminLogEntry,
+  AdminStats,
+  AdminUser,
+  AuthUser,
+  BatchDownloadItem,
+  BatchDownloadResponse,
+  BatchDownloadStatus,
+  DownloadStatus,
+  Favorite,
+  HistoryItem,
+  ImportPlaylistResponse,
+  ListenerInfo,
+  NcmStatus,
+  NowPlaying,
+  Paginated,
+  PlaylistDetail,
+  PlaylistWithCount,
+  QueueItemDisplay,
+  Song,
+  SongSummary,
+  StationInfo,
+  StationSettings,
+} from '@/types'
+
+// ── station / misc ─────────────────────────────────────────
+
+export function fetchStation(): Promise<StationInfo> {
+  return apiFetch<StationInfo>('/api/station')
+}
+
+export function fetchNowPlaying(): Promise<NowPlaying> {
+  return apiFetch<NowPlaying>('/api/now-playing')
+}
+
+export function fetchListeners(): Promise<{ count: number; listeners: ListenerInfo[] }> {
+  return apiFetch('/api/listeners')
+}
+
+// ── auth ───────────────────────────────────────────────────
+
+export function fetchMe(): Promise<AuthUser> {
+  return apiFetch<AuthUser>('/api/auth/me')
+}
+
+export function setDisplayName(display_name: string): Promise<string> {
+  return apiFetch<string>('/api/auth/name', { method: 'POST', body: JSON.stringify({ display_name }) })
+}
+
+export function claimAdmin(admin_setup_token: string): Promise<string> {
+  return apiFetch<string>('/api/auth/claim-admin', { method: 'POST', body: JSON.stringify({ admin_setup_token }) })
+}
+
+export function adminLogout(): Promise<unknown> {
+  return apiFetch('/api/admin/logout', { method: 'POST' })
+}
+
+// ── queue ──────────────────────────────────────────────────
+
+export function fetchQueue(): Promise<QueueItemDisplay[]> {
+  return apiFetch<QueueItemDisplay[]>('/api/queue')
+}
+
+export function addToQueue(song_id: number): Promise<unknown> {
+  return apiFetch('/api/queue', { method: 'POST', body: JSON.stringify({ song_id }) })
+}
+
+export function removeQueueItem(id: number): Promise<unknown> {
+  return apiFetch(`/api/queue/${id}`, { method: 'DELETE' })
+}
+
+export function moveQueueItem(id: number, new_position: number): Promise<unknown> {
+  return apiFetch(`/api/queue/${id}/move`, { method: 'POST', body: JSON.stringify({ new_position }) })
+}
+
+export function skipCurrent(): Promise<unknown> {
+  return apiFetch('/api/queue/skip', { method: 'POST' })
+}
+
+export function fetchHistory(): Promise<HistoryItem[]> {
+  return apiFetch<HistoryItem[]>('/api/queue/history')
+}
+
+// ── songs ──────────────────────────────────────────────────
+
+export function searchSongs(q: string, limit = 50, offset = 0): Promise<Paginated<SongSummary>> {
+  const params = new URLSearchParams()
+  if (q) params.set('q', q)
+  params.set('limit', String(limit))
+  params.set('offset', String(offset))
+  return apiFetch<Paginated<SongSummary>>(`/api/songs?${params}`)
+}
+
+export function fetchSong(id: number): Promise<Song> {
+  return apiFetch<Song>(`/api/songs/${id}`)
+}
+
+export function coverUrl(songId: number): string {
+  return appUrl(`/api/songs/${songId}/cover`)
+}
+
+export function songStreamUrl(songId: number): string {
+  return appUrl(`/api/songs/${songId}/stream`)
+}
+
+export function downloadSongUrl(songId: number): string {
+  return appUrl(`/api/songs/${songId}/download`)
+}
+
+// ── playlists ──────────────────────────────────────────────
+
+export function fetchPlaylists(): Promise<PlaylistWithCount[]> {
+  return apiFetch<PlaylistWithCount[]>('/api/playlists')
+}
+
+export function createPlaylist(name: string, is_public = false): Promise<unknown> {
+  return apiFetch('/api/playlists', { method: 'POST', body: JSON.stringify({ name, is_public }) })
+}
+
+export function fetchPlaylistDetail(id: number): Promise<PlaylistDetail> {
+  return apiFetch<PlaylistDetail>(`/api/playlists/${id}`)
+}
+
+export function deletePlaylist(id: number): Promise<unknown> {
+  return apiFetch(`/api/playlists/${id}`, { method: 'DELETE' })
+}
+
+export function addSongToPlaylist(playlistId: number, song_id: number): Promise<unknown> {
+  return apiFetch(`/api/playlists/${playlistId}/songs`, { method: 'POST', body: JSON.stringify({ song_id }) })
+}
+
+export function removeSongFromPlaylist(playlistId: number, songId: number): Promise<unknown> {
+  return apiFetch(`/api/playlists/${playlistId}/songs/${songId}`, { method: 'DELETE' })
+}
+
+// ── favorites ──────────────────────────────────────────────
+
+export function fetchFavorites(): Promise<Favorite[]> {
+  return apiFetch<Favorite[]>('/api/favorites')
+}
+
+export function addFavorite(song_id: number): Promise<unknown> {
+  return apiFetch('/api/favorites', { method: 'POST', body: JSON.stringify({ song_id }) })
+}
+
+export function removeFavorite(id: number): Promise<unknown> {
+  return apiFetch(`/api/favorites/${id}`, { method: 'DELETE' })
+}
+
+// ── ncm (device) ───────────────────────────────────────────
+
+export function fetchNcmStatus(): Promise<NcmStatus> {
+  return apiFetch<NcmStatus>('/api/ncm')
+}
+
+export function saveNcmCookie(cookie: string): Promise<unknown> {
+  return apiFetch('/api/ncm', { method: 'POST', body: JSON.stringify({ cookie }) })
+}
+
+export function testNcmLogin(): Promise<unknown> {
+  return apiFetch('/api/ncm/test', { method: 'POST' })
+}
+
+// ── admin ──────────────────────────────────────────────────
+
+export function fetchAdminUsers(): Promise<AdminUser[]> {
+  return apiFetch<AdminUser[]>('/api/admin/users')
+}
+
+export function banUser(id: number): Promise<unknown> {
+  return apiFetch(`/api/admin/users/${id}/ban`, { method: 'POST' })
+}
+
+export function unbanUser(id: number): Promise<unknown> {
+  return apiFetch(`/api/admin/users/${id}/unban`, { method: 'POST' })
+}
+
+export function setUserRole(id: number, role: 'admin' | 'user'): Promise<unknown> {
+  return apiFetch(`/api/admin/users/${id}/role`, { method: 'PUT', body: JSON.stringify({ role }) })
+}
+
+export function fetchAdminStats(): Promise<AdminStats> {
+  return apiFetch<AdminStats>('/api/admin/stats')
+}
+
+export function fetchAdminLogs(): Promise<AdminLogEntry[]> {
+  return apiFetch<AdminLogEntry[]>('/api/admin/logs')
+}
+
+export function rescanSongs(): Promise<unknown> {
+  return apiFetch('/api/admin/rescan-songs', { method: 'POST' })
+}
+
+export function fetchAdminSongs(): Promise<Song[]> {
+  return apiFetch<Song[]>('/api/admin/songs')
+}
+
+export function deleteSongAdmin(id: number): Promise<unknown> {
+  return apiFetch(`/api/admin/songs/${id}`, { method: 'DELETE' })
+}
+
+export function uploadSongFile(file: File): Promise<unknown> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiFetch('/api/admin/upload', { method: 'POST', body: form })
+}
+
+export function fetchStationSettings(): Promise<StationSettings> {
+  return apiFetch<StationSettings>('/api/admin/settings')
+}
+
+export function saveStationSettings(patch: {
+  station_name?: string
+  short_name?: string
+  subtitle?: string
+  description?: string
+  icon_url?: string
+}): Promise<unknown> {
+  return apiFetch('/api/admin/settings', { method: 'POST', body: JSON.stringify(patch) })
+}
+
+export function uploadStationIcon(file: File): Promise<unknown> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiFetch('/api/admin/settings/icon', { method: 'POST', body: form })
+}
+
+export function adminSkipNext(): Promise<unknown> {
+  return apiFetch('/api/admin/playlist/next', { method: 'POST' })
+}
+
+export function adminSkipPrev(): Promise<unknown> {
+  return apiFetch('/api/admin/playlist/prev', { method: 'POST' })
+}
+
+export function startLegacyDownload(playlist: string, quality?: string, format?: string): Promise<unknown> {
+  return apiFetch('/api/admin/download', { method: 'POST', body: JSON.stringify({ playlist, quality, format }) })
+}
+
+export function fetchLegacyDownloadStatus(): Promise<DownloadStatus> {
+  return apiFetch<DownloadStatus>('/api/admin/download/status')
+}
+
+export function startBatchDownload(payload: {
+  source: string
+  items: BatchDownloadItem[]
+  lyrics_save_mode?: string
+  quality?: string
+  format?: string
+}): Promise<BatchDownloadResponse> {
+  return apiFetch<BatchDownloadResponse>('/api/admin/download/batch', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function fetchBatchDownloadStatus(taskId: string): Promise<BatchDownloadStatus> {
+  return apiFetch<BatchDownloadStatus>(`/api/admin/download/batch/status?task_id=${encodeURIComponent(taskId)}`)
+}
+
+export function fetchAdminNcmStatus(): Promise<NcmStatus> {
+  return apiFetch<NcmStatus>('/api/admin/ncm')
+}
+
+export function saveAdminNcmCookie(cookie: string): Promise<unknown> {
+  return apiFetch('/api/admin/ncm', { method: 'POST', body: JSON.stringify({ cookie }) })
+}
+
+export function testAdminNcmLogin(): Promise<unknown> {
+  return apiFetch('/api/admin/ncm/test', { method: 'POST' })
+}
+
+export function importNcmPlaylist(link: string): Promise<ImportPlaylistResponse> {
+  return apiFetch<ImportPlaylistResponse>('/api/admin/ncm/playlist', { method: 'POST', body: JSON.stringify({ link }) })
+}
+
+export function startNcmImport(batch_id: string): Promise<unknown> {
+  return apiFetch('/api/admin/ncm/import', { method: 'POST', body: JSON.stringify({ batch_id }) })
+}
+
+export { apiFetch, apiBlob, appUrl, consumeSse } from './client'

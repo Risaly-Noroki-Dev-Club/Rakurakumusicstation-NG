@@ -1,0 +1,186 @@
+import { useEffect, useState } from 'react'
+import { Badge } from '@appica/ui-react/badge'
+import { Button } from '@appica/ui-react/button'
+import { useTheme } from '@appica/ui-react/hooks/use-theme'
+import { Input } from '@appica/ui-react/input'
+import { Separator } from '@appica/ui-react/separator'
+import { Toggle } from '@appica/ui-react/toggle'
+import { ToggleGroup } from '@appica/ui-react/toggle-group'
+import { Bell, Check, DeviceDesktop, MoonStars, Palette, SunHigh } from '@appica/icons-react'
+import { useStore } from '@/store'
+import { cn } from '@/lib/cn'
+
+const THEME_OPTIONS = [
+  { value: 'light', label: '浅色', icon: SunHigh },
+  { value: 'dark', label: '深色', icon: MoonStars },
+  { value: 'system', label: '跟随系统', icon: DeviceDesktop },
+] as const
+
+const ACCENTS = [
+  { color: '#764ba2', name: '紫罗兰' },
+  { color: '#667eea', name: '靛蓝' },
+  { color: '#e2725b', name: '暖橙' },
+  { color: '#10b981', name: '翠绿' },
+  { color: '#ef4444', name: '红色' },
+  { color: '#f59e0b', name: '琥珀' },
+  { color: '#06b6d4', name: '青色' },
+  { color: '#f43f5e', name: '玫红' },
+] as const
+
+type NotificationPermissionState = 'granted' | 'denied' | 'default' | 'unsupported' | 'unknown'
+
+const PERMISSION_TEXT: Record<NotificationPermissionState, string> = {
+  granted: '已开启',
+  denied: '已拒绝',
+  default: '未开启',
+  unsupported: '浏览器不支持',
+  unknown: '检查中…',
+}
+
+/** 桌面通知：切歌时标签页隐藏会自动发送，这里只负责申请权限。 */
+function NotificationBlock() {
+  const [permission, setPermission] = useState<NotificationPermissionState>('unknown')
+
+  useEffect(() => {
+    if (!('Notification' in window)) {
+      setPermission('unsupported')
+      return
+    }
+    setPermission(Notification.permission)
+  }, [])
+
+  const request = async () => {
+    if (!('Notification' in window)) {
+      useStore.getState().addToast('当前浏览器不支持桌面通知', 'warning')
+      return
+    }
+    try {
+      const result = await Notification.requestPermission()
+      setPermission(result)
+      if (result === 'granted') useStore.getState().addToast('桌面通知已开启', 'success')
+      else if (result === 'denied') useStore.getState().addToast('通知权限被拒绝，请在浏览器设置中允许', 'warning')
+      else useStore.getState().addToast('未授予通知权限', 'info')
+    } catch {
+      useStore.getState().addToast('请求通知权限失败', 'error')
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-foreground-intense flex items-center gap-1.5 text-sm font-medium">
+          <Bell className="size-4 shrink-0" />
+          <span className="min-w-0 truncate">桌面通知</span>
+          <Badge variant={permission === 'granted' ? 'success' : 'soft'} size="xs" className="shrink-0">
+            {PERMISSION_TEXT[permission]}
+          </Badge>
+        </p>
+        <p className="text-foreground-muted mt-1 text-xs">
+          切换歌曲时，若标签页处于隐藏状态，会自动发送桌面通知。
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={request}
+        disabled={permission === 'granted' || permission === 'unsupported' || permission === 'unknown'}
+        className="shrink-0"
+      >
+        开启桌面通知
+      </Button>
+    </div>
+  )
+}
+
+export function AppearanceSection() {
+  const { theme, setTheme } = useTheme()
+  const accent = useStore((s) => s.accent)
+  const current = (theme ?? 'system') as string
+
+  const isActive = (color: string) => accent.toLowerCase() === color.toLowerCase()
+
+  return (
+    <section aria-labelledby="settings-appearance-heading" className="rounded-2xl border border-border-muted bg-background-subtle p-4 sm:p-5">
+      <h2 id="settings-appearance-heading" className="mb-4 flex items-center gap-2 text-base font-semibold">
+        <Palette data-icon="start" />
+        外观
+      </h2>
+
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
+          <h3 className="text-foreground-intense text-sm font-medium">主题</h3>
+          <ToggleGroup
+            aria-label="主题模式"
+            value={[current]}
+            onValueChange={(values) => {
+              if (values.length > 0) setTheme(values[0])
+            }}
+            className="w-full rounded-lg border border-border-muted bg-background p-1"
+          >
+            {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+              <Toggle
+                key={value}
+                value={value}
+                className={cn(
+                  'flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-sm font-medium transition',
+                  'text-foreground-muted not-data-pressed:hover:bg-background-muted hover:text-foreground-intense',
+                  'data-pressed:bg-primary data-pressed:text-primary-foreground',
+                  'focus-visible:outline-ring',
+                )}
+              >
+                <Icon data-icon="start" className="shrink-0" />
+                <span className="min-w-0 truncate">{label}</span>
+              </Toggle>
+            ))}
+          </ToggleGroup>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <h3 className="text-foreground-intense text-sm font-medium">主题色</h3>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {ACCENTS.map(({ color, name }) => (
+              <button
+                key={color}
+                type="button"
+                aria-label={`主题色 ${name}`}
+                aria-pressed={isActive(color)}
+                onClick={() => useStore.getState().setAccent(color)}
+                className={cn(
+                  'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-black/10 transition',
+                  'focus-visible:outline-ring',
+                  isActive(color) && 'ring-2 ring-offset-2 ring-primary',
+                )}
+                style={{ backgroundColor: color }}
+              >
+                {isActive(color) && <Check className="size-4 text-white" />}
+              </button>
+            ))}
+            <div className="flex min-w-0 items-center gap-2">
+              <Input
+                type="color"
+                value={accent}
+                onChange={(e) => useStore.getState().setAccent(e.target.value)}
+                aria-label="自定义主题色"
+                className="size-8 shrink-0 cursor-pointer border-0 bg-transparent p-1"
+              />
+              <code className="text-foreground-muted min-w-0 truncate font-mono text-xs">{accent.toUpperCase()}</code>
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-primary p-4 text-primary-foreground shadow-sm">
+            <p className="text-sm font-semibold">主题预览</p>
+            <p className="mt-0.5 text-xs opacity-80">按钮、高亮与强调元素将使用该颜色。</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-md bg-primary-foreground/15 px-3 py-1 text-xs">标签</span>
+              <span className="rounded-md bg-primary-foreground px-3 py-1 text-xs text-primary">主按钮</span>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        <NotificationBlock />
+      </div>
+    </section>
+  )
+}
