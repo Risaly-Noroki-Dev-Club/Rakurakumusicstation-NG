@@ -13,6 +13,7 @@
   "dependencies": {
     "@appica/icons-react": "^1.0.0",
     "@appica/ui-react": "^1.0.0",
+    "@base-ui/react": "^1.6.0",
     "@material/material-color-utilities": "^0.4.0",
     "clsx": "^2.1.1",
     "react": "^19.1.0",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { deleteSongAdmin, fetchAdminSongs, rescanSongs, songStreamUrl, uploadSongFile } from '@/api'
+import { deleteSongAdmin, downloadSongUrl, fetchAdminSongs, rescanSongs, uploadSongFile } from '@/api'
 import type { Song } from '@/types'
 import { useStore } from '@/store'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogClose } from '@appica/ui-react/alert-dialog'
@@ -227,7 +227,7 @@ export function AdminSongs() {
           </DialogHeader>
           <DialogBody>
             {preview && (
-              <audio controls src={songStreamUrl(preview.id)} preload="none" className="w-full" />
+              <audio controls src={downloadSongUrl(preview.id)} preload="none" className="w-full" />
             )}
           </DialogBody>
         </DialogContent>
