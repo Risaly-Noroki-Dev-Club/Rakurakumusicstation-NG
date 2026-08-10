@@ -22,8 +22,14 @@ let userAuthorized = false
 let connectionErrorNotified = false
 let retryThrottleUntil = 0
 
-function normalized(url: string): string {
-  return new URL(url, window.location.origin).href
+/** origin + pathname comparison — ignores the ?r= reconnect nonce. */
+function urlBase(u: string): string {
+  try {
+    const parsed = new URL(u, window.location.origin)
+    return `${parsed.origin}${parsed.pathname}`
+  } catch {
+    return u
+  }
 }
 
 function ensureAudio(): HTMLAudioElement {
@@ -109,8 +115,8 @@ export function syncAudio() {
     return
   }
 
-  const target = normalized(url)
-  const current = el.src ? normalized(el.src) : ''
+  const target = urlBase(url)
+  const current = el.src ? urlBase(el.src) : ''
 
   if (current !== target) {
     reconnectNonce += 1

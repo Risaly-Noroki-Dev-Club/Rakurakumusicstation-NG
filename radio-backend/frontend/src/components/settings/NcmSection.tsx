@@ -18,7 +18,7 @@ function errMsg(err: unknown): string {
   return err instanceof Error && err.message ? err.message : '操作失败，请重试'
 }
 
-/** 本设备的网易云账号配置（曲库导入在管理后台）。 */
+/** 本设备的网易云账号配置（曲库导入在设置页的电台管理中）。 */
 export function NcmSection() {
   const [status, setStatus] = useState<NcmStatus | null>(null)
   const [loading, setLoading] = useState(true)
@@ -131,7 +131,7 @@ export function NcmSection() {
         </form>
 
         <p className="text-foreground-muted text-xs">
-          说明：此处配置的是本设备的网易云账号；曲库导入功能请在管理后台操作。
+          说明：此处配置的是本设备的网易云账号；曲库导入功能请在设置页的「电台管理」中操作。
         </p>
       </div>
     </section>

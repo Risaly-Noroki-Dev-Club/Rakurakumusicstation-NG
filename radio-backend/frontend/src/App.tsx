@@ -36,9 +36,11 @@ export default function App() {
     }
   }, [])
 
-  // Brand accent → CSS variable consumed by index.css token overrides.
+  // Brand accent → Material dynamic color pair (light/dark) applied as CSS
+  // variables; index.css maps them onto --accent per theme.
   useEffect(() => {
-    document.documentElement.style.setProperty('--accent', accent)
+    document.documentElement.style.setProperty('--accent-light', accent.light)
+    document.documentElement.style.setProperty('--accent-dark', accent.dark)
   }, [accent])
 
   // Title follows the station name.

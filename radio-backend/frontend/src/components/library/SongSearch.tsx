@@ -3,60 +3,33 @@ import { Input } from '@appica/ui-react/input'
 import { Button } from '@appica/ui-react/button'
 import { Skeleton } from '@appica/ui-react/skeleton'
 import { Spinner } from '@appica/ui-react/spinner'
-import { Music, Search } from '@appica/icons-react'
-import { addFavorite, fetchFavorites, removeFavorite, searchSongs } from '@/api'
+import { Search } from '@appica/icons-react'
+import { searchSongs } from '@/api'
 import { SongRow } from '@/components/library/SongRow'
-import { useStore, type Toast } from '@/store'
-import type { Favorite, SongSummary } from '@/types'
+import { useStore } from '@/store'
+import type { SongSummary } from '@/types'
 
 const PAGE_SIZE = 50
-
-function buildFavMap(favorites: Favorite[]): Map<number, number> {
-  const map = new Map<number, number>()
-  for (const f of favorites) {
-    if (f.song_id != null) map.set(f.song_id, f.id)
-  }
-  return map
-}
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : '操作失败'
 }
 
-/** 歌曲 tab：防抖搜索 + 分页加载 + 收藏状态。 */
+/** 歌曲 tab：防抖搜索 + 分页加载。收藏状态由 SongRow 内部读写 localStorage。 */
 export function SongSearch() {
-  // store.ts is FINAL; its Toast level union omits 'success' but Toasts.tsx
-  // renders a success variant — widen the binding here so call sites stay clean.
-  const addToast = useStore((s) => s.addToast) as (
-    message: string,
-    level?: Toast['level'] | 'success',
-  ) => void
+  const addToast = useStore((s) => s.addToast)
   const [query, setQuery] = useState('')
   const [debounced, setDebounced] = useState('')
   const [songs, setSongs] = useState<SongSummary[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [favBySong, setFavBySong] = useState<Map<number, number>>(new Map())
 
   // 300ms 防抖。
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 300)
     return () => clearTimeout(t)
   }, [query])
-
-  // 收藏状态（heart 图标）。
-  useEffect(() => {
-    let cancelled = false
-    fetchFavorites()
-      .then((favs) => {
-        if (!cancelled) setFavBySong(buildFavMap(favs))
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   // 搜索（挂载时以空查询抓取全部歌曲，之后每次防抖后重新搜索）。
   useEffect(() => {
@@ -96,82 +69,55 @@ export function SongSearch() {
     }
   }, [debounced, songs.length, loadingMore, addToast])
 
-  const toggleFavorite = useCallback(
-    async (songId: number) => {
-      const prev = favBySong
-      const favId = prev.get(songId)
-      const next = new Map(prev)
-      if (favId != null) next.delete(songId)
-      else next.set(songId, -1) // 占位，成功后再从服务端取回真实 id
-      setFavBySong(next)
-      try {
-        if (favId != null) await removeFavorite(favId)
-        else await addFavorite(songId)
-        const fresh = await fetchFavorites()
-        setFavBySong(buildFavMap(fresh))
-      } catch (e) {
-        setFavBySong(prev)
-        addToast(errorMessage(e), 'error')
-      }
-    },
-    [favBySong, addToast],
-  )
+  const hasMore = songs.length < total
 
   return (
     <div className="flex flex-col gap-3">
-      <Input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="搜索歌曲、歌手或专辑"
-        startSlot={<Search className="size-4.5" />}
-        clearable
-        onClear={() => setQuery('')}
-        aria-label="搜索歌曲"
-        inputSize="md"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="搜索歌曲或艺术家…"
+          aria-label="搜索歌曲"
+          startSlot={<Search className="text-foreground-muted size-4" />}
+          clearable
+          onClear={() => setQuery('')}
+          className="w-full sm:max-w-90"
+        />
+        <span className="text-foreground-muted text-xs tabular-nums">共 {total} 首</span>
+      </div>
+
       {loading ? (
-        <div className="flex flex-col gap-1" role="status" aria-label="歌曲加载中">
+        <ul aria-label="歌曲列表" className="divide-border-muted divide-y overflow-hidden rounded-xl border border-border-muted bg-background">
           {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="flex w-full items-center gap-3 px-2 py-2">
-              <Skeleton className="size-10 shrink-0 rounded-md" />
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <Skeleton className="h-4 w-2/3 max-w-52" />
-                <Skeleton className="h-3 w-1/2 max-w-40" />
+            <li key={i} className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
+              <Skeleton className="size-10 shrink-0 rounded-lg" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-3.5 w-2/3 rounded" />
+                <Skeleton className="h-3 w-1/3 rounded" />
               </div>
-              <Skeleton className="h-3 w-8 shrink-0" />
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : songs.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
-          <Music className="size-8 text-foreground-subtle" />
-          <p className="text-sm font-medium text-foreground-muted">
-            {debounced ? `未找到与“${debounced}”相关的歌曲` : '曲库中暂无歌曲'}
-          </p>
-        </div>
+        <p className="text-foreground-muted py-10 text-center text-sm">
+          {debounced ? '没有找到匹配的歌曲' : '曲库还是空的'}
+        </p>
       ) : (
-        <>
-          <p className="text-xs text-foreground-subtle" role="status">
-            共 {total} 首
-          </p>
-          <ul className="flex flex-col gap-0.5" aria-label="歌曲搜索结果">
-            {songs.map((song) => (
-              <li key={song.id}>
-                <SongRow
-                  song={song}
-                  favorited={favBySong.has(song.id)}
-                  onToggleFavorite={(id) => void toggleFavorite(id)}
-                />
-              </li>
-            ))}
-          </ul>
-          {songs.length < total && (
-            <Button variant="outline" className="mt-1 w-full" disabled={loadingMore} onClick={() => void loadMore()}>
-              {loadingMore ? <Spinner className="size-4.5" currentColor /> : null}
-              {loadingMore ? '加载中…' : '加载更多'}
-            </Button>
-          )}
-        </>
+        <ul aria-label="歌曲列表" className="divide-border-muted divide-y overflow-hidden rounded-xl border border-border-muted bg-background">
+          {songs.map((song) => (
+            <li key={song.id} className="flex">
+              <SongRow song={song} />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {hasMore && (
+        <Button variant="outline" size="sm" className="self-center" disabled={loadingMore} onClick={() => void loadMore()}>
+          {loadingMore ? <Spinner className="size-4" currentColor /> : null}
+          加载更多
+        </Button>
       )}
     </div>
   )

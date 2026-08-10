@@ -3,11 +3,11 @@ import App from './App'
 import PlayerPage from './pages/PlayerPage'
 import LibraryPage from './pages/LibraryPage'
 import SettingsPage from './pages/SettingsPage'
-import AdminPage from './pages/AdminPage'
 
 /**
- * The player is the home page and also hosts the "listen together" presence
- * (listeners strip + shared queue), so there is no separate listen route.
+ * The player is the home page (hosts the "listen together" presence and the
+ * shared queue); admin capabilities live inline — skip/remove in the player
+ * and queue, the rest under Settings → 电台管理.
  */
 export const router = createBrowserRouter(
   [
@@ -19,7 +19,6 @@ export const router = createBrowserRouter(
         { path: 'player', element: <PlayerPage /> },
         { path: 'library', element: <LibraryPage /> },
         { path: 'settings', element: <SettingsPage /> },
-        { path: 'admin', element: <AdminPage /> },
       ],
     },
   ],

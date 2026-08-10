@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   Alert,
   AlertDescription,
@@ -24,9 +24,9 @@ import {
   AlertTriangleFilled,
   Check,
   DeviceMobile,
-  ExternalLink,
   InfoCircleFilled,
   Key,
+  LayoutDashboard,
   Logout,
   ShieldCheckFilled,
   UserFilled,
@@ -189,9 +189,9 @@ function DeviceIdentity() {
 
       {isAdmin && (
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" render={<Link to="/admin" />}>
-            <ExternalLink data-icon="start" />
-            管理后台
+          <Button variant="outline" render={<a href="#admin-panel-title" />}>
+            <LayoutDashboard data-icon="start" />
+            电台管理
           </Button>
           <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
             <Logout data-icon="start" />

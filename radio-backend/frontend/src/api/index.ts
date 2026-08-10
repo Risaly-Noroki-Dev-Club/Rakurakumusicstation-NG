@@ -11,15 +11,12 @@ import type {
   BatchDownloadResponse,
   BatchDownloadStatus,
   DownloadStatus,
-  Favorite,
   HistoryItem,
   ImportPlaylistResponse,
   ListenerInfo,
   NcmStatus,
   NowPlaying,
   Paginated,
-  PlaylistDetail,
-  PlaylistWithCount,
   QueueItemDisplay,
   Song,
   SongSummary,
@@ -109,46 +106,6 @@ export function songStreamUrl(songId: number): string {
 
 export function downloadSongUrl(songId: number): string {
   return appUrl(`/api/songs/${songId}/download`)
-}
-
-// ── playlists ──────────────────────────────────────────────
-
-export function fetchPlaylists(): Promise<PlaylistWithCount[]> {
-  return apiFetch<PlaylistWithCount[]>('/api/playlists')
-}
-
-export function createPlaylist(name: string, is_public = false): Promise<unknown> {
-  return apiFetch('/api/playlists', { method: 'POST', body: JSON.stringify({ name, is_public }) })
-}
-
-export function fetchPlaylistDetail(id: number): Promise<PlaylistDetail> {
-  return apiFetch<PlaylistDetail>(`/api/playlists/${id}`)
-}
-
-export function deletePlaylist(id: number): Promise<unknown> {
-  return apiFetch(`/api/playlists/${id}`, { method: 'DELETE' })
-}
-
-export function addSongToPlaylist(playlistId: number, song_id: number): Promise<unknown> {
-  return apiFetch(`/api/playlists/${playlistId}/songs`, { method: 'POST', body: JSON.stringify({ song_id }) })
-}
-
-export function removeSongFromPlaylist(playlistId: number, songId: number): Promise<unknown> {
-  return apiFetch(`/api/playlists/${playlistId}/songs/${songId}`, { method: 'DELETE' })
-}
-
-// ── favorites ──────────────────────────────────────────────
-
-export function fetchFavorites(): Promise<Favorite[]> {
-  return apiFetch<Favorite[]>('/api/favorites')
-}
-
-export function addFavorite(song_id: number): Promise<unknown> {
-  return apiFetch('/api/favorites', { method: 'POST', body: JSON.stringify({ song_id }) })
-}
-
-export function removeFavorite(id: number): Promise<unknown> {
-  return apiFetch(`/api/favorites/${id}`, { method: 'DELETE' })
 }
 
 // ── ncm (device) ───────────────────────────────────────────

@@ -1,30 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Badge } from '@appica/ui-react/badge'
 import { Button } from '@appica/ui-react/button'
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@appica/ui-react/collapsible'
 import { useTheme } from '@appica/ui-react/hooks/use-theme'
 import { Input } from '@appica/ui-react/input'
 import { Separator } from '@appica/ui-react/separator'
 import { Toggle } from '@appica/ui-react/toggle'
 import { ToggleGroup } from '@appica/ui-react/toggle-group'
-import { Bell, Check, DeviceDesktop, MoonStars, Palette, SunHigh } from '@appica/icons-react'
+import { Bell, Check, ChevronDown, DeviceDesktop, MoonStars, Palette, SunHigh } from '@appica/icons-react'
 import { useStore } from '@/store'
+import { ACCENT_SEEDS, dynamicAccent } from '@/lib/accents'
 import { cn } from '@/lib/cn'
 
 const THEME_OPTIONS = [
   { value: 'light', label: '浅色', icon: SunHigh },
   { value: 'dark', label: '深色', icon: MoonStars },
   { value: 'system', label: '跟随系统', icon: DeviceDesktop },
-] as const
-
-const ACCENTS = [
-  { color: '#764ba2', name: '紫罗兰' },
-  { color: '#667eea', name: '靛蓝' },
-  { color: '#e2725b', name: '暖橙' },
-  { color: '#10b981', name: '翠绿' },
-  { color: '#ef4444', name: '红色' },
-  { color: '#f59e0b', name: '琥珀' },
-  { color: '#06b6d4', name: '青色' },
-  { color: '#f43f5e', name: '玫红' },
 ] as const
 
 type NotificationPermissionState = 'granted' | 'denied' | 'default' | 'unsupported' | 'unknown'
@@ -97,7 +88,9 @@ export function AppearanceSection() {
   const accent = useStore((s) => s.accent)
   const current = (theme ?? 'system') as string
 
-  const isActive = (color: string) => accent.toLowerCase() === color.toLowerCase()
+  const isActive = (seed: string) => accent.seed.toLowerCase() === seed.toLowerCase()
+
+  const pickSeed = (seed: string) => useStore.getState().setAccent(dynamicAccent(seed))
 
   return (
     <section aria-labelledby="settings-appearance-heading" className="rounded-2xl border border-border-muted bg-background-subtle p-4 sm:p-5">
@@ -135,47 +128,74 @@ export function AppearanceSection() {
           </ToggleGroup>
         </div>
 
-        <div className="flex flex-col gap-3">
-          <h3 className="text-foreground-intense text-sm font-medium">主题色</h3>
-          <div className="flex flex-wrap items-center gap-2.5">
-            {ACCENTS.map(({ color, name }) => (
-              <button
-                key={color}
-                type="button"
-                aria-label={`主题色 ${name}`}
-                aria-pressed={isActive(color)}
-                onClick={() => useStore.getState().setAccent(color)}
-                className={cn(
-                  'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-black/10 transition',
-                  'focus-visible:outline-ring',
-                  isActive(color) && 'ring-2 ring-offset-2 ring-primary',
-                )}
-                style={{ backgroundColor: color }}
-              >
-                {isActive(color) && <Check className="size-4 text-white" />}
-              </button>
-            ))}
+        <Collapsible className="flex flex-col gap-3">
+          <CollapsibleTrigger className="group flex w-full items-center gap-1.5 text-start">
+            <h3 className="text-foreground-intense text-sm font-medium">主题色</h3>
+            <ChevronDown
+              className="text-foreground-muted size-4 transition-transform duration-200 group-data-panel-open:rotate-180 motion-reduce:transition-none"
+              aria-hidden="true"
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+            {ACCENT_SEEDS.map(({ seed, name }) => {
+              const pair = dynamicAccent(seed)
+              const active = isActive(seed)
+              return (
+                <button
+                  key={seed}
+                  type="button"
+                  aria-label={`主题色 ${name}`}
+                  aria-pressed={active}
+                  title={`${name}（浅 ${pair.light} / 深 ${pair.dark}）`}
+                  onClick={() => pickSeed(seed)}
+                  className={cn(
+                    'flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-black/10 transition',
+                    'focus-visible:outline-ring',
+                    active && 'ring-2 ring-offset-2 ring-primary',
+                  )}
+                  style={{
+                    background: `linear-gradient(135deg, ${pair.light} 50%, ${pair.dark} 50%)`,
+                  }}
+                >
+                  {active && <Check className="size-4 text-white drop-shadow" />}
+                </button>
+              )
+            })}
             <div className="flex min-w-0 items-center gap-2">
               <Input
                 type="color"
-                value={accent}
-                onChange={(e) => useStore.getState().setAccent(e.target.value)}
+                value={accent.seed}
+                onChange={(e) => pickSeed(e.target.value)}
                 aria-label="自定义主题色"
                 className="size-8 shrink-0 cursor-pointer border-0 bg-transparent p-1"
               />
-              <code className="text-foreground-muted min-w-0 truncate font-mono text-xs">{accent.toUpperCase()}</code>
+              <code className="text-foreground-muted min-w-0 truncate font-mono text-xs">{accent.seed.toUpperCase()}</code>
             </div>
           </div>
 
-          <div className="rounded-xl bg-primary p-4 text-primary-foreground shadow-sm">
-            <p className="text-sm font-semibold">主题预览</p>
-            <p className="mt-0.5 text-xs opacity-80">按钮、高亮与强调元素将使用该颜色。</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span className="rounded-md bg-primary-foreground/15 px-3 py-1 text-xs">标签</span>
-              <span className="rounded-md bg-primary-foreground px-3 py-1 text-xs text-primary">主按钮</span>
+          <div className="flex flex-wrap gap-3">
+            <div className="rounded-xl bg-primary p-4 text-primary-foreground shadow-sm">
+              <p className="text-sm font-semibold">浅色模式</p>
+              <p className="mt-0.5 font-mono text-xs opacity-80">{accent.light.toUpperCase()}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-md bg-primary-foreground/15 px-3 py-1 text-xs">标签</span>
+                <span className="rounded-md bg-primary-foreground px-3 py-1 text-xs text-primary">主按钮</span>
+              </div>
+            </div>
+            <div className="rounded-xl bg-primary p-4 text-primary-foreground shadow-sm">
+              <p className="text-sm font-semibold">深色模式</p>
+              <p className="mt-0.5 font-mono text-xs opacity-80">{accent.dark.toUpperCase()}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-md bg-primary-foreground/15 px-3 py-1 text-xs">标签</span>
+                <span className="rounded-md bg-primary-foreground px-3 py-1 text-xs text-primary">主按钮</span>
+              </div>
             </div>
           </div>
-        </div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
         <Separator />
 

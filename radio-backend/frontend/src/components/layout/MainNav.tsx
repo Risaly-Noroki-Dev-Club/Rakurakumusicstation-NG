@@ -1,19 +1,15 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { Navigation, NavigationList, NavigationItem, NavigationLink } from '@appica/ui-react/navigation'
-import { Music, Library, Settings, LayoutDashboard } from '@appica/icons-react'
-import { useStore } from '@/store'
+import { Music, Library, Settings } from '@appica/icons-react'
 
 export function MainNav() {
   const location = useLocation()
-  const isAdmin = useStore((s) => s.auth?.role === 'admin')
 
   const items = [
     { to: '/player', label: '播放器', icon: Music },
     { to: '/library', label: '曲库', icon: Library },
     { to: '/settings', label: '设置', icon: Settings },
   ]
-
-  if (isAdmin) items.push({ to: '/admin', label: '管理', icon: LayoutDashboard })
 
   const activeFor = (to: string) => location.pathname === to || location.pathname.startsWith(`${to}/`)
 

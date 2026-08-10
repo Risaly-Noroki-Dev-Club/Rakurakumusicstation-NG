@@ -8,12 +8,59 @@ import type {
   PlaybackStatus,
   QueueItemDisplay,
   QueueUpdateWs,
+  SongSummary,
   StationInfo,
 } from '@/types'
 import { showToast, type ToastLevel } from '@/lib/toast'
+import { DEFAULT_ACCENT, dynamicAccent, type AccentTheme } from '@/lib/accents'
 
 /** Re-exported so existing call sites (`Toast['level']`) keep compiling. */
 export type Toast = { level: ToastLevel }
+
+/** A locally-stored favorite: song snapshot + when it was added. */
+export interface FavoriteSong {
+  song: SongSummary
+  addedAt: number
+}
+
+const FAVORITES_KEY = 'rakuraku.favorites'
+
+function loadFavorites(): FavoriteSong[] {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as FavoriteSong[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function persistFavorites(list: FavoriteSong[]) {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(list))
+}
+
+const ACCENT_KEY = 'rakuraku.accent'
+
+function loadAccent(): AccentTheme {
+  try {
+    const raw = localStorage.getItem(ACCENT_KEY)
+    if (!raw) return DEFAULT_ACCENT
+    const parsed = JSON.parse(raw) as AccentTheme
+    if (parsed && typeof parsed.seed === 'string' && typeof parsed.light === 'string' && typeof parsed.dark === 'string') {
+      return parsed
+    }
+    // Legacy format: a bare hex string → treat as the seed.
+    if (typeof parsed === 'string') return dynamicAccent(parsed)
+    return DEFAULT_ACCENT
+  } catch {
+    return DEFAULT_ACCENT
+  }
+}
+
+function persistAccent(accent: AccentTheme) {
+  localStorage.setItem(ACCENT_KEY, JSON.stringify(accent))
+}
 
 export interface Playback {
   songId: number
@@ -40,10 +87,11 @@ interface AppStore {
   queue: QueueItemDisplay[]
   history: HistoryItem[]
   listeners: { count: number; names: string[] }
+  favoriteSongs: FavoriteSong[]
   wsConnected: boolean
   audioPaused: boolean
   needsPlay: boolean
-  accent: string
+  accent: AccentTheme
 
   setStation: (station: StationInfo | null) => void
   setAuth: (auth: AuthUser | null) => void
@@ -52,8 +100,9 @@ interface AppStore {
   setWsConnected: (connected: boolean) => void
   setAudioPaused: (paused: boolean) => void
   setNeedsPlay: (needs: boolean) => void
-  setAccent: (accent: string) => void
+  setAccent: (accent: AccentTheme) => void
   addToast: (message: string, level?: ToastLevel) => void
+  toggleFavorite: (song: SongSummary) => void
   applyPlaybackState: (msg: PlaybackStateWs) => void
   applyQueueUpdate: (msg: QueueUpdateWs) => void
   applyListeners: (msg: ListenersUpdateWs) => void
@@ -70,10 +119,11 @@ export const useStore = create<AppStore>((set, get) => ({
   queue: [],
   history: [],
   listeners: { count: 0, names: [] },
+  favoriteSongs: loadFavorites(),
   wsConnected: false,
   audioPaused: false,
   needsPlay: false,
-  accent: localStorage.getItem('rakuraku.accent') ?? '#764ba2',
+  accent: loadAccent(),
 
   setStation: (station) => set({ station }),
   setAuth: (auth) => set({ auth }),
@@ -83,12 +133,23 @@ export const useStore = create<AppStore>((set, get) => ({
   setAudioPaused: (audioPaused) => set({ audioPaused }),
   setNeedsPlay: (needsPlay) => set({ needsPlay }),
   setAccent: (accent) => {
-    localStorage.setItem('rakuraku.accent', accent)
+    persistAccent(accent)
     set({ accent })
   },
 
   addToast: (message, level = 'info') => {
     showToast(message, level)
+  },
+
+  toggleFavorite: (song) => {
+    const next = (() => {
+      const current = get().favoriteSongs
+      const exists = current.some((f) => f.song.id === song.id)
+      if (exists) return current.filter((f) => f.song.id !== song.id)
+      return [{ song, addedAt: Date.now() }, ...current]
+    })()
+    persistFavorites(next)
+    set({ favoriteSongs: next })
   },
 
   applyPlaybackState: (msg) => {

@@ -6,13 +6,14 @@
 @source '../node_modules/@appica/ui-react/dist';
 
 /* ─── Radio brand theming ────────────────────────────────────────────
-   The app allows a custom accent color (Settings → 外观), stored in the
-   zustand store and applied to <html style="--accent: …">. Everything
-   below derives from it; the default is the classic station purple. */
+   The accent is a Material You dynamic-color pair: the Settings page picks
+   a seed color, lib/accents.ts runs it through the designer-tuned tonal
+   palettes, and the light/dark primaries are applied to <html> as
+   --accent-light / --accent-dark. The theme layers below map them onto
+   --accent and derive surface tints via color-mix against theme tokens. */
 
-:root,
-.dark {
-  --accent: #764ba2;
+:root {
+  --accent: var(--accent-light, #6750a4);
   --primary: var(--accent);
   --primary-strong: color-mix(in oklab, var(--accent) 82%, #000);
   --primary-muted: color-mix(in oklab, var(--accent) 72%, var(--foreground-muted));
@@ -20,6 +21,17 @@
   --primary-subtle: color-mix(in oklab, var(--accent) 8%, var(--background));
   --primary-foreground: oklch(1 0 0);
   --focus-ring-primary: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.dark {
+  --accent: var(--accent-dark, #d0bcff);
+  --primary: var(--accent);
+  --primary-strong: color-mix(in oklab, var(--accent) 82%, white);
+  --primary-muted: color-mix(in oklab, var(--accent) 72%, var(--foreground-muted));
+  --primary-soft: color-mix(in oklab, var(--accent) 18%, var(--background));
+  --primary-subtle: color-mix(in oklab, var(--accent) 9%, var(--background));
+  --primary-foreground: oklch(0.13 0.028 261.692);
+  --focus-ring-primary: color-mix(in oklab, var(--accent) 50%, transparent);
 }
 
 :root {

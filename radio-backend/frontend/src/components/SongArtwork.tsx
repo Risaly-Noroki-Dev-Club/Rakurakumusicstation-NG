@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Thumbnail } from '@appica/ui-react/thumbnail'
 import { Music } from '@appica/icons-react'
+import { isCoverKnownGood, rememberCoverSuccess } from '@/lib/coverCache'
 
 export interface SongArtworkProps {
   /** Whether the track has artwork (song.has_cover / playback.coverUrl != null). */
@@ -14,13 +15,47 @@ export interface SongArtworkProps {
 
 /**
  * Single cover-artwork convention for every surface (song table, mini player,
- * player page): request the image only when hasCover is true, fall back to the
- * music glyph on load error. No artificial timeout — slow-but-successful
- * covers must still render.
+ * player page). We preload the image ourselves so the fallback state is fully
+ * controlled:
+ * - no cover → music glyph, no request at all
+ * - cover loading / failed → music glyph (Thumbnail's built-in image-variant
+ *   fallback is a broken-image icon and its `children` are ignored)
+ * - cover loaded → `variant="image"` (served from the browser cache, no flash)
  */
 export function SongArtwork({ hasCover, coverSrc, alt = '', size = 'md', className }: SongArtworkProps) {
+  // Covers that loaded successfully before skip the preload round-trip.
+  const [imgReady, setImgReady] = useState(() => (hasCover && coverSrc ? isCoverKnownGood(coverSrc) : false))
   const [failed, setFailed] = useState(false)
-  const showImage = hasCover && !failed
+
+  useEffect(() => {
+    if (!hasCover || !coverSrc) {
+      setImgReady(false)
+      setFailed(false)
+      return
+    }
+    setImgReady(isCoverKnownGood(coverSrc))
+    setFailed(false)
+    let cancelled = false
+    const im = new Image()
+    im.onload = () => {
+      if (!cancelled) {
+        rememberCoverSuccess(coverSrc)
+        setImgReady(true)
+      }
+    }
+    im.onerror = () => {
+      if (!cancelled) setFailed(true)
+    }
+    im.src = coverSrc
+    return () => {
+      cancelled = true
+      im.onload = null
+      im.onerror = null
+    }
+  }, [hasCover, coverSrc])
+
+  const showImage = imgReady && !failed
+
   return (
     <Thumbnail
       variant={showImage ? 'image' : 'icon-soft'}
@@ -28,12 +63,9 @@ export function SongArtwork({ hasCover, coverSrc, alt = '', size = 'md', classNa
       size={size}
       src={showImage ? coverSrc : undefined}
       alt={alt}
-      onLoadingStatusChange={(status) => {
-        if (status === 'error') setFailed(true)
-      }}
       className={className}
     >
-      <Music />
+      {showImage ? null : <Music />}
     </Thumbnail>
   )
 }

@@ -95,36 +95,6 @@ export interface AdminUser {
   created_at: string
 }
 
-// ── playlists / favorites ──────────────────────────────────
-
-export interface PlaylistWithCount {
-  id: number
-  device_user_id: number
-  name: string
-  is_public: boolean
-  song_count: number
-  created_at: string
-}
-
-export interface PlaylistDetail {
-  playlist: {
-    id: number
-    device_user_id: number
-    name: string
-    is_public: boolean
-    created_at: string
-  }
-  songs: SongSummary[]
-}
-
-export interface Favorite {
-  id: number
-  device_user_id: number
-  song_id: number | null
-  playlist_id: number | null
-  created_at: string
-}
-
 // ── listeners ──────────────────────────────────────────────
 
 export interface ListenerInfo {

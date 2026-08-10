@@ -13,9 +13,10 @@ import {
 import { Badge } from '@appica/ui-react/badge'
 import { Button } from '@appica/ui-react/button'
 import { Skeleton } from '@appica/ui-react/skeleton'
-import { Thumbnail } from '@appica/ui-react/thumbnail'
 import { ChevronDown, ChevronUp, Library, Loader, Music, Trash } from '@appica/icons-react'
-import { fetchQueue, moveQueueItem, removeQueueItem } from '@/api'
+import { fetchQueue, moveQueueItem, removeQueueItem, coverUrl } from '@/api'
+import { SongArtwork } from '@/components/SongArtwork'
+import { loadSongIndex, resolveSong } from '@/lib/songIndex'
 import { useStore, type Toast } from '@/store'
 import type { QueueItemDisplay } from '@/types'
 import { formatDateTime } from '@/lib/format'
@@ -90,6 +91,21 @@ export function QueueList({ items, onChanged }: QueueListProps) {
   const queue = items ?? storeQueue
   const [loaded, setLoaded] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [indexReady, setIndexReady] = useState(false)
+
+  // Build the title|artist → real SongSummary index so queue rows (whose
+  // embedded song.id is hardcoded to 0 by the backend) can load covers.
+  useEffect(() => {
+    let cancelled = false
+    loadSongIndex()
+      .then(() => {
+        if (!cancelled) setIndexReady(true)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // First load (store mode only — an `items` prop implies the owner fetches).
   useEffect(() => {
@@ -173,14 +189,19 @@ export function QueueList({ items, onChanged }: QueueListProps) {
       {queue.map((item, index) => {
         const meta = STATUS_META[item.status] ?? STATUS_META.pending
         const secondary = [item.song?.artist, item.requested_by].filter(Boolean).join(' · ')
+        const realSong = indexReady ? resolveSong(item.song) : null
+        const artworkSong = realSong ?? item.song
         return (
           <li key={item.id} className="flex items-center gap-3 px-3 py-3 sm:px-4">
             <span className="text-foreground-muted w-6 shrink-0 text-center text-xs font-medium tabular-nums">
               {item.position}
             </span>
-            <Thumbnail size="sm" shape="rounded" variant="icon-soft" className="shrink-0" aria-hidden="true">
-              <Music />
-            </Thumbnail>
+            <SongArtwork
+              hasCover={artworkSong?.has_cover ?? false}
+              coverSrc={realSong && realSong.id > 0 ? coverUrl(realSong.id) : undefined}
+              size="sm"
+              className="shrink-0"
+            />
             <div className="min-w-0 flex-1">
               <p className="text-foreground-intense truncate text-sm font-medium">{itemTitle(item)}</p>
               {secondary && <p className="text-foreground-muted truncate text-xs">{secondary}</p>}
