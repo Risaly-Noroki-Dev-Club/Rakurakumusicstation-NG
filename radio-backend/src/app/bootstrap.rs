@@ -26,6 +26,21 @@ pub async fn run() -> anyhow::Result<()> {
         config.server.base_path
     );
 
+    // 部署安全检查：提权令牌未配置或仍为默认值时告警。
+    let setup_token = config.device.admin_setup_token.trim();
+    if setup_token.is_empty() {
+        tracing::warn!(
+            "ADMIN SETUP TOKEN IS NOT CONFIGURED — admin claim is disabled. \
+             Set [device] admin_setup_token in config.toml to enable admin setup."
+        );
+    } else if setup_token == "change-me-in-production" {
+        tracing::warn!(
+            "admin_setup_token is still the DEFAULT 'change-me-in-production' — \
+             anyone who knows the default can claim admin! Change it in config.toml \
+             before exposing this instance publicly."
+        );
+    }
+
     // 初始化音频引擎
     let media_path = config.audio_engine.media_path.clone();
     let crossfade_enabled = config.audio_engine.crossfade_enabled;
