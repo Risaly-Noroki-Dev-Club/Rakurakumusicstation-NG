@@ -18,9 +18,16 @@ export function formatBytes(bytes: number): string {
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
 }
 
-/** Format an RFC3339 timestamp as a short locale string. */
+/**
+ * Format an RFC3339 timestamp as a short locale string.
+ *
+ * 后端所有时间来自 SQLite datetime('now')，是 UTC 且无时区标记
+ * （NaiveDateTime → "2026-08-10 23:24:00"）。无时区串会被浏览器按本地
+ * 时区解析，导致显示差 8 小时——统一按 UTC 补 Z 后再转本地时区。
+ */
 export function formatDateTime(iso: string): string {
-  const d = new Date(iso)
+  const raw = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(iso) ? `${iso.replace(' ', 'T')}Z` : iso
+  const d = new Date(raw)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString(undefined, {
     month: '2-digit',
