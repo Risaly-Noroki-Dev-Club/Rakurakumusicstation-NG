@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@appica/ui-react/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@appica/ui-react/popover'
-import { Progress } from '@/components/Progress'
+import { Progress } from '@appica/ui-react/progress'
 import { Slider } from '@appica/ui-react/slider'
 import { PlayerPause, PlayerPlay, PlayerSkipBack, PlayerSkipForward, Maximize, Volume2, VolumeOff } from '@appica/icons-react'
 import { SongArtwork } from '@/components/SongArtwork'

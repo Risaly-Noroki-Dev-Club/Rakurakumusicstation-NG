@@ -4,11 +4,11 @@ import type { ImportPlaylistResponse, NcmStatus } from '@/types'
 import { useStore } from '@/store'
 import { Badge } from '@appica/ui-react/badge'
 import { Button } from '@appica/ui-react/button'
-import { Field, FieldLabel, FieldDescription } from '@/components/Field'
+import { Field, FieldLabel, FieldDescription } from '@appica/ui-react/field'
 import { Input } from '@appica/ui-react/input'
 import { Skeleton } from '@appica/ui-react/skeleton'
 import { Spinner } from '@appica/ui-react/spinner'
-import { Textarea } from '@/components/Textarea'
+import { Textarea } from '@appica/ui-react/textarea'
 import { CloudUpload, Link, ShieldCheck, Sparkle } from '@appica/icons-react'
 
 function errMsg(e: unknown): string {

@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchStationSettings, saveStationSettings, uploadStationIcon } from '@/api'
 import type { StationSettings } from '@/types'
 import { useStore } from '@/store'
 import { Button } from '@appica/ui-react/button'
-import { Field, FieldLabel, FieldDescription } from '@/components/Field'
+import { Field, FieldLabel } from '@appica/ui-react/field'
 import { Input } from '@appica/ui-react/input'
 import { Skeleton } from '@appica/ui-react/skeleton'
 import { Spinner } from '@appica/ui-react/spinner'
-import { Textarea } from '@/components/Textarea'
+import { Textarea } from '@appica/ui-react/textarea'
 import { Thumbnail } from '@appica/ui-react/thumbnail'
 import { Check, Radio, Upload } from '@appica/icons-react'
 
@@ -29,6 +29,8 @@ export function AdminStationSettings() {
   const [iconFile, setIconFile] = useState<File | null>(null)
   const [uploadingIcon, setUploadingIcon] = useState(false)
   const [iconFailed, setIconFailed] = useState(false)
+  const [iconVersion, setIconVersion] = useState(0)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
     try {
@@ -51,6 +53,11 @@ export function AdminStationSettings() {
 
   // resolved_icon_url may be relative (or absent) — render as-is; fall back when it fails to load.
   const iconSrc = settings?.resolved_icon_url || settings?.icon_url || ''
+  // 本地图标（icon_path 非空）是固定 URL（/site-icon），上传后会被浏览器缓存；
+  // 用版本号做 cache-busting，保证上传后立即显示新图标。
+  const iconDisplaySrc = settings?.icon_path && iconSrc ? `${iconSrc}?v=${iconVersion}` : iconSrc
+  // 已有图标时在输入框里显示文件名（如 site-icon.svg）
+  const iconFileName = settings?.icon_path ? settings.icon_path.split(/[\\/]/).pop() ?? '' : ''
 
   useEffect(() => {
     setIconFailed(false)
@@ -73,26 +80,31 @@ export function AdminStationSettings() {
     }
   }
 
-  async function handleUploadIcon() {
-    if (!iconFile) {
-      addToast('请先选择图标文件', 'warning')
-      return
-    }
-    if (iconFile.size > MAX_ICON_BYTES) {
+  async function handleUploadIcon(file: File) {
+    if (file.size > MAX_ICON_BYTES) {
       addToast('图标文件不能超过 2MB', 'warning')
       return
     }
     setUploadingIcon(true)
     try {
-      await uploadStationIcon(iconFile)
+      await uploadStationIcon(file)
       addToast('图标已上传', 'success')
       setIconFile(null)
+      setIconVersion((v) => v + 1)
       await load()
     } catch (e) {
       addToast(errMsg(e), 'error')
     } finally {
       setUploadingIcon(false)
     }
+  }
+
+  async function pickIconFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null
+    e.target.value = ''
+    if (!file) return
+    setIconFile(file)
+    await handleUploadIcon(file)
   }
 
   return (
@@ -160,7 +172,7 @@ export function AdminStationSettings() {
                 size="lg"
                 shape="rounded"
                 variant="image"
-                src={iconSrc || undefined}
+                src={iconDisplaySrc || undefined}
                 alt="电台图标"
                 onLoadingStatusChange={(s) => {
                   if (s === 'error') setIconFailed(true)
@@ -171,18 +183,33 @@ export function AdminStationSettings() {
               </Thumbnail>
               <div className="min-w-0 flex-1 space-y-2">
                 <Input
+                  readOnly
+                  value={iconFile?.name || iconFileName || '未选择任何文件'}
+                  inputSize="sm"
+                  aria-label="电台图标文件"
+                  startSlot={<Radio className="size-4" aria-hidden />}
+                  endSlot={
+                    <Button
+                      className="-me-1.5"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="选择并上传图标"
+                      disabled={uploadingIcon}
+                      onClick={() => fileRef.current?.click()}
+                    >
+                      {uploadingIcon ? <Spinner currentColor className="size-4" aria-label="上传中" /> : <Upload />}
+                    </Button>
+                  }
+                />
+                <input
+                  ref={fileRef}
                   type="file"
                   accept="image/*"
-                  inputSize="sm"
-                  aria-label="选择图标文件"
-                  onChange={(e) => setIconFile(e.target.files?.[0] ?? null)}
-                  className="file:me-2 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1 file:text-xs file:font-medium file:text-primary-foreground"
+                  className="hidden"
+                  aria-hidden
+                  onChange={pickIconFile}
                 />
-                <FieldDescription>支持 PNG / JPG / SVG，不超过 2MB。</FieldDescription>
-                <Button variant="outline" size="sm" onClick={handleUploadIcon} disabled={uploadingIcon || !iconFile}>
-                  {uploadingIcon ? <Spinner currentColor className="size-4" aria-label="上传中" /> : <Upload data-icon="start" />}
-                  上传图标
-                </Button>
+                <p className="text-foreground-muted mt-1.5 text-xs">支持 PNG / JPG / SVG，不超过 2MB。</p>
               </div>
             </div>
           </section>
