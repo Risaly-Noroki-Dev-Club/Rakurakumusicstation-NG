@@ -3,7 +3,7 @@ use crate::app::state::AppState;
 use crate::auth;
 use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
-use crate::services::metadata::resolve_or_extract_cover;
+use crate::services::metadata::ensure_cover_cached;
 use axum::{
     body::Body,
     extract::{Path, Query, State},
@@ -116,7 +116,7 @@ pub async fn get_song_cover(
         .ok_or_else(|| AppError::NotFound("Song not found".into()))?;
 
     let media_path = std::path::Path::new(&state.config.audio_engine.media_path);
-    let cover_path = resolve_or_extract_cover(
+    let cover_path = ensure_cover_cached(
         &state.db,
         song.id,
         &song.file_path,

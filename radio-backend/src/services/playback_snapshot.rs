@@ -16,6 +16,8 @@ pub(crate) struct PlaybackSnapshotCache {
     cached: Option<CachedSong>,
     /// 记录已向客户端发送过全量歌词的歌曲 ID，避免重复克隆。
     lyrics_broadcast_song_id: Option<i64>,
+    /// 最近一次含全量歌词的序列化消息 — 新 WS 连接补发用。
+    last_full_message: Option<String>,
 }
 
 impl PlaybackSnapshotCache {
@@ -24,7 +26,13 @@ impl PlaybackSnapshotCache {
             last_file_path: String::new(),
             cached: None,
             lyrics_broadcast_song_id: None,
+            last_full_message: None,
         }
+    }
+
+    /// 最近一条含全量歌词的 playback_state 消息（若有）。
+    pub(crate) fn last_full_message(&self) -> Option<String> {
+        self.last_full_message.clone()
     }
 
     pub(crate) async fn build_message(
@@ -66,8 +74,7 @@ impl PlaybackSnapshotCache {
         } else {
             None
         };
-
-        WsMessage::PlaybackState {
+        let full = WsMessage::PlaybackState {
             song_id,
             title,
             artist,
@@ -102,7 +109,13 @@ impl PlaybackSnapshotCache {
                 None
             },
             timestamp_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        if should_send_full_lyrics {
+            self.last_full_message = Some(serde_json::to_string(&full).unwrap_or_default());
         }
+
+        full
     }
 
     async fn refresh_on_song_change(
@@ -153,8 +166,9 @@ fn load_lyrics_lines(state: &AppState, lyrics_path: &str) -> Option<Vec<LyricsLi
     }
 
     let lrc_full = std::path::Path::new(&state.config.audio_engine.media_path).join(lyrics_path);
-    std::fs::read_to_string(&lrc_full).ok().map(|content| {
-        let parsed = crate::lyrics::Lyrics::parse(&content);
+    let content = decode_lrc_text(&lrc_full)?;
+    let parsed = crate::lyrics::Lyrics::parse(&content);
+    Some(
         parsed
             .lines
             .into_iter()
@@ -162,6 +176,35 @@ fn load_lyrics_lines(state: &AppState, lyrics_path: &str) -> Option<Vec<LyricsLi
                 time_ms: l.time_ms,
                 text: l.text,
             })
-            .collect::<Vec<_>>()
-    })
+            .collect::<Vec<_>>(),
+    )
+}
+
+/// 读取 .lrc 文本，支持常见编码：UTF-8 → GBK/GB18030 → UTF-16（按 BOM）。
+/// 中文歌词文件常为 GBK 编码，`read_to_string`（仅 UTF-8）会静默失败，
+/// 导致有歌词的歌曲显示"暂无歌词"。
+fn decode_lrc_text(path: &std::path::Path) -> Option<String> {
+    let bytes = std::fs::read(path).ok()?;
+
+    // UTF-16 BOM
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        let (cow, _) = encoding_rs::UTF_16LE.decode_without_bom_handling(&bytes[2..]);
+        return Some(cow.into_owned());
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+        let (cow, _) = encoding_rs::UTF_16BE.decode_without_bom_handling(&bytes[2..]);
+        return Some(cow.into_owned());
+    }
+
+    // UTF-8（含 BOM）
+    if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+        return Some(String::from_utf8_lossy(&bytes[3..]).into_owned());
+    }
+    if let Ok(s) = std::str::from_utf8(&bytes) {
+        return Some(s.to_string());
+    }
+
+    // GBK/GB18030 回退（中文 .lrc 最常见）
+    let (cow, _, _) = encoding_rs::GBK.decode(&bytes);
+    Some(cow.into_owned())
 }

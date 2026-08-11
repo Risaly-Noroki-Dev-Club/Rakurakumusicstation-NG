@@ -270,26 +270,54 @@ pub async fn upload_icon(
     Err(AppError::BadRequest("未找到上传文件字段".into()))
 }
 
+/// 缺省站点图标 — 电台风格 SVG（未配置上传图标时使用）。
+const DEFAULT_ICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#764ba2"/>
+      <stop offset="1" stop-color="#5b6ee1"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M26 42V22l14-3v20"/>
+    <circle cx="21.5" cy="42" r="4.5"/>
+    <circle cx="35.5" cy="39" r="4.5"/>
+  </g>
+</svg>"##;
+
 pub async fn site_icon(State(state): State<Arc<AppState>>) -> Result<Response, AppError> {
     let station = state.station.read().unwrap_or_else(|e| e.into_inner());
-    if station.icon_path.trim().is_empty() {
-        return Err(AppError::NotFound("未配置上传图标".into()));
-    }
+    let configured = !station.icon_path.trim().is_empty();
     let path = std::path::PathBuf::from(&station.icon_path);
     drop(station);
-    let data = std::fs::read(&path).map_err(|_| AppError::NotFound("图标文件不存在".into()))?;
-    let content_type = icon_content_type(&path);
-    let is_svg = content_type == "image/svg+xml";
 
-    let mut builder = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::CACHE_CONTROL, "no-cache")
-        .header("x-content-type-options", "nosniff");
+    if configured {
+        if let Ok(data) = std::fs::read(&path) {
+            let content_type = icon_content_type(&path);
+            let is_svg = content_type == "image/svg+xml";
 
-    if is_svg {
-        builder = builder.header("content-security-policy", "sandbox");
+            let mut builder = Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, content_type)
+                .header(header::CACHE_CONTROL, "no-cache")
+                .header("x-content-type-options", "nosniff");
+
+            if is_svg {
+                builder = builder.header("content-security-policy", "sandbox");
+            }
+
+            return Ok(builder.body(axum::body::Body::from(data)).unwrap());
+        }
     }
 
-    Ok(builder.body(axum::body::Body::from(data)).unwrap())
+    // 未配置或文件丢失：回退到默认电台图标，保持 200。
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/svg+xml")
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .header("x-content-type-options", "nosniff")
+        .header("content-security-policy", "sandbox")
+        .body(axum::body::Body::from(DEFAULT_ICON_SVG.to_string()))
+        .unwrap())
 }

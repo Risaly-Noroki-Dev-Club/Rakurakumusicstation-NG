@@ -1451,6 +1451,7 @@ dependencies = [
  "cipher",
  "dashmap",
  "dotenvy",
+ "encoding_rs",
  "futures-util",
  "hex",
  "id3",

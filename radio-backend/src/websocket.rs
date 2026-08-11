@@ -14,7 +14,33 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures_util::{SinkExt, StreamExt};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+/// 当前 WebSocket 连接数（进程内）。
+static WS_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
+const WS_MAX_CONNECTIONS: usize = 256;
+
+/// RAII：handle_socket 结束时释放连接槽位（覆盖所有提前 return 路径）。
+struct WsSlot;
+
+impl WsSlot {
+    fn acquire() -> Result<WsSlot, AppError> {
+        if WS_CONNECTIONS.fetch_add(1, Ordering::Relaxed) >= WS_MAX_CONNECTIONS {
+            WS_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+            return Err(AppError::RateLimited(
+                "Too many WebSocket connections".into(),
+            ));
+        }
+        Ok(WsSlot)
+    }
+}
+
+impl Drop for WsSlot {
+    fn drop(&mut self) {
+        WS_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
 
 /// WebSocket 升级处理器 — GET /ws
 pub async fn ws_handler(
@@ -22,6 +48,8 @@ pub async fn ws_handler(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    let slot = WsSlot::acquire()?;
+
     // New visitors receive a cookie from the global middleware but are not
     // persisted until they use an identity-requiring action. They may listen
     // anonymously, but only known devices affect listener presence.
@@ -31,12 +59,18 @@ pub async fn ws_handler(
     };
 
     Ok(ws
-        .on_upgrade(move |socket| handle_socket(socket, state, device))
+        .on_upgrade(move |socket| handle_socket(socket, state, device, slot))
         .into_response())
 }
 
-/// 处理单个 WebSocket 连接的生命周期。
-async fn handle_socket(socket: WebSocket, state: Arc<AppState>, device: Option<AuthUser>) {
+/// 处理单个 WebSocket 连接的生命周期。`_slot` 持有连接计数，
+/// 在连接关闭（含所有提前 return 路径）时释放。
+async fn handle_socket(
+    socket: WebSocket,
+    state: Arc<AppState>,
+    device: Option<AuthUser>,
+    _slot: WsSlot,
+) {
     let (mut sender, mut receiver) = socket.split();
 
     let mut rx = state.ws_tx.subscribe();
@@ -71,6 +105,25 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, device: Option<A
             broadcast_listeners_update(&state);
         }
         return;
+    }
+
+    // 补发最近一条含全量歌词的 playback_state，重连/新连接的客户端才能
+    // 立刻拿到当前歌曲的歌词（广播模式下普通帧只带行索引）。
+    let full_snapshot = {
+        state
+            .ws_full_snapshot
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    };
+    if let Some(full) = full_snapshot {
+        if sender.send(Message::Text(full.into())).await.is_err() {
+            if let Some(device_token) = &device_token {
+                state.listeners.remove(device_token);
+                broadcast_listeners_update(&state);
+            }
+            return;
+        }
     }
 
     let mut heartbeat = tokio::time::interval(tokio::time::Duration::from_secs(30));

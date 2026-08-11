@@ -147,14 +147,40 @@ pub async fn claim_admin(
     setup_token: &str,
     configured_token: &str,
 ) -> Result<AuthUser, AppError> {
+    // 防暴力破解：连续失败达到阈值后全局锁定提权一段时间。
+    // 提权不是高频操作，全局锁不会误伤正常使用。
+    const MAX_FAILURES: u64 = 5;
+    const LOCK_SECS: i64 = 300;
+
+    let now = chrono::Utc::now().timestamp();
+    let lock_until = CLAIM_LOCK_UNTIL.load(std::sync::atomic::Ordering::Relaxed);
+    if now < lock_until {
+        return Err(AppError::RateLimited(format!(
+            "Too many failed admin attempts, try again in {} seconds",
+            lock_until - now
+        )));
+    }
+
     if configured_token.is_empty() {
         return Err(AppError::Forbidden(
             "Admin setup is disabled: no admin_setup_token configured".into(),
         ));
     }
     if setup_token != configured_token {
+        let failures = CLAIM_FAILURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if failures >= MAX_FAILURES {
+            CLAIM_FAILURES.store(0, std::sync::atomic::Ordering::Relaxed);
+            CLAIM_LOCK_UNTIL.store(now + LOCK_SECS, std::sync::atomic::Ordering::Relaxed);
+            return Err(AppError::RateLimited(format!(
+                "Too many failed admin attempts, try again in {} seconds",
+                LOCK_SECS
+            )));
+        }
         return Err(AppError::Forbidden("Invalid admin setup token".into()));
     }
+
+    // 成功：重置失败计数。
+    CLAIM_FAILURES.store(0, std::sync::atomic::Ordering::Relaxed);
 
     let user = ensure_device_user(db, device_token).await?;
 
@@ -165,8 +191,12 @@ pub async fn claim_admin(
 
     Ok(AuthUser {
         id: user.id,
-        display_name: user.display_name,
+        display_name: user.display_name.clone(),
         role: "admin".into(),
-        device_token: user.device_token,
+        device_token: user.device_token.clone(),
     })
 }
+
+/// claim_admin 暴力尝试防护状态（进程内）。
+static CLAIM_FAILURES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static CLAIM_LOCK_UNTIL: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);

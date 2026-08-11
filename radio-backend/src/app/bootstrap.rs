@@ -26,6 +26,21 @@ pub async fn run() -> anyhow::Result<()> {
         config.server.base_path
     );
 
+    // 部署安全检查：提权令牌未配置或仍为默认值时告警。
+    let setup_token = config.device.admin_setup_token.trim();
+    if setup_token.is_empty() {
+        tracing::warn!(
+            "ADMIN SETUP TOKEN IS NOT CONFIGURED — admin claim is disabled. \
+             Set [device] admin_setup_token in config.toml to enable admin setup."
+        );
+    } else if setup_token == "change-me-in-production" {
+        tracing::warn!(
+            "admin_setup_token is still the DEFAULT 'change-me-in-production' — \
+             anyone who knows the default can claim admin! Change it in config.toml \
+             before exposing this instance publicly."
+        );
+    }
+
     // 初始化音频引擎
     let media_path = config.audio_engine.media_path.clone();
     let crossfade_enabled = config.audio_engine.crossfade_enabled;
@@ -53,6 +68,24 @@ pub async fn run() -> anyhow::Result<()> {
 
     // 启动引擎状态轮询器，将播放状态转发给 WebSocket 客户端
     crate::services::playback_broadcast::start_engine_state_poller(state.clone());
+
+    // 定期清理僵尸设备用户（启动时一次，之后每 24h 一次）
+    {
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(24 * 3600));
+            loop {
+                match crate::services::cleanup::prune_inactive_default_users(&db).await {
+                    Ok(n) if n > 0 => {
+                        tracing::info!("Pruned {} inactive default device users", n);
+                    }
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("Device cleanup task failed: {:?}", e),
+                }
+                interval.tick().await;
+            }
+        });
+    }
 
     // 构建路由
     let app = crate::routes::build_router(state.clone())
