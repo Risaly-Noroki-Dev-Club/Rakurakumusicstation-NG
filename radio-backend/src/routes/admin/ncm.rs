@@ -136,13 +136,14 @@ fn extract_playlist_id(link: &str) -> Option<i64> {
     link.trim().parse().ok()
 }
 
-/// 从网易云单曲链接中提取歌曲 id（`song?id=…`）或裸数字。
+/// 从网易云单曲链接中提取歌曲 id。裸数字保持为歌单 id，
+/// 以兼容原有的歌单导入行为。
 fn extract_song_id(link: &str) -> Option<i64> {
-    let re = regex::Regex::new(r"song\?id=(\d+)").ok()?;
+    let re = regex::Regex::new(r"(?:song\?id=|/song/)(\d+)").ok()?;
     if let Some(caps) = re.captures(link) {
         return caps.get(1)?.as_str().parse().ok();
     }
-    link.trim().parse().ok()
+    None
 }
 
 /// POST /api/admin/ncm/playlist — 解析网易云歌单/单曲链接并写入导入任务表
@@ -251,4 +252,31 @@ pub async fn start_ncm_import(
         "已启动 {} 首歌曲的导入下载",
         tasks.len()
     ))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_playlist_id, extract_song_id};
+
+    #[test]
+    fn parses_explicit_song_links_only() {
+        assert_eq!(
+            extract_song_id("https://music.163.com/song?id=12345"),
+            Some(12345)
+        );
+        assert_eq!(
+            extract_song_id("https://music.163.com/song/67890"),
+            Some(67890)
+        );
+        assert_eq!(extract_song_id("12345"), None);
+    }
+
+    #[test]
+    fn keeps_bare_numeric_ids_as_playlists() {
+        assert_eq!(extract_playlist_id("12345"), Some(12345));
+        assert_eq!(
+            extract_playlist_id("https://music.163.com/playlist?id=67890"),
+            Some(67890)
+        );
+    }
 }

@@ -28,9 +28,18 @@ pub async fn station_info(
     let ws_host = headers
         .get("x-forwarded-host")
         .and_then(|v| v.to_str().ok())
-        .or_else(|| headers.get(axum::http::header::HOST).and_then(|v| v.to_str().ok()));
+        .or_else(|| {
+            headers
+                .get(axum::http::header::HOST)
+                .and_then(|v| v.to_str().ok())
+        });
     let ws_url = match ws_host {
-        Some(h) => format!("{}://{}/ws", ws_proto, h),
+        Some(h) => format!(
+            "{}://{}{}",
+            ws_proto,
+            h,
+            join_base_path(&state.config.server.base_path, "/ws")
+        ),
         None => join_base_path(&state.config.server.base_path, "/ws"),
     };
 

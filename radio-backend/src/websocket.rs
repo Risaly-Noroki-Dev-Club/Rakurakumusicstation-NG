@@ -28,7 +28,9 @@ impl WsSlot {
     fn acquire() -> Result<WsSlot, AppError> {
         if WS_CONNECTIONS.fetch_add(1, Ordering::Relaxed) >= WS_MAX_CONNECTIONS {
             WS_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
-            return Err(AppError::RateLimited("Too many WebSocket connections".into()));
+            return Err(AppError::RateLimited(
+                "Too many WebSocket connections".into(),
+            ));
         }
         Ok(WsSlot)
     }
@@ -107,12 +109,14 @@ async fn handle_socket(
 
     // 补发最近一条含全量歌词的 playback_state，重连/新连接的客户端才能
     // 立刻拿到当前歌曲的歌词（广播模式下普通帧只带行索引）。
-    if let Some(full) = state
-        .ws_full_snapshot
-        .read()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
-    {
+    let full_snapshot = {
+        state
+            .ws_full_snapshot
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+    };
+    if let Some(full) = full_snapshot {
         if sender.send(Message::Text(full.into())).await.is_err() {
             if let Some(device_token) = &device_token {
                 state.listeners.remove(device_token);

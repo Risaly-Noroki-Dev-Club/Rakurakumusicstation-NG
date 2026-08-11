@@ -112,8 +112,7 @@ impl PlaybackSnapshotCache {
         };
 
         if should_send_full_lyrics {
-            self.last_full_message =
-                Some(serde_json::to_string(&full).unwrap_or_default());
+            self.last_full_message = Some(serde_json::to_string(&full).unwrap_or_default());
         }
 
         full
@@ -206,6 +205,6 @@ fn decode_lrc_text(path: &std::path::Path) -> Option<String> {
     }
 
     // GBK/GB18030 回退（中文 .lrc 最常见）
-    let (cow, _) = encoding_rs::GBK.decode(&bytes);
+    let (cow, _, _) = encoding_rs::GBK.decode(&bytes);
     Some(cow.into_owned())
 }
