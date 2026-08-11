@@ -25,6 +25,47 @@ use tokio::sync::broadcast;
 
 const MAX_BATCH_ITEMS: usize = 200;
 
+fn ncm_item_label(item: &crate::models::BatchDownloadItem) -> String {
+    if let Some(title) = item
+        .title
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        return match item
+            .artist
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            Some(artist) => format!("{} {}", artist, title),
+            None => title.to_string(),
+        };
+    }
+
+    item.id
+        .as_deref()
+        .or(item.url.as_deref())
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+fn extract_ncm_song_id(item: &crate::models::BatchDownloadItem) -> Option<i64> {
+    let song_link = regex::Regex::new(r"(?:song\?id=|/song/)(\d+)").ok()?;
+    for value in [item.id.as_deref(), item.url.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        let value = value.trim();
+        if let Ok(id) = value.parse() {
+            return Some(id);
+        }
+        if let Some(captures) = song_link.captures(value) {
+            return captures.get(1)?.as_str().parse().ok();
+        }
+    }
+    None
+}
+
 /// POST /api/admin/download/batch — 启动批量下载任务
 pub async fn start_batch_download(
     State(state): State<Arc<AppState>>,
@@ -196,15 +237,7 @@ async fn run_ncm_batch(
     });
 
     for (i, item) in items.iter().enumerate() {
-        let keyword = if let Some(ref title) = item.title {
-            if let Some(ref artist) = item.artist {
-                format!("{} {}", artist, title)
-            } else {
-                title.clone()
-            }
-        } else {
-            item.id.clone().unwrap_or_default()
-        };
+        let keyword = ncm_item_label(item);
 
         if keyword.is_empty() {
             let result = BatchDownloadResultItem {
@@ -308,29 +341,39 @@ async fn ncm_download_one(
     idx: usize,
     total: usize,
 ) -> anyhow::Result<String> {
-    let keyword = if let Some(ref title) = item.title {
-        if let Some(ref artist) = item.artist {
-            format!("{} {}", artist, title)
-        } else {
-            title.clone()
-        }
+    let (song_id, song_name, artist_name) = if let Some(song_id) = extract_ncm_song_id(item) {
+        let song = api::get_song_detail(client, &[song_id])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("未找到歌曲"))?;
+        let artist_name = song
+            .ar
+            .first()
+            .map(|artist| artist.name.clone())
+            .unwrap_or_default();
+        (song.id, song.name, artist_name)
     } else {
-        item.id.clone().unwrap_or_default()
+        if item
+            .url
+            .as_deref()
+            .is_some_and(|url| !url.trim().is_empty())
+        {
+            anyhow::bail!("无法解析网易云单曲链接");
+        }
+
+        let keyword = ncm_item_label(item);
+        let results = api::search_song(client, &keyword, 5).await?;
+        let song = results
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("未找到歌曲"))?;
+        let artist_name = song
+            .artists
+            .first()
+            .map(|artist| artist.name.clone())
+            .unwrap_or_default();
+        (song.id, song.name.clone(), artist_name)
     };
-
-    // 1. Search
-    let results = api::search_song(client, &keyword, 5).await?;
-    if results.is_empty() {
-        anyhow::bail!("未找到歌曲");
-    }
-
-    let song = &results[0];
-    let artist_name = song
-        .artists
-        .first()
-        .map(|a| a.name.as_str())
-        .unwrap_or("")
-        .to_string();
 
     let _ = task.tx.send(DownloadEvent {
         log: format!(
@@ -338,8 +381,8 @@ async fn ncm_download_one(
             idx + 1,
             total,
             artist_name,
-            song.name,
-            song.id
+            song_name,
+            song_id
         ),
         done: false,
         task_id: None,
@@ -347,7 +390,7 @@ async fn ncm_download_one(
 
     // 2. Get download URL
     let level = quality_to_ncm_level(quality);
-    let urls = api::get_song_url(client, &[song.id], level).await?;
+    let urls = api::get_song_url(client, &[song_id], level).await?;
     if urls.is_empty() || urls[0].url.is_empty() {
         anyhow::bail!("无法获取下载链接");
     }
@@ -357,7 +400,7 @@ async fn ncm_download_one(
 
     // 3. Download file
     let safe_artist = sanitize_filename(&artist_name);
-    let safe_title = sanitize_filename(&song.name);
+    let safe_title = sanitize_filename(&song_name);
     let filename = if let Some(ref save_as) = item.save_as {
         if save_as.contains('.') {
             sanitize_filename(save_as)
@@ -434,7 +477,7 @@ async fn ncm_download_one(
 
     // 4. Download lyrics (unless override_lyrics is true)
     if !item.override_lyrics && lyrics_mode != "none" {
-        match api::get_song_lyric(client, song.id).await {
+        match api::get_song_lyric(client, song_id).await {
             Ok(Some(lyric)) if !lyric.is_empty() => {
                 if lyrics_mode == "overwrite" {
                     // Save as .lrc with same name as audio file
@@ -727,4 +770,34 @@ async fn netdisk_download_one(
     }
 
     Ok(downloaded_paths)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_ncm_song_id;
+    use crate::models::BatchDownloadItem;
+
+    fn item(id: Option<&str>, url: Option<&str>) -> BatchDownloadItem {
+        BatchDownloadItem {
+            id: id.map(str::to_string),
+            url: url.map(str::to_string),
+            artist: None,
+            title: None,
+            save_as: None,
+            override_lyrics: false,
+        }
+    }
+
+    #[test]
+    fn extracts_song_ids_from_batch_items() {
+        assert_eq!(extract_ncm_song_id(&item(Some("123"), None)), Some(123));
+        assert_eq!(
+            extract_ncm_song_id(&item(None, Some("https://music.163.com/song?id=456"))),
+            Some(456)
+        );
+        assert_eq!(
+            extract_ncm_song_id(&item(None, Some("https://music.163.com/playlist?id=789"))),
+            None
+        );
+    }
 }

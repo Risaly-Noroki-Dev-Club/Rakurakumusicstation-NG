@@ -168,9 +168,9 @@ export const useStore = create<AppStore>((set, get) => ({
     const prev = get().playback
     const changedSong = songKey(prev) !== `${msg.song_id}|${msg.title}|${msg.stream_url}`
     // 后端语义：lyrics_lines 非 null 就是全量（切歌首帧，或新连接补发帧），
-    // 直接更新；null 表示"本帧不重发"（500ms 心跳帧），保留现有缓存。
-    const lyricsLines = msg.lyrics_lines !== null ? msg.lyrics_lines : prev?.lyricsLines ?? null
-    const lyricsKnown = msg.lyrics_lines !== null ? true : (prev?.lyricsKnown ?? false)
+    // 直接更新；null 表示"本帧不重发"。同一首歌保留缓存，切歌时立即清空。
+    const lyricsLines = msg.lyrics_lines !== null ? msg.lyrics_lines : changedSong ? null : prev?.lyricsLines ?? null
+    const lyricsKnown = msg.lyrics_lines !== null ? true : changedSong ? false : (prev?.lyricsKnown ?? false)
 
     set({
       playback: {

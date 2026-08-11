@@ -62,7 +62,8 @@ export function AdminNcm() {
   async function handleTest() {
     setTesting(true)
     try {
-      await testAdminNcmLogin()
+      const result = await testAdminNcmLogin()
+      if (!result.success) throw new Error(result.output || '网易云登录验证失败')
       addToast('网易云账号登录验证通过', 'success')
     } catch (e) {
       addToast(errMsg(e), 'error')

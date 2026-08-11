@@ -14,6 +14,7 @@ import type {
   HistoryItem,
   ImportPlaylistResponse,
   ListenerInfo,
+  NcmLoginResult,
   NcmStatus,
   NowPlaying,
   Paginated,
@@ -118,8 +119,8 @@ export function saveNcmCookie(cookie: string): Promise<unknown> {
   return apiFetch('/api/ncm', { method: 'POST', body: JSON.stringify({ cookie }) })
 }
 
-export function testNcmLogin(): Promise<unknown> {
-  return apiFetch('/api/ncm/test', { method: 'POST' })
+export function testNcmLogin(): Promise<NcmLoginResult> {
+  return apiFetch<NcmLoginResult>('/api/ncm/test', { method: 'POST' })
 }
 
 // ── admin ──────────────────────────────────────────────────
@@ -224,8 +225,8 @@ export function saveAdminNcmCookie(cookie: string): Promise<unknown> {
   return apiFetch('/api/admin/ncm', { method: 'POST', body: JSON.stringify({ cookie }) })
 }
 
-export function testAdminNcmLogin(): Promise<unknown> {
-  return apiFetch('/api/admin/ncm/test', { method: 'POST' })
+export function testAdminNcmLogin(): Promise<NcmLoginResult> {
+  return apiFetch<NcmLoginResult>('/api/admin/ncm/test', { method: 'POST' })
 }
 
 export function importNcmPlaylist(link: string): Promise<ImportPlaylistResponse> {

@@ -129,6 +129,11 @@ export interface NcmStatus {
   phone_hint: string
 }
 
+export interface NcmLoginResult {
+  success: boolean
+  output: string
+}
+
 export interface DownloadStatus {
   running: boolean
   log: string

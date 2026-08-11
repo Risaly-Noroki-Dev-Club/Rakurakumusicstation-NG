@@ -72,7 +72,8 @@ export function NcmSection() {
     if (testing) return
     setTesting(true)
     try {
-      await testNcmLogin()
+      const result = await testNcmLogin()
+      if (!result.success) throw new Error(result.output || '网易云登录测试失败')
       toast('网易云登录测试通过', 'success')
     } catch (err) {
       toast(errMsg(err), 'error')

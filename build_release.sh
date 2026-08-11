@@ -69,7 +69,7 @@ done
 
 # ─── 前端构建 ─────────────────────────────────────────────────
 if [ "$SKIP_FRONTEND" -eq 0 ]; then
-    print_status "构建前端 (Vue 3 + Vite)..."
+    print_status "构建前端 (React 19 + Vite)..."
     cd "$FRONTEND_DIR"
 
     if ! command -v npm &>/dev/null; then

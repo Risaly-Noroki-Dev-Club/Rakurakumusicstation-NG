@@ -82,8 +82,6 @@ cd dist && ./stop.sh
                         │                                              │
   radio-backend/frontend│  1. npm ci            （安装依赖）            │
   ─────────────────────▶│  2. npm run build     （前端生产构建）         │
-                        │     ├─ prebuild: node scripts/fetch-fonts.mjs│
-                        │     │    从 CDN 下载可变字体到 src/assets/fonts│
                         │     ├─ tsc --noEmit    （类型检查）           │
                         │     └─ vite build      → radio-backend/static/│
                         │                                              │
@@ -104,27 +102,18 @@ cd dist && ./stop.sh
 ```bash
 cd radio-backend/frontend
 npm ci                          # 安装依赖
-npm run build                   # = prebuild + tsc --noEmit + vite build
+npm run build                   # = tsc --noEmit + vite build
 ```
 
-1. **prebuild — 字体获取**（`scripts/fetch-fonts.mjs`）：构建/dev 前从 CDN 下载
-   Inter Variable 与 JetBrains Mono Variable 的可变字重 woff2 子集（共 13 个文件）
-   到 `src/assets/fonts/`（gitignore，不入库）：
-
-   - 主源：`fastly.jsdelivr.net`（字节与 @fontsource-variable 包一致，国内访问快）
-   - 回退：`gcore.jsdelivr.net` → `unpkg.com`
-   - 幂等：文件已存在且校验通过（wOF2 魔数）则跳过；部分失败回退系统字体；
-     全部失败才中断构建
-   - 字体声明在 `src/fonts.css`（`@font-face` + unicode-range），`url()` 相对路径
-     由 Vite 指纹化并加 base 前缀，子路径部署（`/radio/`）自动正确
+1. **自托管字体**：Inter Variable 与 JetBrains Mono Variable 的 woff2 子集
+   随源码保存在 `src/assets/fonts/`，构建不访问外部 CDN。字体声明在
+   `src/fonts.css`（`@font-face` + unicode-range），相对 `url()` 由 Vite 指纹化并加
+   base 前缀，支持离线构建和子路径部署。
 
 2. **类型检查**：`tsc --noEmit`（strict，全绿才继续）。
 
 3. **Vite 构建**：产物输出到 `../static/`（即 `radio-backend/static/`），由后端
    `ServeDir::new("static")` 托管；`/` 未知路径回退到 `static/index.html` 进入前端路由。
-
-> 离线构建：字体已缓存则直接复用；无缓存时构建继续但界面回退系统字体
-> （`--font-sans` 栈保留 fallback），构建日志会提示。
 
 ### 后端构建细节
 
@@ -149,7 +138,7 @@ cd radio-backend && cargo build --release
 
 ```bash
 cd radio-backend/frontend
-npm run dev          # = predev（字体下载）+ vite dev server :5173
+npm run dev          # Vite dev server :5173
 ```
 
 - dev server 将 `/api`、`/ws`、`/stream`、`/manifest.json`、`/site-icon` 代理到
@@ -239,7 +228,7 @@ VLC、mpv、ffplay 可直接播放 `http://localhost:2241/stream`。
 | 设置不生效 | 需重启服务 (`./stop.sh && ./start.sh`) |
 | 封面不显示 | 需内嵌封面(ID3) 或同目录 `cover.jpg/png`；缺失时显示音符图标 |
 | 歌词不显示 | 仅支持同名 `.lrc` 放同目录；后端自动解析推送（WS 重连后自动补发全量歌词） |
-| 构建时字体下载失败 | 检查网络；已缓存字体直接复用，无缓存时回退系统字体，日志有提示 |
+| 字体资源缺失 | 确认 `radio-backend/frontend/src/assets/fonts/` 完整后重新构建 |
 
 ---
 
@@ -383,7 +372,7 @@ VITE_BASE_PATH=/radio/ npm run build
 # 跳过前端（仅编译后端 + 组装）
 ./build_release.sh --skip-frontend
 
-# 仅前端（更新 radio-backend/static/；构建时自动下载字体）
+# 仅前端（更新 radio-backend/static/）
 cd radio-backend/frontend && npm run build
 
 # 仅后端
