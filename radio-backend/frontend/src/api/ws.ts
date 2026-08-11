@@ -124,7 +124,8 @@ export function startPollers() {
     )
   }
   const pollQueue = () => {
-    if (isWebSocketOpen()) return
+    // 队列始终轮询（WS 开着也轮询）：queue_update 广播不可靠时
+    // （旧后端 / 代理断开），fetch 兜底保证队列 ≤5s 内一致。
     void import('@/api').then(({ fetchQueue }) => fetchQueue().then((q) => useStore.getState().setQueue(q)).catch(() => undefined))
   }
   pollPlayback()

@@ -173,7 +173,7 @@ export function QueueList({ items, onChanged }: QueueListProps) {
           const meta = STATUS_META[item.status] ?? STATUS_META.pending
           // 后端对非管理员点歌将 requested_by 置为 "匿名"——不展示。
           const requester = item.requested_by && item.requested_by !== '匿名' ? item.requested_by : ''
-          const secondary = [item.song?.artist, requester].filter(Boolean).join(' · ')
+          const secondary = item.song?.artist ?? ''
           // 统一封面行为：id>0（新后端）直接用；id=0（旧后端）用索引匹配。
           const realSong = indexReady ? resolveSong(item.song) : null
           const artworkSong = realSong ?? item.song
@@ -193,7 +193,10 @@ export function QueueList({ items, onChanged }: QueueListProps) {
                   <div className="min-w-0 flex-1">
                     <p className="text-foreground-intense truncate text-sm font-medium">{itemTitle(item)}</p>
                     {secondary && <p className="text-foreground-muted truncate text-xs">{secondary}</p>}
-                    <p className="text-foreground-subtle truncate text-xs">{formatDateTime(item.added_at)}</p>
+                    <p className="text-foreground-subtle truncate text-xs">
+                      {formatDateTime(item.added_at)}
+                      {requester && ` · ${requester}`}
+                    </p>
                   </div>
                   <Badge variant={meta.variant} size="sm" className="shrink-0">
                     {meta.label}
