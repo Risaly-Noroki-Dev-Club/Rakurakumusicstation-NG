@@ -177,7 +177,8 @@ export function AdminStationSettings() {
                 onLoadingStatusChange={(s) => {
                   if (s === 'error') setIconFailed(true)
                 }}
-                className="shrink-0 rounded-lg"
+                className="shrink-0"
+                style={{ borderRadius: 12 }}
               >
                 {(!iconSrc || iconFailed) && <Radio className="size-5" aria-hidden />}
               </Thumbnail>
