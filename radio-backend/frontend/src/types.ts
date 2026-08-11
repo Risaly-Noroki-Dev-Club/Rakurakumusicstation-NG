@@ -1,152 +1,119 @@
-export interface DeviceUser {
-  id: number
-  display_name: string
-  role: string
-  created_at?: string
-  banned_until?: string | null
-}
+// Shared API/WS types — mirrors radio-backend DTOs exactly (see local://api-contract.md).
 
-export interface Song {
-  id: number
-  title: string
-  artist: string
-  album?: string
-  duration_ms?: number
-  cover_url?: string
-}
-
-export interface QueueItem {
-  id: number
-  song_id: number
-  song?: Song
-  requested_by: string
-  status: string
-  played_at?: string
-  position?: number
-}
-
-export interface PlaybackState {
-  song_id: number
-  title: string
-  artist: string
-  position_ms: number
-  duration_ms: number
-  lyrics_line: number | null
-  status: string
-  cover_url: string
-}
-
-export interface LyricsLine {
-  timeMs: number
-  text: string
-}
-
-export interface Toast {
-  id: number
-  message: string
-  level: 'info' | 'success' | 'error'
-}
-
-export interface Playlist {
-  id: number
-  name: string
-  song_count?: number
-  created_at?: string
-}
-
-export interface ApiResponse<T = unknown> {
+export interface ApiResponse<T> {
   success: boolean
-  data?: T
-  error?: string
+  data: T | null
+  error: string | null
 }
+
+// ── station ────────────────────────────────────────────────
 
 export interface StationInfo {
   name: string
-  short_name?: string
-  subtitle?: string
-  description?: string
-  icon_url?: string
-  manifest_url?: string
-  stream_url?: string
-  ws_url?: string
+  short_name: string
+  subtitle: string
+  description: string
+  icon_url: string
+  manifest_url: string
+  stream_url: string
+  ws_url: string
   needs_setup: boolean
 }
 
-export interface NowPlayingData {
-  song: Song
-  position_ms: number
-  duration_ms: number
-  lyrics_line: number | null
-  lyrics_text?: string
-  status?: string
-}
+// ── songs ──────────────────────────────────────────────────
 
-export interface WsPlaybackState {
-  type: 'playback_state'
-  song_id: number
+export interface SongSummary {
+  id: number
   title: string
   artist: string
+  album: string
+  duration_ms: number
+  has_lyrics: boolean
+  has_cover: boolean
+}
+
+export interface Song extends SongSummary {
+  genre: string
+  year: number
+  file_path: string
+  lyrics_path: string
+  cover_path: string
+  filesize: number
+  created_at: string
+}
+
+export interface Paginated<T> {
+  data: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
+// ── queue / now playing ────────────────────────────────────
+
+export interface QueueItemDisplay {
+  id: number
+  song: SongSummary | null
+  requested_by: string
+  status: 'pending' | 'playing' | 'played' | 'skipped'
+  position: number
+  added_at: string
+}
+
+export interface HistoryItem {
+  id: number
+  /** Top-level song id — absent on old backends; prefer song.title. */
+  song_id?: number
+  device_user_id?: number | null
+  played_at: string
+  /** Embedded song summary; title/artist present on all backend versions. */
+  song?: {
+    id: number
+    title: string
+    artist: string
+    album?: string | null
+    duration_ms?: number
+  }
+}
+
+export interface NowPlaying {
+  song: SongSummary | null
   position_ms: number
   duration_ms: number
   lyrics_line: number | null
-  lyrics_lines?: LyricsLine[]
-  status: string
-  cover_url: string
-  stream_url?: string
-  timestamp_ms?: number
+  lyrics_text: string | null
+  started_at: string | null
+  stream_url: string
+  file_url: string | null
+  cover_url: string | null
 }
 
-export interface WsQueueUpdate {
-  type: 'queue_update'
-  action: string
-  song_title: string
-  requested_by: string
-  queue_size: number
+// ── auth / users ───────────────────────────────────────────
+
+export interface AuthUser {
+  id: number
+  display_name: string
+  role: 'admin' | 'user'
 }
 
-export interface WsNotice {
-  type: 'notice'
-  message: string
-  level: string
+export interface AdminUser {
+  id: number
+  display_name: string
+  role: string
+  banned_until: string | null
+  created_at: string
 }
 
-export interface WsPing {
-  type: 'ping'
-  timestamp: number
+// ── listeners ──────────────────────────────────────────────
+
+export interface ListenerInfo {
+  display_name: string
+  connected_at: string
 }
 
-export interface WsListenersUpdate {
-  type: 'listeners_update'
-  count: number
-  names: string[]
-}
+// ── settings / ncm / downloads ─────────────────────────────
 
-export type WsMessage = WsPlaybackState | WsQueueUpdate | WsNotice | WsPing | WsListenersUpdate
-
-export interface NcmStatus {
-  configured: boolean
-  method: string
-  phone_hint?: string
-}
-
-export interface NcmResult {
-  success: boolean
-  output: string
-}
-
-export interface DownloadStatus {
-  running: boolean
-  log?: string
-}
-
-export interface AdminStats {
-  users: number
-  songs: number
-  queue_size: number
-  playlists: number
-}
-
-export interface SettingsData {
+export interface StationSettings {
   station_name: string
   short_name: string
   subtitle: string
@@ -156,4 +123,130 @@ export interface SettingsData {
   resolved_icon_url: string
 }
 
-export type ThemeName = 'auto' | 'light' | 'dark'
+export interface NcmStatus {
+  configured: boolean
+  method: string
+  phone_hint: string
+}
+
+export interface NcmLoginResult {
+  success: boolean
+  output: string
+}
+
+export interface DownloadStatus {
+  running: boolean
+  log: string
+}
+
+export interface DownloadEvent {
+  log: string
+  done: boolean
+  task_id?: string
+}
+
+export interface BatchDownloadItem {
+  id?: string
+  url?: string
+  artist?: string
+  title?: string
+  save_as?: string
+  override_lyrics?: boolean
+}
+
+export interface BatchDownloadResponse {
+  task_id: string
+  total: number
+}
+
+export interface BatchDownloadResultItem {
+  id?: string
+  title?: string
+  artist?: string
+  success: boolean
+  error?: string
+  file_path?: string
+}
+
+export interface BatchDownloadStatus {
+  task_id: string
+  running: boolean
+  source: string
+  total: number
+  success: number
+  failed: number
+  items: BatchDownloadResultItem[]
+}
+
+export interface ImportPlaylistResponse {
+  total: number
+  batch_id: string
+  message: string
+}
+
+export interface AdminLogEntry {
+  id: number
+  admin_id: number
+  action: string
+  details: string
+  created_at: string
+}
+
+export interface AdminStats {
+  // Defensive: read fields as numbers when present.
+  [key: string]: unknown
+}
+
+// ── lyrics ─────────────────────────────────────────────────
+
+export interface LyricsLine {
+  time_ms: number
+  text: string
+}
+
+// ── WebSocket ──────────────────────────────────────────────
+
+export type PlaybackStatus = 'playing' | 'stopped' | 'crossfading'
+
+export interface PlaybackStateWs {
+  type: 'playback_state'
+  song_id: number
+  title: string
+  artist: string
+  position_ms: number
+  duration_ms: number
+  lyrics_line: number | null
+  lyrics_lines: LyricsLine[] | null
+  status: PlaybackStatus
+  stream_url: string
+  file_url: string | null
+  cover_url: string | null
+  timestamp_ms: number
+}
+
+export interface QueueUpdateWs {
+  type: 'queue_update'
+  action: string
+  song_title: string | null
+  requested_by: string | null
+  queue_size: number
+}
+
+export interface NoticeWs {
+  type: 'notice'
+  message: string
+  level: 'info' | 'warning' | 'error'
+}
+
+export interface PingWs {
+  type: 'ping'
+  timestamp: number
+}
+
+export interface ListenersUpdateWs {
+  type: 'listeners_update'
+  count: number
+  names: string[]
+}
+
+export type WsMessage = PlaybackStateWs | QueueUpdateWs | NoticeWs | PingWs | ListenersUpdateWs

@@ -1,208 +1,220 @@
-import { reactive } from 'vue'
+import { create } from 'zustand'
 import type {
-  DeviceUser, Song, QueueItem, PlaybackState, LyricsLine,
-  Toast, Playlist, AdminStats, ThemeName, NcmStatus
-} from './types'
+  AuthUser,
+  HistoryItem,
+  ListenersUpdateWs,
+  LyricsLine,
+  PlaybackStateWs,
+  PlaybackStatus,
+  QueueItemDisplay,
+  QueueUpdateWs,
+  SongSummary,
+  StationInfo,
+} from '@/types'
+import { showToast, type ToastLevel } from '@/lib/toast'
+import { DEFAULT_ACCENT, dynamicAccent, type AccentTheme } from '@/lib/accents'
 
-export const THEMES: ThemeName[] = ['auto', 'dark', 'light']
+/** Re-exported so existing call sites (`Toast['level']`) keep compiling. */
+export type Toast = { level: ToastLevel }
 
-function getInitialThemeIndex(): number {
-  const saved = localStorage.getItem('radio_theme') || 'auto'
-  const idx = THEMES.indexOf(saved as ThemeName)
-  return idx >= 0 ? idx : 0
+/** A locally-stored favorite: song snapshot + when it was added. */
+export interface FavoriteSong {
+  song: SongSummary
+  addedAt: number
 }
 
-export interface Store {
-  deviceUser: DeviceUser | null
-  stationName: string
-  needsSetup: boolean
-  themeIdx: number
-  coverLoadError: boolean
-  playbackState: PlaybackState
-  displayPositionMs: number
-  lyricsLines: LyricsLine[]
-  useFileMode: boolean
-  queue: QueueItem[]
-  history: QueueItem[]
-  searchQuery: string
-  searchResults: Song[]
-  searchTotal: number
-  searchOffset: number
-  searchLoading: boolean
-  myPlaylists: Playlist[]
-  newPlaylistName: string
-  users: DeviceUser[]
-  adminLogs: Array<{ created_at: string; action: string; details: string }>
-  adminSongs: Song[]
-  adminStats: AdminStats | null
-  uploadFile: File | null
-  uploadFileName: string
-  uploadStatus: string
-  uploadStatusType: string
-  downloadPlaylist: string
-  downloadQuality: string
-  downloadFormat: string
-  downloadRunning: boolean
-  downloadStatusMsg: string
-  downloadStatusType: string
-  downloadLog: string
-  ncmBadge: string
-  ncmBadgeClass: string
-  ncmActiveTab: 'cookie' | 'phone'
-  ncmCookie: string
-  ncmPhone: string
-  ncmPassword: string
-  ncmResult: string
-  ncmResultType: string
-  settingsStationName: string
-  settingsShortName: string
-  settingsSubtitle: string
-  settingsDescription: string
-  settingsIconUrl: string
-  settingsResolvedIconUrl: string
-  settingsIconFileName: string
-  settingsAdminPassword: string
-  settingsResult: string
-  settingsResultType: string
-  userNcmBadge: string
-  userNcmBadgeClass: string
-  userNcmActiveTab: 'cookie' | 'phone'
-  userNcmCookie: string
-  userNcmPhone: string
-  userNcmPassword: string
-  userNcmResult: string
-  userNcmResultType: string
-  toasts: Toast[]
+const FAVORITES_KEY = 'rakuraku.favorites'
 
-  // ─── Player states ───
-  showLyrics: boolean
-  extractedColor: string
-  isDesktop: boolean
-  showSnackbar: boolean
-  snackbarText: string
-  snackbarColor: string
-
-  // ─── Online listeners ───
-  onlineListenerCount: number
-  onlineListenerNames: string[]
-}
-
-export const store: Store = reactive({
-  deviceUser: null as DeviceUser | null,
-  stationName: 'Rakuraku Music Station',
-  needsSetup: false,
-  themeIdx: getInitialThemeIndex(),
-  coverLoadError: false,
-  playbackState: {
-    song_id: 0, title: '', artist: '', position_ms: 0,
-    duration_ms: 0, lyrics_line: null, status: 'stopped', cover_url: ''
-  },
-  displayPositionMs: 0,
-  lyricsLines: [] as LyricsLine[],
-  useFileMode: false,
-  queue: [] as QueueItem[],
-  history: [] as QueueItem[],
-  searchQuery: '',
-  searchResults: [] as Song[],
-  searchTotal: 0,
-  searchOffset: 0,
-  searchLoading: false,
-  myPlaylists: [] as Playlist[],
-  newPlaylistName: '',
-  users: [] as DeviceUser[],
-  adminLogs: [],
-  adminSongs: [] as Song[],
-  adminStats: null,
-  uploadFile: null as File | null,
-  uploadFileName: '',
-  uploadStatus: '',
-  uploadStatusType: '',
-  downloadPlaylist: '',
-  downloadQuality: 'exhigh',
-  downloadFormat: 'mp3',
-  downloadRunning: false,
-  downloadStatusMsg: '',
-  downloadStatusType: '',
-  downloadLog: '',
-  ncmBadge: '未配置',
-  ncmBadgeClass: 'none',
-  ncmActiveTab: 'cookie' as 'cookie' | 'phone',
-  ncmCookie: '',
-  ncmPhone: '',
-  ncmPassword: '',
-  ncmResult: '',
-  ncmResultType: '',
-  settingsStationName: '',
-  settingsShortName: '',
-  settingsSubtitle: '',
-  settingsDescription: '',
-  settingsIconUrl: '',
-  settingsResolvedIconUrl: '',
-  settingsIconFileName: '',
-  settingsAdminPassword: '',
-  settingsResult: '',
-  settingsResultType: '',
-  userNcmBadge: '未配置',
-  userNcmBadgeClass: 'none',
-  userNcmActiveTab: 'cookie' as 'cookie' | 'phone',
-  userNcmCookie: '',
-  userNcmPhone: '',
-  userNcmPassword: '',
-  userNcmResult: '',
-  userNcmResultType: '',
-  toasts: [] as Toast[],
-
-  showLyrics: false,
-  extractedColor: '#6C5CE7',
-  isDesktop: window.innerWidth >= 960,
-  showSnackbar: false,
-  snackbarText: '',
-  snackbarColor: 'info',
-
-  onlineListenerCount: 0,
-  onlineListenerNames: [] as string[],
-})
-
-export function formatTime(ms: number | undefined | null): string {
-  if (!ms || ms < 0) return '0:00'
-  const secs = Math.floor(ms / 1000)
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
-  return m + ':' + s.toString().padStart(2, '0')
-}
-
-export function toast(message: string, level: 'info' | 'success' | 'error' = 'info'): void {
-  const id = Date.now() + Math.random()
-  store.toasts.push({ id, message, level })
-  store.snackbarText = message
-  store.snackbarColor = level
-  store.showSnackbar = true
-  setTimeout(() => {
-    const idx = store.toasts.findIndex(t => t.id === id)
-    if (idx >= 0) store.toasts.splice(idx, 1)
-  }, 4000)
-}
-
-const ROOT = document.documentElement
-
-export function applyTheme(): void {
-  const theme = THEMES[store.themeIdx]
-  if (theme === 'auto') {
-    ROOT.removeAttribute('data-theme')
-  } else {
-    ROOT.setAttribute('data-theme', theme)
+function loadFavorites(): FavoriteSong[] {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as FavoriteSong[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
   }
-  localStorage.setItem('radio_theme', theme)
 }
 
-export function cycleTheme(): void {
-  store.themeIdx = (store.themeIdx + 1) % THEMES.length
-  applyTheme()
+function persistFavorites(list: FavoriteSong[]) {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(list))
 }
 
-applyTheme()
+const ACCENT_KEY = 'rakuraku.accent'
 
-// Responsive listener
-window.addEventListener('resize', () => {
-  store.isDesktop = window.innerWidth >= 960
-})
+function loadAccent(): AccentTheme {
+  try {
+    const raw = localStorage.getItem(ACCENT_KEY)
+    if (!raw) return DEFAULT_ACCENT
+    const parsed = JSON.parse(raw) as AccentTheme
+    if (parsed && typeof parsed.seed === 'string' && typeof parsed.light === 'string' && typeof parsed.dark === 'string') {
+      return parsed
+    }
+    // Legacy format: a bare hex string → treat as the seed.
+    if (typeof parsed === 'string') return dynamicAccent(parsed)
+    return DEFAULT_ACCENT
+  } catch {
+    return DEFAULT_ACCENT
+  }
+}
+
+function persistAccent(accent: AccentTheme) {
+  localStorage.setItem(ACCENT_KEY, JSON.stringify(accent))
+}
+
+export interface Playback {
+  songId: number
+  title: string
+  artist: string
+  positionMs: number
+  durationMs: number
+  lyricsLine: number | null
+  /** Full lyrics for the current song; null until the song-change frame arrives. */
+  lyricsLines: LyricsLine[] | null
+  /** [] means "no lyrics for this song" — distinct from null ("not resent"). */
+  lyricsKnown: boolean
+  status: PlaybackStatus
+  streamUrl: string
+  fileUrl: string | null
+  coverUrl: string | null
+  timestampMs: number
+}
+
+interface AppStore {
+  station: StationInfo | null
+  auth: AuthUser | null
+  playback: Playback | null
+  queue: QueueItemDisplay[]
+  history: HistoryItem[]
+  listeners: { count: number; names: string[] }
+  favoriteSongs: FavoriteSong[]
+  wsConnected: boolean
+  audioPaused: boolean
+  needsPlay: boolean
+  accent: AccentTheme
+  volume: number
+
+  setStation: (station: StationInfo | null) => void
+  setAuth: (auth: AuthUser | null) => void
+  setQueue: (queue: QueueItemDisplay[]) => void
+  setHistory: (history: HistoryItem[]) => void
+  setWsConnected: (connected: boolean) => void
+  setAudioPaused: (paused: boolean) => void
+  setNeedsPlay: (needs: boolean) => void
+  setAccent: (accent: AccentTheme) => void
+  setVolume: (volume: number) => void
+  addToast: (message: string, level?: ToastLevel) => void
+  toggleFavorite: (song: SongSummary) => void
+  applyPlaybackState: (msg: PlaybackStateWs) => void
+  applyQueueUpdate: (msg: QueueUpdateWs) => void
+  applyListeners: (msg: ListenersUpdateWs) => void
+}
+
+function songKey(p: Playback | null): string {
+  return p ? `${p.songId}|${p.title}|${p.streamUrl}` : ''
+}
+
+export const useStore = create<AppStore>((set, get) => ({
+  station: null,
+  auth: null,
+  playback: null,
+  queue: [],
+  history: [],
+  listeners: { count: 0, names: [] },
+  favoriteSongs: loadFavorites(),
+  wsConnected: false,
+  audioPaused: false,
+  needsPlay: false,
+  accent: loadAccent(),
+  volume: (() => {
+    const raw = Number(localStorage.getItem('rakuraku.volume'))
+    return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.8
+  })(),
+
+  setStation: (station) => set({ station }),
+  setAuth: (auth) => set({ auth }),
+  setQueue: (queue) => set({ queue }),
+  setHistory: (history) => set({ history }),
+  setWsConnected: (wsConnected) => set({ wsConnected }),
+  setAudioPaused: (audioPaused) => set({ audioPaused }),
+  setNeedsPlay: (needsPlay) => set({ needsPlay }),
+  setAccent: (accent) => {
+    persistAccent(accent)
+    set({ accent })
+  },
+
+  setVolume: (volume) => {
+    const clamped = Math.min(1, Math.max(0, volume))
+    localStorage.setItem('rakuraku.volume', String(clamped))
+    set({ volume: clamped })
+  },
+
+  addToast: (message, level = 'info') => {
+    showToast(message, level)
+  },
+
+  toggleFavorite: (song) => {
+    const next = (() => {
+      const current = get().favoriteSongs
+      const exists = current.some((f) => f.song.id === song.id)
+      if (exists) return current.filter((f) => f.song.id !== song.id)
+      return [{ song, addedAt: Date.now() }, ...current]
+    })()
+    persistFavorites(next)
+    set({ favoriteSongs: next })
+  },
+
+  applyPlaybackState: (msg) => {
+    const prev = get().playback
+    const changedSong = songKey(prev) !== `${msg.song_id}|${msg.title}|${msg.stream_url}`
+    // 后端语义：lyrics_lines 非 null 就是全量（切歌首帧，或新连接补发帧），
+    // 直接更新；null 表示"本帧不重发"。同一首歌保留缓存，切歌时立即清空。
+    const lyricsLines = msg.lyrics_lines !== null ? msg.lyrics_lines : changedSong ? null : prev?.lyricsLines ?? null
+    const lyricsKnown = msg.lyrics_lines !== null ? true : changedSong ? false : (prev?.lyricsKnown ?? false)
+
+    set({
+      playback: {
+        songId: msg.song_id,
+        title: msg.title,
+        artist: msg.artist,
+        positionMs: msg.position_ms,
+        durationMs: msg.duration_ms,
+        lyricsLine: msg.lyrics_line,
+        lyricsLines,
+        lyricsKnown,
+        status: msg.status,
+        streamUrl: msg.stream_url,
+        fileUrl: msg.file_url,
+        coverUrl: msg.cover_url,
+        timestampMs: msg.timestamp_ms,
+      },
+    })
+
+    // Browser notification on song change when the tab is hidden.
+    if (changedSong && document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification(msg.title, { body: msg.artist })
+      } catch {
+        // some browsers reject construction without a service worker
+      }
+    }
+  },
+
+  applyQueueUpdate: (msg) => {
+    const { queue } = get()
+    if (msg.action === 'added' && msg.song_title) {
+      get().addToast(`已点播：${msg.song_title}`, 'info')
+      void import('@/api').then(({ fetchQueue }) => fetchQueue().then((q) => get().setQueue(q)).catch(() => undefined))
+    }
+    if (queue.length !== msg.queue_size) {
+      void import('@/api').then(({ fetchQueue }) => fetchQueue().then((q) => get().setQueue(q)).catch(() => undefined))
+    }
+  },
+
+  applyListeners: (msg) => {
+    // Multiple devices can share a display name; dedupe for rendering while
+    // keeping the authoritative server count.
+    const names = Array.from(new Set(msg.names))
+    set({ listeners: { count: msg.count, names } })
+  },
+}))

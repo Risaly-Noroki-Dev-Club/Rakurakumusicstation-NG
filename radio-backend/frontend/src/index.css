@@ -1,0 +1,92 @@
+@import 'tailwindcss';
+@import '@appica/ui-react/styles.css';
+@import './fonts.css';
+
+@source '../node_modules/@appica/ui-react/dist';
+
+/* ─── Radio brand theming ────────────────────────────────────────────
+   The accent is a Material You dynamic-color pair: the Settings page picks
+   a seed color, lib/accents.ts runs it through the designer-tuned tonal
+   palettes, and the light/dark primaries are applied to <html> as
+   --accent-light / --accent-dark. The theme layers below map them onto
+   --accent and derive surface tints via color-mix against theme tokens. */
+
+:root {
+  --accent: var(--accent-light, #6750a4);
+  --primary: var(--accent);
+  --primary-strong: color-mix(in oklab, var(--accent) 82%, #000);
+  --primary-muted: color-mix(in oklab, var(--accent) 72%, var(--foreground-muted));
+  --primary-soft: color-mix(in oklab, var(--accent) 16%, var(--background));
+  --primary-subtle: color-mix(in oklab, var(--accent) 8%, var(--background));
+  --primary-foreground: oklch(1 0 0);
+  --focus-ring-primary: color-mix(in oklab, var(--accent) 45%, transparent);
+}
+
+.dark {
+  --accent: var(--accent-dark, #d0bcff);
+  --primary: var(--accent);
+  --primary-strong: color-mix(in oklab, var(--accent) 82%, white);
+  --primary-muted: color-mix(in oklab, var(--accent) 72%, var(--foreground-muted));
+  --primary-soft: color-mix(in oklab, var(--accent) 18%, var(--background));
+  --primary-subtle: color-mix(in oklab, var(--accent) 9%, var(--background));
+  --primary-foreground: oklch(0.13 0.028 261.692);
+  --focus-ring-primary: color-mix(in oklab, var(--accent) 50%, transparent);
+}
+
+:root {
+  --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+    'Segoe UI Symbol', 'Noto Color Emoji';
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─── Base layout ─────────────────────────────────────────────────── */
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+#root {
+  overflow: auto;
+}
+
+/* Thin scrollbars that follow the theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--background-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Lyrics highlight */
+.lyrics-active {
+  color: var(--foreground-intense);
+  transform: scale(1.02);
+  transition:
+    color 300ms ease,
+    transform 300ms ease;
+}
+.lyrics-inactive {
+  color: var(--foreground-muted);
+  transition:
+    color 300ms ease,
+    transform 300ms ease;
+}

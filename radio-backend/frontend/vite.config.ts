@@ -1,36 +1,54 @@
 import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
-import vuetify from 'vite-plugin-vuetify'
+import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { resolve } from 'path'
+import { VitePWA } from 'vite-plugin-pwa'
+import { fileURLToPath, URL } from 'node:url'
+
+const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:2241'
+const base = process.env.VITE_BASE_PATH || '/'
 
 export default defineConfig({
-  base: process.env.VITE_BASE_PATH || '/',
+  base,
   plugins: [
-    vue(),
-    vuetify({ autoImport: true }),
+    react(),
     tailwindcss(),
+    // PWA: 后端动态提供 /manifest.json（含站点图标），这里只生成 Service
+    // Worker 预缓存静态产物，支撑安装与离线壳。
+    VitePWA({
+      registerType: 'autoUpdate',
+      manifest: false,
+      includeAssets: ['icon.svg'],
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,woff2,svg}'],
+        navigateFallback: `${base}index.html`,
+        navigateFallbackDenylist: [/^\/api\//, /^\/ws/, /^\/stream/, /^\/manifest\.json/, /^\/site-icon/],
+        cleanupOutdatedCaches: true,
+      },
+    }),
   ],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://localhost:2241',
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:2241',
-        ws: true,
-      },
-      '/stream': {
-        target: 'http://localhost:2241',
-        changeOrigin: true,
-      },
+      '/api': { target: proxyTarget, changeOrigin: true },
+      '/ws': { target: proxyTarget, ws: true, changeOrigin: true },
+      '/stream': { target: proxyTarget, changeOrigin: true },
+      '/manifest.json': { target: proxyTarget, changeOrigin: true },
+      '/site-icon': { target: proxyTarget, changeOrigin: true },
+    },
+  },
+  preview: {
+    port: 4173,
+    proxy: {
+      '/api': { target: proxyTarget, changeOrigin: true },
+      '/ws': { target: proxyTarget, ws: true, changeOrigin: true },
+      '/stream': { target: proxyTarget, changeOrigin: true },
+      '/manifest.json': { target: proxyTarget, changeOrigin: true },
+      '/site-icon': { target: proxyTarget, changeOrigin: true },
     },
   },
   build: {

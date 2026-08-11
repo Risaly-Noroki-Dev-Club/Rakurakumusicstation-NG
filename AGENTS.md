@@ -1,60 +1,86 @@
-# AGENTS.md
+# Repository Guidelines
 
-## Shape
+## Project Overview
 
-- Main app is a single Rust binary: `radio-backend` serves REST, WebSocket `/ws`, audio stream `/stream`, and static files on port `2241`.
-- `radio-engine` is a local Rust library embedded by `radio-backend`; do not reintroduce a separate audio process, Redis, or HTTP IPC for engine control.
-- `radio-backend/frontend` is Vue 3 + Vite + TypeScript; `npm run build` writes production assets to `radio-backend/static/`, which the backend serves via `ServeDir::new("static")` fallback.
-- Legacy C++ engine and old dual-process deploy files have been removed; keep runtime as the single Rust backend binary plus embedded `radio-engine`.
+Rakuraku Music Station — a community radio web app: users request songs, an embedded audio engine plays them into an MP3 stream, and a React SPA shows now-playing, lyrics, queue, and admin panels. The project is Chinese-language (code comments and UI strings are often zh-CN).
 
-## Commands
+Runtime shape: a single Rust binary `radio-backend` (axum 0.7 + SQLite) with the local `radio-engine` crate embedded as a library (no separate audio process, no Redis, no HTTP IPC) serves REST on `/api`, WebSocket on `/ws`, audio on `/stream`, and the built frontend from `radio-backend/static/` on port `2241`. The legacy C++ engine and old dual-process deploy files are removed; do not reintroduce them. Repo root still holds pre-rewrite assets (`index.html`, `login.html`, `panel.html`, `sw.js`, `music_dl.py`, `sessionmanager.hpp`, `third_party/hiredis`) that are **not** part of the current runtime — leave them alone.
 
-- Full release package from repo root: `./build_release.sh`. It runs `npm run build` in `radio-backend/frontend` (installs deps if `node_modules` is missing), then `cargo build --release` in `radio-backend`, copies the binary to `dist/` (via temp file to avoid ETXTBSY), copies `radio-backend/static/`, seeds `dist/config.toml` only if missing, and preserves `dist/media/` and `dist/data/`. Pass `--skip-frontend` to skip the Vite build.
-- Backend-only debug build: `cd radio-backend && cargo build`.
-- Engine tests: `cd radio-engine && cargo test ring_buffer`. These are the only checked-in Rust unit tests.
-- Frontend dev server: `cd radio-backend/frontend && npm run dev`; Vite listens on `5173` and proxies `/api`, `/ws`, and `/stream` to `localhost:2241`.
-- Frontend production check/build: `cd radio-backend/frontend && npm run build`; this runs `vue-tsc -b && vite build` and updates `radio-backend/static/`.
-- Runtime after release build: `cd dist && ./start.sh` and `cd dist && ./stop.sh`; logs go to `dist/server.log` and lifecycle uses `dist/.server.pid`.
+## Architecture & Data Flow
 
-## Runtime Config
+**Backend startup** (`radio-backend/src/main.rs` → `app/bootstrap.rs`): load config (`config.toml` from cwd or `$RADIO_CONFIG`) → init SQLite + run embedded migrations → start engine (`PlayerHandle`) → rehydrate engine queue from DB → build router → `bind_with_keepalive()` → `axum::serve` on port 2241.
 
-- The backend loads `config.toml` from the current working directory unless `RADIO_CONFIG` is set, so normal runtime is from inside `dist/`.
-- Required runtime tools are `ffmpeg` for playback and `ffprobe` for duration/tag scanning.
-- SQLite is the only supported DB path in practice; migrations are embedded with `sqlx::migrate!("./migrations")` and run on startup.
-- `RADIO_DATABASE_URL`, `RADIO_SERVER_PORT`, `RADIO_LOG_LEVEL`, `RADIO_MEDIA_PATH`, `RADIO_STREAM_BASE`, `RADIO_STATION_NAME`, `RADIO_ADMIN_SETUP_TOKEN`, `RADIO_NCM_DEVICE_ID`, and `RADIO_NCM_DOWNLOAD_CONCURRENCY` override TOML values.
-- Settings saved through `/api/admin/settings` write `config.toml` but are not hot-reloaded; restart the server.
+**Routing** (`routes/mod.rs`): `/api/*` nests (auth, songs, playlists, queue, admin, ncm, favorites, station) plus `/ws`, `/stream`, `/manifest.json`, `/site-icon`; everything else falls back to `ServeDir("static")` with `static/index.html`. All routes nest under `server.base_path` when it is not `/`.
 
-## Engine Invariants
+**State**: all dependencies flow through `axum State<Arc<AppState>>` (`app/state.rs`) — DB pool, config, station info, WS broadcast channel, `Arc<RingBuffer>`, `PlayerHandle`, listener registry. No globals.
 
-- Paths stored in `play_queue`, request tracks, and `PlaybackState.file_path` are relative to `media_path`; use `radio_engine::util::{resolve_media_path, relativize_media_path}` at filesystem/ffmpeg boundaries.
-- `Player.play_queue` and `Player.play_queue_metadata` are parallel vectors; mutate them together under the queue lock.
-- `PlaybackState.playlist_index` is a `play_queue` index, not a `songs.id`; requested tracks may have `playlist_index == -1`, so song-change logic should key on `file_path` or DB song id as appropriate.
-- `RingBuffer` capacity must be a nonzero power of two.
-- `/stream` uses a bounded channel (`STREAM_CHANNEL_CAPACITY = 4`) so dead clients surface via backpressure; do not switch it to an unbounded channel.
-- `main.rs` binds with `bind_with_keepalive()` rather than `tokio::net::TcpListener::bind`; this is intentional to clean up dead streaming connections.
-- `extract_metadata()` intentionally leaves `embedded_lyrics` and `cover_data` empty to avoid startup subprocess and memory blowups.
+**Audio path**: `Player` (`radio-engine/src/player.rs`) spawns an ffmpeg subprocess (decode → libmp3lame 128k / 44.1kHz / stereo → stdout), a tokio task pumps stdout through a bounded `mpsc::channel::<Vec<u8>>(16)` into a shared single-writer `Arc<RingBuffer>`, and each `/stream` client drains it over a bounded channel (`STREAM_CHANNEL_CAPACITY = 4`). Skip/Prev/Stop clear/resync the ring buffer so browsers reconnect at the live edge.
 
-## Backend/Frontend Contracts
+**State path**: the engine publishes `PlaybackState` every 500 ms; `services/playback_broadcast.rs` polls it and broadcasts over WS. WS message types: `playback_state`, `queue_update`, `notice`, `ping`, `listeners_update`. **Lyrics contract**: full `lyrics_lines` (elements `{time_ms, text}`) is sent only once per song change; the 500 ms updates carry `lyrics_line` + `lyrics_lines: null`. The frontend (`src/store.ts` `applyPlaybackState`) only overwrites the cached lines when `lyrics_lines` is non-null; `[]` means "no lyrics", `null` means "not resent".
 
-- Device auth is cookie-based. `device_cookie_middleware` creates/refreshes httpOnly `device_token`; protected handlers explicitly call `require_device_auth()` / `require_admin_auth()` or use `AuthUser` helpers, not Axum auth middleware.
-- `/api/now-playing` is DB-oriented and not the source for smooth real-time position; WebSocket playback messages are the realtime path.
-- WebSocket `playback_state` sends full `lyrics_lines` only once per song change; later 500ms updates send `lyrics_line` and `lyrics_lines: null`. The frontend caches lyrics in `store.lyricsLines`.
-- `stream_base = "auto"` derives `/stream` URLs from `Host` / `X-Forwarded-*`; it can also be a relative path like `/stream` or an absolute URL.
-- Uploads/downloads/rescans that add media should send `AudioCommandType::ReloadQueue` so the embedded engine sees new files without a server restart.
+**Frontend**: one zustand store (`src/store.ts`) fed by REST (`src/api/` fetch wrapper, `{success,data,error}` unwrap) and the WS client (`src/api/ws.ts`). When WS is closed, `startPollers()` polls `/api/now-playing` every 2 s and queue every 5 s. Playback position is smoothed client-side (`usePlaybackClock` against `timestamp_ms`).
 
-## Local Verification Gotchas
+## Key Directories
 
-- For traffic or leak tests against localhost, bypass shell proxy variables with `curl --noproxy '*' ...`; local proxies can make closed clients look like server-side fd leaks.
-- `./build_release.sh` now builds the frontend automatically; use `--skip-frontend` only when you know the static assets are already up to date.
+- `radio-backend/src/` — backend crate: `app/` (`bootstrap.rs`, `state.rs`), `routes/` (`auth`, `songs`, `playlists`, `queue`, `admin/`, `ncm`, `favorites`, `station`), `services/` (`queue.rs`, `playback_broadcast.rs`, `playback_snapshot.rs`, `metadata.rs`, `ncm/`), `http/` (`middleware.rs`, `stream.rs`), `models/`, `websocket.rs`, `auth.rs`, `config.rs`, `db.rs`, `error.rs`, `lyrics.rs`
+- `radio-engine/src/` — embedded audio engine: `player.rs` (main loop, ffmpeg lifecycle, crossfade), `ring_buffer.rs`, `stream.rs` (`/stream` response), `metadata.rs` (ffprobe), `util.rs` (path helpers), `types.rs`, `config.rs` (tunables)
+- `radio-backend/frontend/` — React 19 + Vite + Appica UI (`@appica/ui-react`, Base UI + Tailwind v4 tokens, subpath imports) + zustand SPA: `src/pages/`, `src/components/` (`layout/`, `player/`, `queue/`, `library/`, `admin/`, `lt/`, `settings/`), `src/api/` (`client.ts`, `index.ts` endpoints, `ws.ts`), `src/audio/` (singleton stream element), `src/store.ts`, `src/hooks/`, `src/lib/`, `index.css`, `types.ts`
+- `radio-backend/migrations/` — 7 SQL migrations, embedded via `sqlx::migrate!("./migrations")` on startup
+- `dist/` — generated by `build_release.sh`; the runtime directory (run `start.sh` from inside it)
 
-## Frontend CSS Conventions
+## Development Commands
 
-- When text overflows (too long for one line), always apply all three rules simultaneously:
-  1. Shrink font-size (use `clamp()` for responsive scaling)
-  2. Allow wrapping (`overflow-wrap: break-word; word-break: break-word`) or truncate (`text-overflow: ellipsis`)
-  3. Adjust component layout (responsive padding, `min-width: 0`, flex/grid adjustments)
-- Global utility classes available in `style.css`: `.lt-text-wrap`, `.lt-text-truncate`, `.lt-text-responsive`.
+- Full release package: `./build_release.sh` — runs `npm run build` in `radio-backend/frontend` (installs deps if `node_modules` is missing), then `cargo build --release`, copies the binary to `dist/` via a temp file (avoids ETXTBSY), copies `static/`, seeds `config.toml` only if missing, preserves `dist/media/` and `dist/data/`. Pass `--skip-frontend` to skip the Vite build.
+- Backend debug build: `cd radio-backend && cargo build`
+- Frontend dev server: `cd radio-backend/frontend && npm run dev` → `:5173`, proxies `/api`, `/ws`, `/stream` to `localhost:2241` (backend must run separately)
+- Frontend type-check + build: `cd radio-backend/frontend && npm run build` (= `tsc --noEmit && vite build`, writes `../static/`). Dev server proxies `/api`, `/ws`, `/stream` to `localhost:2241`; override with `VITE_PROXY_TARGET`.
+- Runtime: `cd dist && ./start.sh` / `./stop.sh`; logs `dist/server.log`, PID `dist/.server.pid`
+- Git: commit and push to GitHub after every verified change.
 
-## Git Workflow
+## Code Conventions & Common Patterns
 
-- After every code change that passes verification (type-check, lint, build), commit to the local repo and push to GitHub (`git push`). Do not leave verified changes uncommitted.
+**Backend (Rust)**:
+- Auth: `device_cookie_middleware` (global layer) sets/refreshes the httpOnly `device_token` cookie; protected handlers explicitly call `require_device_auth()` / `require_admin(&AuthUser)` — NOT per-route axum auth middleware. Admin upgrade: enter `admin_setup_token` on the device settings page.
+- Errors: `AppError` enum (`error.rs`) mapped to HTTP status; handlers return `Result<_, AppError>`; every JSON body is `{success: bool, data?, error?}`.
+- Engine integration: send `AudioCommandType::{Skip, Next, Prev, Play, Stop, ReloadQueue}` via `PlayerHandle::send_command`; uploads/downloads/rescans must send `ReloadQueue` so the engine sees new files without restart.
+- Paths: queue entries and `PlaybackState.file_path` are relative to `media_path`; use `radio_engine::util::resolve_media_path` at the ffmpeg boundary and `relativize_media_path` when storing paths.
+- Engine invariants (do not break): `play_queue` and `play_queue_metadata` are parallel vectors mutated together under the queue lock; `PlaybackState.playlist_index` is a `play_queue` index, `-1` for requested tracks — key song-change logic on `file_path`/`song_id`; `RingBuffer` capacity must be a nonzero power of two (`BUFFER_CAPACITY = 524288`); the `/stream` channel is bounded (cap 4) for dead-client backpressure — never unbounded; use `bind_with_keepalive()`, not `TcpListener::bind`; `extract_metadata()` intentionally leaves `embedded_lyrics`/`cover_data` empty.
+- Logging: `tracing` macros (`info`/`warn`/`debug`/`error`); level from `config.toml [logging]` / `RADIO_LOG_LEVEL`.
+
+**Frontend (React 19 / Appica UI)**:
+- Styling: Appica design tokens (`bg-background`, `text-foreground-muted`, `bg-primary`…) compiled by Tailwind v4; brand accent derives from `--accent` (`src/index.css`), settable in Settings (外观). Dark mode via Appica `ThemeProvider`/`useTheme`.
+- Imports: subpaths only (`@appica/ui-react/button`); icons from `@appica/icons-react` — verify names against `dist/index.d.ts` (no `Play`/`Pause`; use `PlayerPlay`/`PlayerPause`; no `Music2`/`Maximize2`/`Monitor`).
+- State: zustand `useStore` (selector form); api modules in `src/api/index.ts` mutate the store and `addToast(message, level)` on results/errors.
+- Audio: singleton element in `src/audio/streamAudio.ts` (`syncAudio` on store changes, `reconnect()` on ended/error with cache-busting nonce); autoplay overlay (`src/components/StreamPlayer.tsx`) shows once — after the user clicks, reconnects never re-show it.
+- Naming: PascalCase page/component files, `useX` composables, kebab-case api modules.
+- CSS overflow convention — apply **all three** when text may overflow: `clamp()` font-size, wrap (`overflow-wrap`/`word-break`) or truncate (`text-overflow: ellipsis`), and layout adjustments (`min-width: 0`, flex/grid).
+
+## Important Files
+
+- `radio-backend/src/main.rs` → `app/bootstrap.rs` — startup order (config, DB, engine, rehydrate, bind, serve)
+- `radio-backend/src/routes/mod.rs` — full route table
+- `radio-backend/src/config.rs` — `AppConfig` + all `RADIO_*` env overrides (`load`/`load_default`)
+- `radio-backend/src/app/state.rs` — `AppState`, the DI container
+- `radio-backend/src/services/playback_snapshot.rs` — song-change lyric caching, full-vs-index lyrics
+- `radio-backend/src/services/queue.rs` — queue logic + engine rehydration
+- `radio-engine/src/player.rs`, `ring_buffer.rs`, `stream.rs`, `util.rs` — core engine
+- `radio-backend/frontend/src/store.ts`, `api/index.ts`, `api/ws.ts`, `audio/streamAudio.ts`, `index.css`
+- `radio-backend/config.toml.example` — config reference (source of truth; `.env.example` is stale — it still lists `RADIO_REDIS_URL`/`RADIO_JWT_SECRET`, which the code no longer reads)
+
+## Runtime/Tooling Preferences
+
+- Required tools on PATH at runtime: `ffmpeg` (playback) and `ffprobe` (duration/tag scanning).
+- SQLite is the only supported DB path; migrations are embedded and run on startup.
+- Config: `config.toml` in the working directory (or `$RADIO_CONFIG`). Env overrides: `RADIO_DATABASE_URL`, `RADIO_SERVER_PORT`, `RADIO_BASE_PATH`, `RADIO_LOG_LEVEL`, `RADIO_MEDIA_PATH`, `RADIO_STREAM_BASE`, `RADIO_CROSSFADE_ENABLED`, `RADIO_STATION_NAME`, `RADIO_ADMIN_SETUP_TOKEN`, `RADIO_NCM_DEVICE_ID`, `RADIO_NCM_DOWNLOAD_CONCURRENCY`.
+- Settings saved via `POST /api/admin/settings` write `config.toml` but are **not** hot-reloaded — restart the server.
+- `stream_base = "auto"` derives `/stream` URLs from `Host`/`X-Forwarded-*`; may also be a relative path (`/stream`) or an absolute URL.
+- The frontend build must run before the backend serves updated UI (`static/` is the deploy artifact).
+- Local testing gotcha: bypass shell proxy vars with `curl --noproxy '*'` — local proxies make closed clients look like server-side fd leaks.
+- Toolchain: Rust edition 2021, tokio, axum 0.7, sqlx (sqlite), tower-http; Node with Vite 6, TypeScript ~5.8 strict, React 19.
+
+## Testing & QA
+
+- Only checked-in Rust tests: inline `#[cfg(test)]` module in `radio-engine/src/ring_buffer.rs` — run `cd radio-engine && cargo test ring_buffer`.
+- No other Rust unit tests, no frontend test framework (no vitest/jest), no CI config.
+- Verification is type-check/build plus manual smoke test: `npm run build` (`tsc --noEmit`) for the frontend, `cargo build` for the backend, then exercise the changed path end to end (e.g. drive `/ws` and `/stream` in a browser).
+- When adding tests, follow the `ring_buffer.rs` inline-module style and keep them deterministic.
