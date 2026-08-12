@@ -41,6 +41,7 @@ Thumbs.db
 docs/
 !docs/
 docs/*
+!docs/TECHNICAL.md
 !docs/screenshots/
 docs/screenshots/*
 !docs/screenshots/*.png
