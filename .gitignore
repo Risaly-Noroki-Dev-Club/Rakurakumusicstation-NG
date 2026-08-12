@@ -39,6 +39,11 @@ Thumbs.db
 
 # 开发文档（非必要，仅本地参考）
 docs/
+!docs/
+docs/*
+!docs/screenshots/
+docs/screenshots/*
+!docs/screenshots/*.png
 UPDATE_GUIDE.md
 radio-backend/frontend/FRONTEND.md
 
