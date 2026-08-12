@@ -109,6 +109,11 @@ async fn spawn_ffmpeg(args: &FfmpegArgs, duration_ms: i64) -> io::Result<Child> 
         .spawn()
 }
 
+/// ffmpeg 在曲目播放期间静默多久视为卡死。
+/// 健康曲目在 `-re` 下每秒至少产出 16KB（AUDIO_CHUNK_SIZE），
+/// 超时无产出必为异常（进程挂起/解码停滞），应放弃本曲避免假播放。
+const FFMPEG_STALL_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Where the currently-playing track was sourced from.
 #[derive(Debug, Clone)]
 enum TrackSource {
@@ -221,12 +226,16 @@ impl Player {
         (player, handle)
     }
 
-    /// Initialize play queue by recursively scanning media_path.
-    pub async fn init_play_queue(&mut self) {
-        let dir = Path::new(&self.media_path);
+    /// Scan media_path for supported audio files and read their metadata.
+    ///
+    /// This is the slow part (recursive fs walk + one ffprobe per file) and
+    /// must never run inside the streaming pump — it can block playback for
+    /// the whole scan duration. Callers decide how to swap the result in.
+    async fn scan_play_queue(media_path: &str) -> (Vec<String>, Vec<TrackMetadata>) {
+        let dir = Path::new(media_path);
         if !dir.exists() || !dir.is_dir() {
-            tracing::warn!("Media directory not found: {}", self.media_path);
-            return;
+            tracing::warn!("Media directory not found: {}", media_path);
+            return (Vec::new(), Vec::new());
         }
 
         let files = crate::util::scan_media_dir(dir, dir, SUPPORTED_FORMATS);
@@ -237,7 +246,7 @@ impl Player {
         for (_full_path, rel_path) in files {
             let filename = rel_path.clone();
 
-            let meta = crate::metadata::extract_metadata(&rel_path, &self.media_path)
+            let meta = crate::metadata::extract_metadata(&rel_path, media_path)
                 .await
                 .unwrap_or_else(|_| TrackMetadata {
                     filename: filename.clone(),
@@ -252,6 +261,13 @@ impl Player {
             new_queue.push(filename);
             new_metadata.push(meta);
         }
+
+        (new_queue, new_metadata)
+    }
+
+    /// Initialize play queue by recursively scanning media_path.
+    pub async fn init_play_queue(&mut self) {
+        let (new_queue, new_metadata) = Self::scan_play_queue(&self.media_path).await;
 
         {
             let mut queue = self.play_queue.lock().unwrap();
@@ -291,8 +307,11 @@ impl Player {
             let track = match self.pick_next_track() {
                 Some(t) => t,
                 None => {
-                    // Nothing to play. Wait for either a wake-up signal (request
-                    // pushed, queue reloaded) or a 5s timeout, whichever comes first.
+                    // Nothing to play: publish Stopped so clients drop the
+                    // stream URL instead of connecting into silence with a
+                    // stale "playing" status. Then wait for either a wake-up
+                    // signal (request pushed, queue reloaded) or a 5s timeout.
+                    self.publish_idle();
                     tokio::select! {
                         _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                         _ = self.wake.notified() => {}
@@ -579,6 +598,7 @@ impl Player {
         let track_start_system = chrono::Utc::now().timestamp_millis();
         let mut total_bytes_sent: u64 = 0;
         let mut last_publish = Instant::now();
+        let mut last_push = Instant::now();
         let mut crossfade_triggered = false;
 
         // Initial state publish so subscribers see the new track immediately.
@@ -593,7 +613,28 @@ impl Player {
             if let Ok(cmd) = self.cmd_rx.try_recv() {
                 match cmd.cmd_type {
                     AudioCommandType::ReloadQueue => {
-                        self.init_play_queue().await;
+                        // 全库扫描（fs 遍历 + 每文件 ffprobe）可能耗时数十秒，
+                        // 绝不能阻塞推流泵 —— 否则所有听众在扫描期间静默，
+                        // 状态仍是 Playing，重连也拿不到数据。改为后台扫描，
+                        // 完成后原子换入队列。
+                        let media_path = self.media_path.clone();
+                        let play_queue = Arc::clone(&self.play_queue);
+                        let play_queue_metadata = Arc::clone(&self.play_queue_metadata);
+                        let wake = Arc::clone(&self.wake);
+                        tokio::spawn(async move {
+                            let (new_queue, new_metadata) =
+                                Self::scan_play_queue(&media_path).await;
+                            {
+                                let mut queue = play_queue.lock().unwrap();
+                                let mut metadata = play_queue_metadata.lock().unwrap();
+                                queue.clear();
+                                metadata.clear();
+                                queue.extend(new_queue);
+                                metadata.extend(new_metadata);
+                            }
+                            wake.notify_waiters();
+                            tracing::info!("Play queue reloaded in background");
+                        });
                     }
                     AudioCommandType::Skip | AudioCommandType::Next => {
                         ffmpeg_task.abort();
@@ -639,12 +680,26 @@ impl Player {
                 Ok(d) => {
                     self.buffer.push(&d);
                     total_bytes_sent += d.len() as u64;
+                    last_push = Instant::now();
                 }
                 Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                     let _ = ffmpeg_task.await;
                     break StreamOutcome::Natural;
                 }
+            }
+
+            // ffmpeg 存活但长时间不产出（进程卡死）→ 放弃本曲，避免
+            // "状态 Playing 但流静默" 的假播放窗口。健康曲目在 -re 下
+            // 每秒至少产出 16KB，超时无产出必为异常。
+            if last_push.elapsed() > FFMPEG_STALL_TIMEOUT {
+                tracing::warn!(
+                    "ffmpeg produced no audio for {}s ({}) — advancing",
+                    FFMPEG_STALL_TIMEOUT.as_secs(),
+                    track.rel_path
+                );
+                ffmpeg_task.abort();
+                break StreamOutcome::Natural;
             }
 
             // Check if we should trigger crossfade
@@ -695,6 +750,17 @@ impl Player {
         };
 
         outcome
+    }
+
+    /// Publish an empty Stopped state when the queue has nothing to play.
+    ///
+    /// Without this the last track's "playing" state lingers forever: the
+    /// frontend keeps a /stream connection that never receives data and
+    /// reconnects into silence on every idle timeout — "shows playing,
+    /// but no sound" with no recovery until the next track.
+    fn publish_idle(&self) {
+        let mut state = self.state.lock().unwrap();
+        *state = PlaybackState::default();
     }
 
     /// Publish playback state for the active track.

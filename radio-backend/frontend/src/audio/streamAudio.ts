@@ -20,7 +20,17 @@ let reconnectNonce = 0
 let errorRetries = 0
 let userAuthorized = false
 let connectionErrorNotified = false
-let retryThrottleUntil = 0
+let retryTimer: number | null = null
+let lastProgressAt = 0
+let lastReconnectAt = 0
+let watchdogStarted = false
+
+/** 无数据推进多久后强制重连。网络半断 / 服务端静默时元素既不会 error 也不会 ended，
+ *  会一直卡在 waiting —— 这是"掉线后不能快速重连"的主因。 */
+const STALL_RECONNECT_MS = 8000
+/** 错误重试退避：0.5s → 1s → 2s → 4s → 8s 封顶；成功(playing)后重置。 */
+const BASE_RETRY_MS = 500
+const MAX_RETRY_MS = 8000
 
 /** origin + pathname comparison — ignores the ?r= reconnect nonce. */
 function urlBase(u: string): string {
@@ -45,21 +55,25 @@ function ensureAudio(): HTMLAudioElement {
   })
   el.addEventListener('error', () => {
     errorRetries += 1
-    if (errorRetries > 12) {
-      if (!connectionErrorNotified) {
-        connectionErrorNotified = true
-        useStore.getState().addToast('直播流连接不稳定，正在自动重试…', 'warning')
-      }
-      retryThrottleUntil = Date.now() + 60000
-      return
+    if (errorRetries > 12 && !connectionErrorNotified) {
+      connectionErrorNotified = true
+      useStore.getState().addToast('直播流连接不稳定，正在自动重试…', 'warning')
     }
-    window.setTimeout(reconnect, 2000)
+    // 永不停止重试：指数退避后继续。旧的实现 12 次后停 60s，网络/服务端
+    // 在这 60s 内恢复也会保持静默。
+    scheduleRetry()
   })
   el.addEventListener('playing', () => {
     errorRetries = 0
     connectionErrorNotified = false
+    lastProgressAt = Date.now()
+  })
+  el.addEventListener('timeupdate', () => {
+    lastProgressAt = Date.now()
   })
   audio = el
+  lastProgressAt = Date.now()
+  startWatchdog()
   return el
 }
 
@@ -72,11 +86,47 @@ function desiredStreamUrl(): string | null {
 export function reconnect() {
   const url = desiredStreamUrl()
   if (!url) return
+  // 去重：ended 与 error 可能在同一 tick 内先后触发，避免重复重连。
+  const now = Date.now()
+  if (now - lastReconnectAt < 250) return
+  lastReconnectAt = now
   reconnectNonce += 1
+  lastProgressAt = now
   const el = ensureAudio()
   const sep = url.includes('?') ? '&' : '?'
   el.src = `${url}${sep}r=${reconnectNonce}`
   void tryPlay(el)
+}
+
+/** 指数退避间隔，errorRetries 在 playing 时归零。 */
+function retryDelayMs(): number {
+  const exp = Math.min(errorRetries, 4)
+  return Math.min(BASE_RETRY_MS * 2 ** exp, MAX_RETRY_MS)
+}
+
+/** 单飞重试：同一时刻最多一个待触发的重连，避免多个错误事件叠加。 */
+function scheduleRetry() {
+  if (retryTimer !== null) return
+  retryTimer = window.setTimeout(() => {
+    retryTimer = null
+    reconnect()
+  }, retryDelayMs())
+}
+
+/** 停滞看门狗：连接存活但长时间无数据推进（半断网、服务端静默）时主动重连。 */
+function startWatchdog() {
+  if (watchdogStarted) return
+  watchdogStarted = true
+  window.setInterval(() => {
+    const el = audio
+    if (!el || !el.src) return
+    const { audioPaused, needsPlay, playback } = useStore.getState()
+    if (audioPaused || needsPlay || playback?.status !== 'playing') return
+    if (Date.now() - lastProgressAt > STALL_RECONNECT_MS) {
+      lastProgressAt = Date.now() // 每个窗口最多触发一次
+      reconnect()
+    }
+  }, 1000)
 }
 
 async function tryPlay(el: HTMLAudioElement) {
@@ -91,15 +141,15 @@ async function tryPlay(el: HTMLAudioElement) {
       return
     }
     const notAllowed = e instanceof DOMException && e.name === 'NotAllowedError'
-    if (notAllowed || Date.now() < retryThrottleUntil) {
-      // Autoplay gate (unlikely after first unlock) or throttled retry window:
-      // stay silent; the next sync tick / error event retries.
+    if (notAllowed) {
+      // Autoplay gate (unlikely after first unlock): stay silent; the next
+      // sync tick / watchdog retries.
       return
     }
     // Stream-level failure on a dead element: rejoin the live edge by
     // re-pointing the src (play() alone keeps rejecting on an errored
     // element, which is what made reconnects after network drops dead).
-    window.setTimeout(reconnect, 2000)
+    scheduleRetry()
   }
 }
 
