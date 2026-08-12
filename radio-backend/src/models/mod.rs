@@ -53,6 +53,9 @@ pub struct Song {
     pub cover_path: String,
     pub filesize: i64,
     pub created_at: NaiveDateTime,
+    pub ncm_song_id: Option<i64>,
+    pub metadata_source: String,
+    pub metadata_matched_at: Option<NaiveDateTime>,
 }
 
 /// 歌曲摘要，用于列表响应（出于安全考虑省略路径）。

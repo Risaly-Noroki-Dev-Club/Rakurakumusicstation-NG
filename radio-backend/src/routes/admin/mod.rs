@@ -29,6 +29,10 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         .route("/logs", axum::routing::get(stats::get_logs))
         // 歌曲管理
         .route("/rescan-songs", axum::routing::post(songs::rescan_songs))
+        .route(
+            "/enrich-song-metadata",
+            axum::routing::post(songs::enrich_song_metadata),
+        )
         .route("/songs", axum::routing::get(songs::list_all_songs))
         .route("/songs/:id", axum::routing::delete(songs::delete_song))
         // 上传 (带 100MB body limit)

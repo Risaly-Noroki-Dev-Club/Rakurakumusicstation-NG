@@ -1,6 +1,51 @@
 use super::client::NcmClient;
 use super::types::*;
 use anyhow::{Context, Result};
+use std::time::Duration;
+
+fn anonymous_http_client() -> Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()?)
+}
+
+/// 网易云公开搜索接口，不携带登录 Cookie。
+pub async fn search_song_anonymous(keyword: &str, limit: i32) -> Result<Vec<SearchSongItem>> {
+    let response = anonymous_http_client()?
+        .post("https://music.163.com/api/search/get")
+        .header("Referer", "https://music.163.com/")
+        .header("User-Agent", "Mozilla/5.0")
+        .form(&[
+            ("s", keyword.to_string()),
+            ("type", "1".to_string()),
+            ("offset", "0".to_string()),
+            ("limit", limit.to_string()),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<SearchSongData>()
+        .await
+        .with_context(|| "解析网易云匿名搜索结果失败")?;
+    Ok(response.result.songs)
+}
+
+/// 网易云公开歌曲详情接口，不携带登录 Cookie。
+pub async fn get_song_detail_anonymous(id: i64) -> Result<Option<SongDetailData>> {
+    let ids = format!("[{}]", id);
+    let response = anonymous_http_client()?
+        .get("https://music.163.com/api/song/detail")
+        .header("Referer", "https://music.163.com/")
+        .header("User-Agent", "Mozilla/5.0")
+        .query(&[("ids", ids)])
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<SongsDetailData>()
+        .await
+        .with_context(|| "解析网易云匿名歌曲详情失败")?;
+    Ok(response.songs.into_iter().next())
+}
 
 pub async fn search_song(
     client: &NcmClient,

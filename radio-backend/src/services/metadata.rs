@@ -1,9 +1,109 @@
+use serde::Deserialize;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
 /// Re-export engine's parse_artist_title (regex-based, supports multiple dash types).
 pub use radio_engine::metadata::parse_artist_title;
+
+#[derive(Debug, Default)]
+pub struct LocalAudioMetadata {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration_ms: i64,
+}
+
+#[derive(Deserialize)]
+struct ProbeOutput {
+    format: ProbeFormat,
+}
+
+#[derive(Deserialize)]
+struct ProbeFormat {
+    #[serde(default)]
+    duration: String,
+    #[serde(default)]
+    tags: HashMap<String, String>,
+}
+
+/// 读取本地音频标签和时长；缺失的标题、艺术家回退到文件名。
+pub fn read_local_metadata(path: &Path) -> LocalAudioMetadata {
+    let stem = path
+        .file_stem()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let (filename_artist, filename_title) = parse_artist_title(&stem);
+    let output = std::process::Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration:format_tags=title,artist,album",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .output();
+    let Ok(output) = output else {
+        return LocalAudioMetadata {
+            title: filename_title,
+            artist: filename_artist,
+            ..Default::default()
+        };
+    };
+    if !output.status.success() {
+        return LocalAudioMetadata {
+            title: filename_title,
+            artist: filename_artist,
+            ..Default::default()
+        };
+    }
+
+    let Ok(probe) = serde_json::from_slice::<ProbeOutput>(&output.stdout) else {
+        return LocalAudioMetadata {
+            title: filename_title,
+            artist: filename_artist,
+            ..Default::default()
+        };
+    };
+    let tag = |name: &str| {
+        probe
+            .format
+            .tags
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.trim().to_string())
+            .unwrap_or_default()
+    };
+
+    LocalAudioMetadata {
+        title: {
+            let title = tag("title");
+            if title.is_empty() {
+                filename_title
+            } else {
+                title
+            }
+        },
+        artist: {
+            let artist = tag("artist");
+            if artist.is_empty() {
+                filename_artist
+            } else {
+                artist
+            }
+        },
+        album: tag("album"),
+        duration_ms: probe
+            .format
+            .duration
+            .parse::<f64>()
+            .map(|seconds| (seconds * 1000.0) as i64)
+            .unwrap_or(0),
+    }
+}
 
 /// 查找音频文件旁的封面图片。
 pub fn find_cover(audio_path: &Path, media_root: &Path) -> String {

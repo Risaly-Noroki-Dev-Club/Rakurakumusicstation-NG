@@ -3,7 +3,7 @@ use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::ApiResponse;
 use crate::routes::admin::get_admin;
-use crate::services::metadata::{find_cover, get_duration, parse_artist_title, sanitize_filename};
+use crate::services::metadata::{find_cover, read_local_metadata, sanitize_filename};
 use axum::{
     extract::{Multipart, State},
     http::HeaderMap,
@@ -55,14 +55,8 @@ pub async fn upload_song(
 
         uploaded_filename = safe_name.clone();
 
-        let stem = dest_path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or(safe_name.clone());
-        let (artist, title) = parse_artist_title(&stem);
-
+        let metadata = read_local_metadata(&dest_path);
         let rel_str = safe_name.clone();
-        let duration_ms = get_duration(&dest_path).unwrap_or(0);
         let cover_path = find_cover(&dest_path, &media_path);
         let lrc_path = dest_path.with_extension("lrc");
         let lyrics_path = if lrc_path.exists() {
@@ -79,14 +73,15 @@ pub async fn upload_song(
         // 拿错 id）。
         let mut conn = state.db.acquire().await?;
         sqlx::query(
-            "INSERT INTO songs (title, artist, file_path, lyrics_path, cover_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO songs (title, artist, album, file_path, lyrics_path, cover_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(&title)
-        .bind(&artist)
+        .bind(&metadata.title)
+        .bind(&metadata.artist)
+        .bind(&metadata.album)
         .bind(&rel_str)
         .bind(&lyrics_path)
         .bind(&cover_path)
-        .bind(duration_ms)
+        .bind(metadata.duration_ms)
         .bind(data.len() as i64)
         .execute(&mut *conn)
         .await?;

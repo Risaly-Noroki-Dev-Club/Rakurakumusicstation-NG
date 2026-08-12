@@ -11,8 +11,9 @@ pub struct SearchSongData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SearchSongResult {
     pub songs: Vec<SearchSongItem>,
+    #[serde(rename = "songCount")]
     pub song_count: i32,
-    #[serde(default)]
+    #[serde(rename = "hasMore", default)]
     pub has_more: bool,
 }
 
@@ -70,8 +71,11 @@ pub struct SongsDetailData {
 pub struct SongDetailData {
     pub name: String,
     pub id: i64,
+    #[serde(alias = "artists")]
     pub ar: Vec<SongArtist>,
+    #[serde(alias = "album")]
     pub al: SongAlbum,
+    #[serde(alias = "duration")]
     pub dt: i64,
 }
 

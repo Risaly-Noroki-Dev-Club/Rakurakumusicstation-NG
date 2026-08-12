@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { deleteSongAdmin, downloadSongUrl, fetchAdminSongs, rescanSongs, uploadSongFile } from '@/api'
+import { deleteSongAdmin, downloadSongUrl, enrichSongMetadata, fetchAdminSongs, rescanSongs, uploadSongFile } from '@/api'
 import type { Song } from '@/types'
 import { useStore } from '@/store'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogClose } from '@appica/ui-react/alert-dialog'
@@ -24,6 +24,7 @@ export function AdminSongs() {
   const [songs, setSongs] = useState<Song[]>([])
   const [loading, setLoading] = useState(true)
   const [rescanning, setRescanning] = useState(false)
+  const [enriching, setEnriching] = useState(false)
 
   // Upload dialog
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -87,6 +88,19 @@ export function AdminSongs() {
     }
   }
 
+  async function handleEnrichMetadata() {
+    setEnriching(true)
+    try {
+      const report = await enrichSongMetadata()
+      addToast(`元数据补全完成：匹配 ${report.matched}，跳过 ${report.skipped}，失败 ${report.failed}`, report.failed > 0 ? 'warning' : 'success')
+      await loadSongs()
+    } catch (e) {
+      addToast(errMsg(e), 'error')
+    } finally {
+      setEnriching(false)
+    }
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleting(true)
@@ -116,6 +130,14 @@ export function AdminSongs() {
         <Button variant="primary" size="sm" onClick={() => setUploadOpen(true)}>
           <Upload data-icon="start" />
           上传
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleEnrichMetadata} disabled={enriching}>
+          {enriching ? (
+            <Spinner currentColor className="size-4" aria-label="补全中" />
+          ) : (
+            <Refresh data-icon="start" />
+          )}
+          补全元数据
         </Button>
         {!loading && (
           <span className="text-foreground-muted ms-auto text-xs">{songs.length} 首歌曲</span>

@@ -153,6 +153,16 @@ export function rescanSongs(): Promise<unknown> {
   return apiFetch('/api/admin/rescan-songs', { method: 'POST' })
 }
 
+export interface MetadataEnrichReport {
+  matched: number
+  skipped: number
+  failed: number
+}
+
+export function enrichSongMetadata(): Promise<MetadataEnrichReport> {
+  return apiFetch<MetadataEnrichReport>('/api/admin/enrich-song-metadata', { method: 'POST' })
+}
+
 export function fetchAdminSongs(): Promise<Song[]> {
   return apiFetch<Song[]>('/api/admin/songs')
 }

@@ -3,6 +3,7 @@ pub mod client;
 pub mod cookie;
 pub mod crypto;
 pub mod downloader;
+pub mod metadata;
 pub mod playlist_track_all;
 pub mod types;
 

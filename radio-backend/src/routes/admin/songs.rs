@@ -3,7 +3,7 @@ use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::ApiResponse;
 use crate::routes::admin::get_admin;
-use crate::services::metadata::{find_cover, get_duration, parse_artist_title};
+use crate::services::metadata::{find_cover, read_local_metadata};
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
@@ -24,6 +24,29 @@ pub async fn list_all_songs(
             .await?;
 
     Ok(Json(ApiResponse::ok(songs)))
+}
+
+/// POST /api/admin/enrich-song-metadata — 匿名从网易云补全专辑和封面
+pub async fn enrich_song_metadata(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<ApiResponse<crate::services::ncm::metadata::EnrichReport>>, AppError> {
+    let admin = get_admin(&state, &headers).await?;
+    let media_path = std::path::Path::new(&state.config.audio_engine.media_path);
+    let report = crate::services::ncm::metadata::enrich_library(&state.db, media_path).await?;
+
+    sqlx::query(
+        "INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'enrich_song_metadata', ?)",
+    )
+    .bind(admin.id)
+    .bind(format!(
+        "matched={}, skipped={}, failed={}",
+        report.matched, report.skipped, report.failed
+    ))
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(ApiResponse::ok(report)))
 }
 
 /// DELETE /api/admin/songs/{id} — 删除歌曲
@@ -146,13 +169,7 @@ pub async fn rescan_songs(
             .await?;
 
         if existing.is_none() {
-            let stem = file_path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            let (artist, title) = parse_artist_title(&stem);
-            let duration_ms = get_duration(file_path).unwrap_or(0);
+            let metadata = read_local_metadata(file_path);
 
             let lrc_path = file_path.with_extension("lrc");
             let lyrics_path = if lrc_path.exists() {
@@ -171,14 +188,15 @@ pub async fn rescan_songs(
             // 池拿错 id）。
             let mut conn = state.db.acquire().await?;
             sqlx::query(
-                "INSERT INTO songs (title, artist, file_path, lyrics_path, cover_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO songs (title, artist, album, file_path, lyrics_path, cover_path, duration_ms, filesize) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
-            .bind(&title)
-            .bind(&artist)
+            .bind(&metadata.title)
+            .bind(&metadata.artist)
+            .bind(&metadata.album)
             .bind(&rel_str)
             .bind(&lyrics_path)
             .bind(&cover_path)
-            .bind(duration_ms)
+            .bind(metadata.duration_ms)
             .bind(0_i64)
             .execute(&mut *conn)
             .await?;
