@@ -64,6 +64,7 @@ function ensureAudio(): HTMLAudioElement {
     scheduleRetry()
   })
   el.addEventListener('playing', () => {
+    cancelRetry()
     errorRetries = 0
     connectionErrorNotified = false
     lastProgressAt = Date.now()
@@ -89,6 +90,10 @@ export function reconnect() {
   // 去重：ended 与 error 可能在同一 tick 内先后触发，避免重复重连。
   const now = Date.now()
   if (now - lastReconnectAt < 250) return
+  // An accepted reconnect supersedes a retry left by the previous element
+  // state. Keep the timer when this call is deduped, or an immediate
+  // error+ended burst could otherwise cancel its only recovery attempt.
+  cancelRetry()
   lastReconnectAt = now
   reconnectNonce += 1
   lastProgressAt = now
@@ -111,6 +116,12 @@ function scheduleRetry() {
     retryTimer = null
     reconnect()
   }, retryDelayMs())
+}
+
+function cancelRetry() {
+  if (retryTimer === null) return
+  window.clearTimeout(retryTimer)
+  retryTimer = null
 }
 
 /** 停滞看门狗：连接存活但长时间无数据推进（半断网、服务端静默）时主动重连。 */
@@ -160,6 +171,7 @@ export function syncAudio() {
   const { playback, audioPaused, needsPlay } = useStore.getState()
 
   if (!url) {
+    cancelRetry()
     el.pause()
     if (el.src) {
       el.removeAttribute('src')
@@ -172,6 +184,7 @@ export function syncAudio() {
   const current = el.src ? urlBase(el.src) : ''
 
   if (current !== target) {
+    cancelRetry()
     reconnectNonce += 1
     const sep = url.includes('?') ? '&' : '?'
     el.src = `${url}${sep}r=${reconnectNonce}`
@@ -186,6 +199,7 @@ export function syncAudio() {
 
 /** User gesture path: unblock autoplay and resume. */
 export function resumeAudio() {
+  cancelRetry()
   userAuthorized = true
   useStore.getState().setNeedsPlay(false)
   useStore.getState().setAudioPaused(false)
@@ -195,6 +209,7 @@ export function resumeAudio() {
 
 /** User explicitly pauses the stream locally. */
 export function pauseAudio() {
+  cancelRetry()
   const el = ensureAudio()
   el.pause()
   useStore.getState().setAudioPaused(true)
