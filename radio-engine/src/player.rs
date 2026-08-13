@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, Notify};
+use tokio::task::JoinHandle;
 
 use crate::config::{
     AUDIO_CHUNK_SIZE, CHANNELS, CROSSFADE_ENABLED, CROSSFADE_SECONDS, MP3_BITRATE, SAMPLE_RATE,
@@ -109,6 +110,11 @@ async fn spawn_ffmpeg(args: &FfmpegArgs, duration_ms: i64) -> io::Result<Child> 
         .spawn()
 }
 
+/// ffmpeg 在曲目播放期间静默多久视为卡死。
+/// 健康曲目在 `-re` 下每秒至少产出 16KB（AUDIO_CHUNK_SIZE），
+/// 超时无产出必为异常（进程挂起/解码停滞），应放弃本曲避免假播放。
+const FFMPEG_STALL_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Where the currently-playing track was sourced from.
 #[derive(Debug, Clone)]
 enum TrackSource {
@@ -145,6 +151,11 @@ enum StreamOutcome {
     Stopped,
 }
 
+struct QueueReloadTask {
+    generation: u64,
+    handle: JoinHandle<(Vec<String>, Vec<TrackMetadata>)>,
+}
+
 /// Audio player that spawns ffmpeg, reads from pipe, pushes to ring buffer,
 /// and supports a folder-cycle fallback plus a user-driven request queue.
 pub struct Player {
@@ -160,6 +171,11 @@ pub struct Player {
     stop_flag: Arc<AtomicBool>,
     /// Wakes the idle loop when a new request arrives or the queue is reloaded.
     wake: Arc<Notify>,
+    /// At most one library scan runs at a time. Each reload command increments
+    /// the shared generation before it enters the command channel, so a scan
+    /// can never commit after a newer request has already been sent.
+    queue_reload_task: Option<QueueReloadTask>,
+    queue_reload_generation: Arc<Mutex<u64>>,
     media_path: String,
     /// Whether crossfade is enabled
     crossfade_enabled: bool,
@@ -173,6 +189,7 @@ pub struct PlayerHandle {
     stop_flag: Arc<AtomicBool>,
     request_queue: Arc<Mutex<VecDeque<RequestedTrack>>>,
     wake: Arc<Notify>,
+    queue_reload_generation: Arc<Mutex<u64>>,
 }
 
 impl Player {
@@ -195,6 +212,7 @@ impl Player {
         let current_track = Arc::new(AtomicUsize::new(0));
         let request_queue = Arc::new(Mutex::new(VecDeque::new()));
         let wake = Arc::new(Notify::new());
+        let queue_reload_generation = Arc::new(Mutex::new(0));
 
         let player = Self {
             buffer,
@@ -206,6 +224,8 @@ impl Player {
             state: Arc::clone(&state),
             stop_flag: Arc::clone(&stop_flag),
             wake: Arc::clone(&wake),
+            queue_reload_task: None,
+            queue_reload_generation: Arc::clone(&queue_reload_generation),
             media_path,
             crossfade_enabled,
         };
@@ -216,17 +236,22 @@ impl Player {
             stop_flag,
             request_queue,
             wake,
+            queue_reload_generation,
         };
 
         (player, handle)
     }
 
-    /// Initialize play queue by recursively scanning media_path.
-    pub async fn init_play_queue(&mut self) {
-        let dir = Path::new(&self.media_path);
+    /// Scan media_path for supported audio files and read their metadata.
+    ///
+    /// This is the slow part (recursive fs walk + one ffprobe per file) and
+    /// must never run inside the streaming pump — it can block playback for
+    /// the whole scan duration. Callers decide how to swap the result in.
+    async fn scan_play_queue(media_path: &str) -> (Vec<String>, Vec<TrackMetadata>) {
+        let dir = Path::new(media_path);
         if !dir.exists() || !dir.is_dir() {
-            tracing::warn!("Media directory not found: {}", self.media_path);
-            return;
+            tracing::warn!("Media directory not found: {}", media_path);
+            return (Vec::new(), Vec::new());
         }
 
         let files = crate::util::scan_media_dir(dir, dir, SUPPORTED_FORMATS);
@@ -237,7 +262,7 @@ impl Player {
         for (_full_path, rel_path) in files {
             let filename = rel_path.clone();
 
-            let meta = crate::metadata::extract_metadata(&rel_path, &self.media_path)
+            let meta = crate::metadata::extract_metadata(&rel_path, media_path)
                 .await
                 .unwrap_or_else(|_| TrackMetadata {
                     filename: filename.clone(),
@@ -252,6 +277,13 @@ impl Player {
             new_queue.push(filename);
             new_metadata.push(meta);
         }
+
+        (new_queue, new_metadata)
+    }
+
+    /// Initialize play queue by recursively scanning media_path.
+    pub async fn init_play_queue(&mut self) {
+        let (new_queue, new_metadata) = Self::scan_play_queue(&self.media_path).await;
 
         {
             let mut queue = self.play_queue.lock().unwrap();
@@ -274,6 +306,71 @@ impl Player {
         self.wake.notify_waiters();
     }
 
+    /// Start or coalesce a non-blocking library reload.
+    fn request_queue_reload(&mut self) {
+        if self.queue_reload_task.is_some() {
+            tracing::debug!("Play queue reload already running; scheduling one fresh scan");
+            return;
+        }
+
+        self.spawn_queue_reload();
+    }
+
+    fn spawn_queue_reload(&mut self) {
+        let media_path = self.media_path.clone();
+        let wake = Arc::clone(&self.wake);
+        let generation = *self.queue_reload_generation.lock().unwrap();
+        let handle = tokio::spawn(async move {
+            let result = Self::scan_play_queue(&media_path).await;
+            // Wake an idle player so it can collect and apply the result.
+            wake.notify_waiters();
+            result
+        });
+        self.queue_reload_task = Some(QueueReloadTask { generation, handle });
+    }
+
+    /// Apply a completed scan only when no newer reload was requested.
+    async fn poll_queue_reload(&mut self) {
+        let finished = self
+            .queue_reload_task
+            .as_ref()
+            .is_some_and(|task| task.handle.is_finished());
+        if !finished {
+            return;
+        }
+
+        let task = self.queue_reload_task.take().unwrap();
+        let result = task.handle.await;
+        // Hold the generation lock through the in-memory queue swap. This
+        // closes the check-then-commit race with PlayerHandle::send_command:
+        // either the newer command increments first and invalidates this
+        // result, or it waits until this result is fully committed.
+        let current_generation = self.queue_reload_generation.lock().unwrap();
+        if task.generation != *current_generation {
+            drop(current_generation);
+            tracing::debug!("Discarding stale play queue scan and starting the pending reload");
+            self.spawn_queue_reload();
+            return;
+        }
+
+        let Ok((new_queue, new_metadata)) = result else {
+            tracing::warn!("Background play queue scan task failed");
+            return;
+        };
+
+        let track_count = new_queue.len();
+        {
+            // Always mutate the parallel queue vectors under both locks.
+            let mut queue = self.play_queue.lock().unwrap();
+            let mut metadata = self.play_queue_metadata.lock().unwrap();
+            *queue = new_queue;
+            *metadata = new_metadata;
+        }
+        drop(current_generation);
+        self.wake.notify_waiters();
+        tracing::info!("Play queue reloaded in background: {} tracks", track_count);
+    }
+
     /// Main playback loop.
     pub async fn run(&mut self) {
         loop {
@@ -284,6 +381,7 @@ impl Player {
             // Drain commands that arrived while idle. Skip/Prev/Next/Play with no
             // current track is a no-op; ReloadQueue and Stop are honored.
             self.drain_idle_commands().await;
+            self.poll_queue_reload().await;
             if self.stop_flag.load(Ordering::Relaxed) {
                 break;
             }
@@ -291,8 +389,11 @@ impl Player {
             let track = match self.pick_next_track() {
                 Some(t) => t,
                 None => {
-                    // Nothing to play. Wait for either a wake-up signal (request
-                    // pushed, queue reloaded) or a 5s timeout, whichever comes first.
+                    // Nothing to play: publish Stopped so clients drop the
+                    // stream URL instead of connecting into silence with a
+                    // stale "playing" status. Then wait for either a wake-up
+                    // signal (request pushed, queue reloaded) or a 5s timeout.
+                    self.publish_idle();
                     tokio::select! {
                         _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                         _ = self.wake.notified() => {}
@@ -338,6 +439,9 @@ impl Player {
             }
         }
 
+        if let Some(task) = self.queue_reload_task.take() {
+            task.handle.abort();
+        }
         let mut state = self.state.lock().unwrap();
         *state = PlaybackState::default();
         tracing::info!("Player stopped");
@@ -378,7 +482,7 @@ impl Player {
             }
         }
         if needs_reload {
-            self.init_play_queue().await;
+            self.request_queue_reload();
         }
     }
 
@@ -396,7 +500,10 @@ impl Player {
                 .to_string();
 
             if !Path::new(&abs).exists() {
-                tracing::warn!("Requested track missing on disk: {} — skipping", req.file_path);
+                tracing::warn!(
+                    "Requested track missing on disk: {} — skipping",
+                    req.file_path
+                );
                 continue;
             }
 
@@ -407,7 +514,11 @@ impl Player {
                 duration_ms: req.duration_ms,
                 title: req.title,
                 artist: req.artist,
-                song_id: if req.song_id > 0 { Some(req.song_id) } else { None },
+                song_id: if req.song_id > 0 {
+                    Some(req.song_id)
+                } else {
+                    None
+                },
             });
         }
 
@@ -579,6 +690,7 @@ impl Player {
         let track_start_system = chrono::Utc::now().timestamp_millis();
         let mut total_bytes_sent: u64 = 0;
         let mut last_publish = Instant::now();
+        let mut last_push = Instant::now();
         let mut crossfade_triggered = false;
 
         // Initial state publish so subscribers see the new track immediately.
@@ -593,7 +705,11 @@ impl Player {
             if let Ok(cmd) = self.cmd_rx.try_recv() {
                 match cmd.cmd_type {
                     AudioCommandType::ReloadQueue => {
-                        self.init_play_queue().await;
+                        // 全库扫描（fs 遍历 + 每文件 ffprobe）可能耗时数十秒，
+                        // 绝不能阻塞推流泵 —— 否则所有听众在扫描期间静默，
+                        // 状态仍是 Playing，重连也拿不到数据。后台扫描严格单飞；
+                        // 扫描期间的新请求会使旧结果作废，并合并为一次最新扫描。
+                        self.request_queue_reload();
                     }
                     AudioCommandType::Skip | AudioCommandType::Next => {
                         ffmpeg_task.abort();
@@ -635,16 +751,34 @@ impl Player {
                 }
             }
 
+            // Process reload commands before collecting a finished scan so a
+            // newly requested reload can invalidate that scan's stale result.
+            self.poll_queue_reload().await;
+
             match audio_rx.try_recv() {
                 Ok(d) => {
                     self.buffer.push(&d);
                     total_bytes_sent += d.len() as u64;
+                    last_push = Instant::now();
                 }
                 Err(tokio::sync::mpsc::error::TryRecvError::Empty) => {}
                 Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                     let _ = ffmpeg_task.await;
                     break StreamOutcome::Natural;
                 }
+            }
+
+            // ffmpeg 存活但长时间不产出（进程卡死）→ 放弃本曲，避免
+            // "状态 Playing 但流静默" 的假播放窗口。健康曲目在 -re 下
+            // 每秒至少产出 16KB，超时无产出必为异常。
+            if last_push.elapsed() > FFMPEG_STALL_TIMEOUT {
+                tracing::warn!(
+                    "ffmpeg produced no audio for {}s ({}) — advancing",
+                    FFMPEG_STALL_TIMEOUT.as_secs(),
+                    track.rel_path
+                );
+                ffmpeg_task.abort();
+                break StreamOutcome::Natural;
             }
 
             // Check if we should trigger crossfade
@@ -697,6 +831,17 @@ impl Player {
         outcome
     }
 
+    /// Publish an empty Stopped state when the queue has nothing to play.
+    ///
+    /// Without this the last track's "playing" state lingers forever: the
+    /// frontend keeps a /stream connection that never receives data and
+    /// reconnects into silence on every idle timeout — "shows playing,
+    /// but no sound" with no recovery until the next track.
+    fn publish_idle(&self) {
+        let mut state = self.state.lock().unwrap();
+        *state = PlaybackState::default();
+    }
+
     /// Publish playback state for the active track.
     fn publish_state(
         &self,
@@ -734,6 +879,12 @@ impl Player {
 impl PlayerHandle {
     /// Send a command to the player.
     pub fn send_command(&self, cmd: AudioCommand) {
+        if matches!(&cmd.cmd_type, AudioCommandType::ReloadQueue) {
+            let mut generation = self.queue_reload_generation.lock().unwrap();
+            *generation = generation.wrapping_add(1);
+            drop(generation);
+            self.wake.notify_waiters();
+        }
         let _ = self.cmd_tx.send(cmd);
     }
 

@@ -155,7 +155,7 @@ export function QueueList({ items, onChanged }: QueueListProps) {
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border-muted bg-background-subtle/40 px-6 py-14 text-center">
         <Music className="text-foreground-muted size-10" aria-hidden="true" />
         <p className="text-foreground-muted text-sm">队列空，去曲库点歌吧</p>
-        <Button render={<Link to="/library" />} variant="primary" size="sm">
+        <Button render={<Link to="/library" />} nativeButton={false} variant="primary" size="sm">
           <Library data-icon="start" />
           去曲库点歌
         </Button>
