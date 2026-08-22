@@ -50,13 +50,15 @@ pub struct SongsURLData {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SongURLData {
     pub id: i64,
-    pub url: String,
+    pub url: Option<String>,
+    #[serde(default)]
     pub br: i64,
+    #[serde(default)]
     pub size: i64,
-    pub md5: String,
+    pub md5: Option<String>,
     pub code: i32,
     #[serde(rename = "type")]
-    pub file_type: String,
+    pub file_type: Option<String>,
 }
 
 // ─── 歌曲详情 ──────────────────────────────────────────
@@ -108,10 +110,36 @@ pub struct LyricContent {
     pub version: i32,
 }
 
-// ─── 歌单全部曲目 ────────────────────────────────────────
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlaylistDetailData {
+    pub playlist: PlaylistDetail,
+    pub code: i32,
+}
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct PlaylistTrackAllData {
-    pub songs: Vec<SongDetailData>,
-    pub code: i32,
+pub struct PlaylistDetail {
+    #[serde(rename = "trackIds")]
+    pub track_ids: Vec<PlaylistTrackId>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlaylistTrackId {
+    pub id: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SongsURLData;
+
+    #[test]
+    fn unavailable_song_url_accepts_null_fields() {
+        let response: SongsURLData = serde_json::from_str(
+            r#"{"code":200,"data":[{"id":186016,"url":null,"br":0,"size":0,"md5":null,"code":404,"type":null}]}"#,
+        )
+        .unwrap();
+        assert_eq!(response.data.len(), 1);
+        assert!(response.data[0].url.is_none());
+        assert!(response.data[0].md5.is_none());
+        assert!(response.data[0].file_type.is_none());
+    }
 }

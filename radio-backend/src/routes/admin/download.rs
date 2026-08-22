@@ -3,7 +3,7 @@ use crate::app::state::AppState;
 use crate::error::AppError;
 use crate::models::{ApiResponse, DownloadEvent, DownloadRequest};
 use crate::routes::admin::get_admin;
-use crate::services::ncm::{run_download, NcmClient};
+use crate::services::ncm::{run_download, DownloadRuntime, NcmClient};
 use axum::{
     extract::State,
     http::HeaderMap,
@@ -81,8 +81,11 @@ pub fn spawn_download_job(
             playlist,
             quality,
             _format,
-            media_path.clone(),
-            concurrency,
+            DownloadRuntime {
+                db: state.db.clone(),
+                output_dir: media_path.clone(),
+                concurrency,
+            },
             log_tx,
         )
         .await;

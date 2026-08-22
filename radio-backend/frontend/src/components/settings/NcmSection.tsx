@@ -117,7 +117,7 @@ export function NcmSection() {
               rows={3}
               placeholder="粘贴网易云 Cookie（如 MUSIC_U=…），用于本设备登录网易云"
             />
-            <FieldDescription>仅保存在本设备浏览器中，用于播放需要登录的曲目。</FieldDescription>
+            <FieldDescription>保存在服务端与本设备身份关联的账号记录中，用于验证网易云登录状态。</FieldDescription>
           </Field>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" disabled={!cookie.trim() || saving}>

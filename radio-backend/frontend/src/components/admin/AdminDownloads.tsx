@@ -4,7 +4,6 @@ import type { BatchDownloadStatus } from '@/types'
 import { useStore } from '@/store'
 import { Button } from '@appica/ui-react/button'
 import { Field, FieldLabel, FieldDescription } from '@appica/ui-react/field'
-import { Input } from '@appica/ui-react/input'
 import { Progress, ProgressLabel, ProgressValue } from '@appica/ui-react/progress'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 import { Spinner } from '@appica/ui-react/spinner'
@@ -13,6 +12,8 @@ import { CircleCheckFilled, CircleXFilled, Download, Rotate360 } from '@appica/i
 
 const POLL_INTERVAL_MS = 2000
 const MAX_DURATION_MS = 10 * 60 * 1000
+type LyricsMode = 'none' | 'separate'
+type DownloadQuality = 'standard' | 'high' | 'exhigh' | 'lossless'
 
 const SOURCE_OPTIONS = [
   { value: 'ncm', label: '网易云音乐' },
@@ -23,7 +24,13 @@ const SOURCE_OPTIONS = [
 const LYRICS_OPTIONS = [
   { value: 'none', label: '不保存歌词' },
   { value: 'separate', label: '保存为单独文件' },
-  { value: 'overwrite', label: '覆盖原歌词' },
+]
+
+const QUALITY_OPTIONS = [
+  { value: 'standard', label: '标准（128 kbps）' },
+  { value: 'high', label: '较高（192 kbps）' },
+  { value: 'exhigh', label: '极高（320 kbps）' },
+  { value: 'lossless', label: '无损（FLAC）' },
 ]
 
 function errMsg(e: unknown): string {
@@ -33,8 +40,8 @@ function errMsg(e: unknown): string {
 export function AdminDownloads() {
   const addToast = useStore((s) => s.addToast)
   const [source, setSource] = useState('ncm')
-  const [lyricsMode, setLyricsMode] = useState('none')
-  const [quality, setQuality] = useState('')
+  const [lyricsMode, setLyricsMode] = useState<LyricsMode>('none')
+  const [quality, setQuality] = useState<DownloadQuality>('exhigh')
   const [itemsText, setItemsText] = useState('')
   const [starting, setStarting] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
@@ -53,7 +60,7 @@ export function AdminDownloads() {
         source,
         items: urls.map((url) => ({ url })),
         lyrics_save_mode: lyricsMode,
-        ...(quality.trim() ? { quality: quality.trim() } : {}),
+        quality,
       })
       setTaskId(res.task_id)
       setStatus(null)
@@ -138,7 +145,9 @@ export function AdminDownloads() {
             <FieldLabel>歌词保存模式</FieldLabel>
             <Select
               value={lyricsMode}
-              onValueChange={(value) => { if (typeof value === 'string') setLyricsMode(value) }}
+              onValueChange={(value) => {
+                if (value === 'none' || value === 'separate') setLyricsMode(value)
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="选择歌词保存方式" />
@@ -154,14 +163,27 @@ export function AdminDownloads() {
           </Field>
         </div>
         <Field>
-          <FieldLabel>音质（可选）</FieldLabel>
-          <Input
-            inputSize="sm"
-            placeholder="例如 320k / flac / 128k"
+          <FieldLabel>下载音质</FieldLabel>
+          <Select
             value={quality}
-            onChange={(e) => setQuality(e.target.value)}
-          />
-          <FieldDescription>留空则使用默认音质。</FieldDescription>
+            onValueChange={(value) => {
+              if (value === 'standard' || value === 'high' || value === 'exhigh' || value === 'lossless') {
+                setQuality(value)
+              }
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="选择音质" />
+            </SelectTrigger>
+            <SelectContent>
+              {QUALITY_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription>实际可用音质取决于网易云账号权限和歌曲版权。</FieldDescription>
         </Field>
         <Field>
           <FieldLabel>下载链接</FieldLabel>

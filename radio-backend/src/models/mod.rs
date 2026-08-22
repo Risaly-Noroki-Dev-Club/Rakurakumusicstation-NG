@@ -359,7 +359,7 @@ pub struct BatchDownloadRequest {
     pub source: String,
     pub items: Vec<BatchDownloadItem>,
     #[serde(default)]
-    pub lyrics_save_mode: String, // none | separate | overwrite
+    pub lyrics_save_mode: String, // none | separate (overwrite remains a legacy alias)
     pub quality: Option<String>,
     pub format: Option<String>,
 }
@@ -428,6 +428,11 @@ pub struct ImportPlaylistResponse {
     pub total: usize,
     pub batch_id: String,
     pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StartNcmImportRequest {
+    pub batch_id: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -10,6 +10,12 @@ pub struct Track {
     pub raw: String,
 }
 
+pub struct DownloadRuntime {
+    pub db: sqlx::SqlitePool,
+    pub output_dir: String,
+    pub concurrency: usize,
+}
+
 pub fn parse_playlist(text: &str) -> Vec<Track> {
     let mut tracks = Vec::new();
     for line in text.lines() {
@@ -59,11 +65,11 @@ fn sanitize_filename(name: &str) -> String {
 }
 
 fn quality_to_ncm_level(quality: &str) -> &'static str {
-    match quality {
-        "standard" => "standard",
-        "high" => "higher",
-        "exhigh" => "exhigh",
-        "lossless" => "lossless",
+    match quality.trim().to_ascii_lowercase().as_str() {
+        "standard" | "128k" | "128kbps" => "standard",
+        "high" | "higher" | "192k" | "192kbps" => "higher",
+        "exhigh" | "320k" | "320kbps" => "exhigh",
+        "lossless" | "flac" => "lossless",
         _ => "exhigh",
     }
 }
@@ -82,6 +88,7 @@ fn ext_from_type(file_type: &str, url: &str) -> &'static str {
 
 async fn download_one(
     client: &NcmClient,
+    db: &sqlx::SqlitePool,
     track: &Track,
     quality: &str,
     output_dir: &str,
@@ -103,37 +110,54 @@ async fn download_one(
     }
 
     let song = &results[0];
-    let artist_name = song
-        .artists
-        .first()
-        .map(|a| a.name.as_str())
-        .unwrap_or("")
-        .to_string();
+    let detail = api::get_song_detail(client, &[song.id])
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("未找到歌曲详情"))?;
+    let artist_name = detail
+        .ar
+        .iter()
+        .map(|artist| artist.name.trim())
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ");
     log_tx
         .send(format!(
             "✅ 找到: {} - {} (ID: {})",
-            artist_name, song.name, song.id
+            artist_name, detail.name, detail.id
         ))
         .await
         .ok();
 
     // 2. Get download URL
     let level = quality_to_ncm_level(quality);
-    let urls = api::get_song_url(client, &[song.id], level).await?;
-    if urls.is_empty() || urls[0].url.is_empty() {
+    let urls = api::get_song_url(client, &[detail.id], level).await?;
+    let Some(url_data) = urls.first() else {
         log_tx
             .send(format!("❌ 无法获取下载链接: {}", keyword))
             .await
             .ok();
         return Ok(false);
-    }
-
-    let url_data = &urls[0];
-    let ext = ext_from_type(&url_data.file_type, &url_data.url);
+    };
+    let Some(download_url) = url_data.url.as_deref().filter(|url| !url.is_empty()) else {
+        log_tx
+            .send(format!(
+                "❌ 无法获取下载链接: {} (code={})",
+                keyword, url_data.code
+            ))
+            .await
+            .ok();
+        return Ok(false);
+    };
+    let ext = ext_from_type(
+        url_data.file_type.as_deref().unwrap_or_default(),
+        download_url,
+    );
 
     // 3. Download file
     let safe_artist = sanitize_filename(&artist_name);
-    let safe_title = sanitize_filename(&song.name);
+    let safe_title = sanitize_filename(&detail.name);
     let filename = format!("{} - {}.{}", safe_artist, safe_title, ext);
     let filepath = PathBuf::from(output_dir).join(&filename);
 
@@ -146,7 +170,7 @@ async fn download_one(
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-    let resp = http.get(&url_data.url).send().await?;
+    let resp = http.get(download_url).send().await?;
     let status = resp.status();
     if !status.is_success() {
         anyhow::bail!("音频文件下载失败: HTTP {}", status);
@@ -157,16 +181,16 @@ async fn download_one(
     }
 
     // MD5 check
-    if !url_data.md5.is_empty() {
+    if let Some(expected_md5) = url_data.md5.as_deref().filter(|md5| !md5.is_empty()) {
         use md5::{Digest, Md5};
         let mut hasher = Md5::new();
         hasher.update(&bytes);
         let file_md5 = format!("{:x}", hasher.finalize());
-        if file_md5 != url_data.md5 {
+        if file_md5 != expected_md5 {
             log_tx
                 .send(format!(
                     "⚠️ MD5 校验失败: {} (期望 {}, 实际 {})",
-                    filename, url_data.md5, file_md5
+                    filename, expected_md5, file_md5
                 ))
                 .await
                 .ok();
@@ -179,12 +203,14 @@ async fn download_one(
     log_tx.send(format!("✅ 已保存: {}", filename)).await.ok();
 
     // 4. Download lyrics
-    match api::get_song_lyric(client, song.id).await {
+    let mut saved_lyrics_path = None;
+    match api::get_song_lyric(client, detail.id).await {
         Ok(Some(lyric)) if !lyric.is_empty() => {
             let lrc_path = filepath.with_extension("lrc");
             if let Err(e) = tokio::fs::write(&lrc_path, lyric).await {
                 log_tx.send(format!("⚠️ 歌词保存失败: {}", e)).await.ok();
             } else {
+                saved_lyrics_path = Some(lrc_path.clone());
                 log_tx
                     .send(format!("📝 歌词已保存: {}", lrc_path.display()))
                     .await
@@ -194,6 +220,20 @@ async fn download_one(
         _ => {}
     }
 
+    let library_song_id = super::metadata::sync_downloaded_song(
+        db,
+        std::path::Path::new(output_dir),
+        &filepath,
+        saved_lyrics_path.as_deref(),
+        &detail,
+        bytes.len() as i64,
+    )
+    .await?;
+    log_tx
+        .send(format!("📚 已同步到曲库 (歌曲 ID: {})", library_song_id))
+        .await
+        .ok();
+
     Ok(true)
 }
 
@@ -202,10 +242,14 @@ pub async fn run_download(
     playlist: String,
     quality: String,
     _format: String,
-    output_dir: String,
-    concurrency: usize,
+    runtime: DownloadRuntime,
     log_tx: Sender<String>,
 ) -> Result<(usize, usize)> {
+    let DownloadRuntime {
+        db,
+        output_dir,
+        concurrency,
+    } = runtime;
     let tracks = parse_playlist(&playlist);
     let total = tracks.len();
     log_tx
@@ -228,7 +272,7 @@ pub async fn run_download(
                 .send(format!("--- [{}/{}] {}", i + 1, total, track.raw))
                 .await
                 .ok();
-            match download_one(&client, track, &quality, &output_dir, &log_tx).await {
+            match download_one(&client, &db, track, &quality, &output_dir, &log_tx).await {
                 Ok(true) => success += 1,
                 Ok(false) => failed += 1,
                 Err(e) => {
@@ -246,6 +290,7 @@ pub async fn run_download(
         for (i, track) in tracks.into_iter().enumerate() {
             let permit = semaphore.clone().acquire_owned().await?;
             let client = client.clone();
+            let db = db.clone();
             let quality = quality.clone();
             let output_dir = output_dir.clone();
             let log_tx = log_tx.clone();
@@ -256,7 +301,7 @@ pub async fn run_download(
                     .send(format!("--- [{}/{}] {}", i + 1, total, track.raw))
                     .await
                     .ok();
-                match download_one(&client, &track, &quality, &output_dir, &log_tx).await {
+                match download_one(&client, &db, &track, &quality, &output_dir, &log_tx).await {
                     Ok(true) => (1usize, 0usize),
                     Ok(false) => (0, 1),
                     Err(e) => {

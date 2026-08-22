@@ -94,8 +94,8 @@ export function AdminNcm() {
     if (!importResult) return
     setImportingBatch(true)
     try {
-      await startNcmImport(importResult.batch_id)
-      addToast('导入任务已开始', 'success')
+      const job = await startNcmImport(importResult.batch_id)
+      addToast(`导入任务已开始：${job.task_id}`, 'success')
     } catch (e) {
       addToast(errMsg(e), 'error')
     } finally {
@@ -123,7 +123,7 @@ export function AdminNcm() {
           <Textarea
             inputSize="sm"
             rows={5}
-            placeholder={'粘贴 MUSIC_U / MUSIC_A 等网易云登录 Cookie'}
+            placeholder={'粘贴包含 MUSIC_U 的网易云登录 Cookie'}
             value={cookie}
             onChange={(e) => setCookie(e.target.value)}
           />

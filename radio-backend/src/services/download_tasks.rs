@@ -125,11 +125,11 @@ pub(crate) fn sanitize_filename(name: &str) -> String {
 }
 
 pub(crate) fn quality_to_ncm_level(quality: &str) -> &'static str {
-    match quality {
-        "standard" => "standard",
-        "high" => "higher",
-        "exhigh" => "exhigh",
-        "lossless" => "lossless",
+    match quality.trim().to_ascii_lowercase().as_str() {
+        "standard" | "128k" | "128kbps" => "standard",
+        "high" | "higher" | "192k" | "192kbps" => "higher",
+        "exhigh" | "320k" | "320kbps" => "exhigh",
+        "lossless" | "flac" => "lossless",
         _ => "exhigh",
     }
 }
@@ -143,5 +143,19 @@ pub(crate) fn ext_from_type(file_type: &str, url: &str) -> &'static str {
         "flac"
     } else {
         "mp3"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quality_to_ncm_level;
+
+    #[test]
+    fn accepts_api_levels_and_human_quality_aliases() {
+        assert_eq!(quality_to_ncm_level("standard"), "standard");
+        assert_eq!(quality_to_ncm_level("128k"), "standard");
+        assert_eq!(quality_to_ncm_level("higher"), "higher");
+        assert_eq!(quality_to_ncm_level("320kbps"), "exhigh");
+        assert_eq!(quality_to_ncm_level("flac"), "lossless");
     }
 }

@@ -9,5 +9,5 @@ pub mod types;
 
 pub use api::get_song_detail;
 pub use client::NcmClient;
-pub use downloader::run_download;
+pub use downloader::{run_download, DownloadRuntime};
 pub use playlist_track_all::get_playlist_track_all;

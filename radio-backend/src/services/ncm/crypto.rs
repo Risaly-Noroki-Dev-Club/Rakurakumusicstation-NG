@@ -11,9 +11,9 @@ fn generate_key(key: &[u8]) -> [u8; 16] {
     gen_key[..len].copy_from_slice(&key[..len]);
     let mut i = 16;
     while i < key.len() {
-        for j in 0..16 {
+        for item in &mut gen_key {
             if i < key.len() {
-                gen_key[j] ^= key[i];
+                *item ^= key[i];
                 i += 1;
             }
         }
@@ -24,7 +24,7 @@ fn generate_key(key: &[u8]) -> [u8; 16] {
 fn pkcs7_pad(data: &[u8], block_size: usize) -> Vec<u8> {
     let pad_len = block_size - (data.len() % block_size);
     let mut result = data.to_vec();
-    result.extend(std::iter::repeat(pad_len as u8).take(pad_len));
+    result.extend(std::iter::repeat_n(pad_len as u8, pad_len));
     result
 }
 

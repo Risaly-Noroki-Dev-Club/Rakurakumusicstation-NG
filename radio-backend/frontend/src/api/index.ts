@@ -216,8 +216,8 @@ export function fetchLegacyDownloadStatus(): Promise<DownloadStatus> {
 export function startBatchDownload(payload: {
   source: string
   items: BatchDownloadItem[]
-  lyrics_save_mode?: string
-  quality?: string
+  lyrics_save_mode?: 'none' | 'separate'
+  quality?: 'standard' | 'high' | 'exhigh' | 'lossless'
   format?: string
 }): Promise<BatchDownloadResponse> {
   return apiFetch<BatchDownloadResponse>('/api/admin/download/batch', { method: 'POST', body: JSON.stringify(payload) })
@@ -243,8 +243,8 @@ export function importNcmPlaylist(link: string): Promise<ImportPlaylistResponse>
   return apiFetch<ImportPlaylistResponse>('/api/admin/ncm/playlist', { method: 'POST', body: JSON.stringify({ link }) })
 }
 
-export function startNcmImport(batch_id: string): Promise<unknown> {
-  return apiFetch('/api/admin/ncm/import', { method: 'POST', body: JSON.stringify({ batch_id }) })
+export function startNcmImport(batch_id: string): Promise<BatchDownloadResponse> {
+  return apiFetch<BatchDownloadResponse>('/api/admin/ncm/import', { method: 'POST', body: JSON.stringify({ batch_id }) })
 }
 
 export { apiFetch, apiBlob, appUrl, consumeSse } from './client'

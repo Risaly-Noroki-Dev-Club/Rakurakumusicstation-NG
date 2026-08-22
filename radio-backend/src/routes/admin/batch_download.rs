@@ -25,6 +25,15 @@ use tokio::sync::broadcast;
 
 const MAX_BATCH_ITEMS: usize = 200;
 
+struct NcmBatchContext {
+    client: NcmClient,
+    quality: String,
+    lyrics_mode: String,
+    media_path: String,
+    db: sqlx::SqlitePool,
+    import_batch_id: Option<String>,
+}
+
 fn ncm_item_label(item: &crate::models::BatchDownloadItem) -> String {
     if let Some(title) = item
         .title
@@ -66,6 +75,64 @@ fn extract_ncm_song_id(item: &crate::models::BatchDownloadItem) -> Option<i64> {
     None
 }
 
+fn launch_ncm_batch(
+    state: Arc<AppState>,
+    task: BatchTask,
+    items: Vec<crate::models::BatchDownloadItem>,
+    quality: String,
+    lyrics_mode: String,
+    import_batch_id: Option<String>,
+) {
+    let media_path = state.config.audio_engine.media_path.clone();
+    let device_id =
+        (!state.config.ncm.device_id.is_empty()).then(|| state.config.ncm.device_id.clone());
+    let ncm_cookie = crate::routes::admin::ncm::read_admin_ncm_cookie();
+    let client = NcmClient::new(device_id, ncm_cookie);
+    let db = state.db.clone();
+    let player_handle = state.player_handle.clone();
+    let context = NcmBatchContext {
+        client,
+        quality,
+        lyrics_mode,
+        media_path,
+        db,
+        import_batch_id,
+    };
+
+    tokio::spawn(async move {
+        run_ncm_batch(task, items, context).await;
+        player_handle.send_command(radio_engine::types::AudioCommand {
+            cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
+            song_id: None,
+            file_path: None,
+        });
+    });
+}
+
+/// Start an exact-ID NCM download batch from another admin workflow, such as
+/// playlist import, while using the same task registry and metadata pipeline.
+pub(crate) fn spawn_ncm_batch_job(
+    state: Arc<AppState>,
+    items: Vec<crate::models::BatchDownloadItem>,
+    quality: String,
+    lyrics_mode: String,
+    import_batch_id: Option<String>,
+) -> Result<BatchDownloadResponse, AppError> {
+    if items.is_empty() {
+        return Err(AppError::BadRequest("下载列表不能为空".into()));
+    }
+    let task_id = generate_task_id();
+    let total = items.len();
+    let task = BatchTask::new("ncm".into(), total);
+    if !insert_task(task_id.clone(), task.clone()) {
+        return Err(AppError::RateLimited(
+            "同时运行的下载任务过多，请稍后重试".into(),
+        ));
+    }
+    launch_ncm_batch(state, task, items, quality, lyrics_mode, import_batch_id);
+    Ok(BatchDownloadResponse { task_id, total })
+}
+
 /// POST /api/admin/download/batch — 启动批量下载任务
 pub async fn start_batch_download(
     State(state): State<Arc<AppState>>,
@@ -82,6 +149,12 @@ pub async fn start_batch_download(
             "单个下载任务最多包含 {} 项",
             MAX_BATCH_ITEMS
         )));
+    }
+    if !matches!(
+        body.lyrics_save_mode.as_str(),
+        "" | "none" | "separate" | "overwrite"
+    ) {
+        return Err(AppError::BadRequest("不支持的歌词保存模式".into()));
     }
 
     let source = body.source.clone();
@@ -101,28 +174,12 @@ pub async fn start_batch_download(
 
     match source.as_str() {
         "ncm" => {
-            let device_id = if state.config.ncm.device_id.is_empty() {
-                None
-            } else {
-                Some(state.config.ncm.device_id.clone())
-            };
-            let ncm_cookie = crate::routes::admin::ncm::read_admin_ncm_cookie();
-            let client = NcmClient::new(device_id, ncm_cookie);
             let quality = body.quality.unwrap_or_else(|| "exhigh".into());
-            let lyrics_mode = if body.lyrics_save_mode.is_empty() {
-                "separate".to_string()
-            } else {
-                body.lyrics_save_mode.clone()
+            let lyrics_mode = match body.lyrics_save_mode.as_str() {
+                "" | "overwrite" => "separate".to_string(),
+                value => value.to_string(),
             };
-
-            tokio::spawn(async move {
-                run_ncm_batch(task, client, body.items, quality, lyrics_mode, media_path).await;
-                player_handle.send_command(radio_engine::types::AudioCommand {
-                    cmd_type: radio_engine::types::AudioCommandType::ReloadQueue,
-                    song_id: None,
-                    file_path: None,
-                });
-            });
+            launch_ncm_batch(state, task, body.items, quality, lyrics_mode, None);
         }
         "netdisk" => {
             tokio::spawn(async move {
@@ -221,13 +278,9 @@ pub async fn batch_download_status(
 
 async fn run_ncm_batch(
     task: BatchTask,
-    client: NcmClient,
     items: Vec<crate::models::BatchDownloadItem>,
-    quality: String,
-    lyrics_mode: String,
-    media_path: String,
+    context: NcmBatchContext,
 ) {
-    let client = Arc::new(client);
     let total = items.len();
 
     let _ = task.tx.send(DownloadEvent {
@@ -254,6 +307,13 @@ async fn run_ncm_batch(
                 .push(result.clone());
             task.failed
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            update_import_task_status(
+                &context.db,
+                context.import_batch_id.as_deref(),
+                item,
+                "failed",
+            )
+            .await;
             let _ = task.tx.send(DownloadEvent {
                 log: format!("❌ [{}/{}] 缺少关键词", i + 1, total),
                 done: false,
@@ -268,18 +328,7 @@ async fn run_ncm_batch(
             task_id: None,
         });
 
-        match ncm_download_one(
-            &client,
-            item,
-            &quality,
-            &lyrics_mode,
-            &media_path,
-            &task,
-            i,
-            total,
-        )
-        .await
-        {
+        match ncm_download_one(&context, item, &task, i, total).await {
             Ok(path) => {
                 let result = BatchDownloadResultItem {
                     id: item.id.clone(),
@@ -295,6 +344,13 @@ async fn run_ncm_batch(
                     .push(result);
                 task.success
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                update_import_task_status(
+                    &context.db,
+                    context.import_batch_id.as_deref(),
+                    item,
+                    "done",
+                )
+                .await;
             }
             Err(e) => {
                 let result = BatchDownloadResultItem {
@@ -311,6 +367,13 @@ async fn run_ncm_batch(
                     .push(result);
                 task.failed
                     .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                update_import_task_status(
+                    &context.db,
+                    context.import_batch_id.as_deref(),
+                    item,
+                    "failed",
+                )
+                .await;
                 let _ = task.tx.send(DownloadEvent {
                     log: format!("❌ [{}/{}] 失败: {}", i + 1, total, e),
                     done: false,
@@ -331,28 +394,37 @@ async fn run_ncm_batch(
     finish_task(&task);
 }
 
-async fn ncm_download_one(
-    client: &NcmClient,
+async fn update_import_task_status(
+    db: &sqlx::SqlitePool,
+    batch_id: Option<&str>,
     item: &crate::models::BatchDownloadItem,
-    quality: &str,
-    lyrics_mode: &str,
-    media_path: &str,
+    status: &str,
+) {
+    let (Some(batch_id), Some(song_id)) = (batch_id, extract_ncm_song_id(item)) else {
+        return;
+    };
+    if let Err(error) = sqlx::query(
+        "UPDATE ncm_import_tasks SET status = ?, updated_at = datetime('now') WHERE batch_id = ? AND song_id = ?",
+    )
+    .bind(status)
+    .bind(batch_id)
+    .bind(song_id)
+    .execute(db)
+    .await
+    {
+        tracing::warn!(batch_id, song_id, status, ?error, "更新网易云导入任务状态失败");
+    }
+}
+
+async fn ncm_download_one(
+    context: &NcmBatchContext,
+    item: &crate::models::BatchDownloadItem,
     task: &BatchTask,
     idx: usize,
     total: usize,
 ) -> anyhow::Result<String> {
-    let (song_id, song_name, artist_name) = if let Some(song_id) = extract_ncm_song_id(item) {
-        let song = api::get_song_detail(client, &[song_id])
-            .await?
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("未找到歌曲"))?;
-        let artist_name = song
-            .ar
-            .first()
-            .map(|artist| artist.name.clone())
-            .unwrap_or_default();
-        (song.id, song.name, artist_name)
+    let song_id = if let Some(song_id) = extract_ncm_song_id(item) {
+        song_id
     } else {
         if item
             .url
@@ -363,17 +435,25 @@ async fn ncm_download_one(
         }
 
         let keyword = ncm_item_label(item);
-        let results = api::search_song(client, &keyword, 5).await?;
+        let results = api::search_song(&context.client, &keyword, 5).await?;
         let song = results
             .first()
             .ok_or_else(|| anyhow::anyhow!("未找到歌曲"))?;
-        let artist_name = song
-            .artists
-            .first()
-            .map(|artist| artist.name.clone())
-            .unwrap_or_default();
-        (song.id, song.name.clone(), artist_name)
+        song.id
     };
+    let detail = api::get_song_detail(&context.client, &[song_id])
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("未找到歌曲详情"))?;
+    let song_name = detail.name.clone();
+    let artist_name = detail
+        .ar
+        .iter()
+        .map(|artist| artist.name.trim())
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let _ = task.tx.send(DownloadEvent {
         log: format!(
@@ -389,14 +469,20 @@ async fn ncm_download_one(
     });
 
     // 2. Get download URL
-    let level = quality_to_ncm_level(quality);
-    let urls = api::get_song_url(client, &[song_id], level).await?;
-    if urls.is_empty() || urls[0].url.is_empty() {
-        anyhow::bail!("无法获取下载链接");
-    }
-
-    let url_data = &urls[0];
-    let ext = ext_from_type(&url_data.file_type, &url_data.url);
+    let level = quality_to_ncm_level(&context.quality);
+    let urls = api::get_song_url(&context.client, &[song_id], level).await?;
+    let url_data = urls
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("网易云未返回下载信息"))?;
+    let download_url = url_data
+        .url
+        .as_deref()
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("无法获取下载链接 (code={})", url_data.code))?;
+    let ext = ext_from_type(
+        url_data.file_type.as_deref().unwrap_or_default(),
+        download_url,
+    );
 
     // 3. Download file
     let safe_artist = sanitize_filename(&artist_name);
@@ -411,7 +497,8 @@ async fn ncm_download_one(
         format!("{} - {}.{}", safe_artist, safe_title, ext)
     };
 
-    let output_dir = PathBuf::from(media_path).join("downloads");
+    let media_root = PathBuf::from(&context.media_path);
+    let output_dir = media_root.join("downloads");
     tokio::fs::create_dir_all(&output_dir).await.ok();
     let filepath = output_dir.join(&filename);
 
@@ -431,7 +518,7 @@ async fn ncm_download_one(
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-    let resp = http.get(&url_data.url).send().await?;
+    let resp = http.get(download_url).send().await?;
     let status = resp.status();
     if !status.is_success() {
         anyhow::bail!("音频文件下载失败: HTTP {}", status);
@@ -442,18 +529,18 @@ async fn ncm_download_one(
     }
 
     // MD5 check
-    if !url_data.md5.is_empty() {
+    if let Some(expected_md5) = url_data.md5.as_deref().filter(|md5| !md5.is_empty()) {
         use md5::{Digest, Md5};
         let mut hasher = Md5::new();
         hasher.update(&bytes);
         let file_md5 = format!("{:x}", hasher.finalize());
-        if file_md5 != url_data.md5 {
+        if file_md5 != expected_md5 {
             let _ = task.tx.send(DownloadEvent {
                 log: format!(
                     "⚠️ [{}/{}] MD5 校验失败 (期望 {}, 实际 {})",
                     idx + 1,
                     total,
-                    url_data.md5,
+                    expected_md5,
                     file_md5
                 ),
                 done: false,
@@ -476,41 +563,24 @@ async fn ncm_download_one(
     });
 
     // 4. Download lyrics (unless override_lyrics is true)
-    if !item.override_lyrics && lyrics_mode != "none" {
-        match api::get_song_lyric(client, song_id).await {
+    let mut saved_lyrics_path = None;
+    if !item.override_lyrics && context.lyrics_mode != "none" {
+        match api::get_song_lyric(&context.client, song_id).await {
             Ok(Some(lyric)) if !lyric.is_empty() => {
-                if lyrics_mode == "overwrite" {
-                    // Save as .lrc with same name as audio file
-                    let lrc_path = filepath.with_extension("lrc");
-                    if let Err(e) = tokio::fs::write(&lrc_path, lyric).await {
-                        let _ = task.tx.send(DownloadEvent {
-                            log: format!("⚠️ 歌词保存失败: {}", e),
-                            done: false,
-                            task_id: None,
-                        });
-                    } else {
-                        let _ = task.tx.send(DownloadEvent {
-                            log: format!("📝 歌词已保存: {}", lrc_path.display()),
-                            done: false,
-                            task_id: None,
-                        });
-                    }
+                let lrc_path = filepath.with_extension("lrc");
+                if let Err(e) = tokio::fs::write(&lrc_path, lyric).await {
+                    let _ = task.tx.send(DownloadEvent {
+                        log: format!("⚠️ 歌词保存失败: {}", e),
+                        done: false,
+                        task_id: None,
+                    });
                 } else {
-                    // separate mode (default)
-                    let lrc_path = filepath.with_extension("lrc");
-                    if let Err(e) = tokio::fs::write(&lrc_path, lyric).await {
-                        let _ = task.tx.send(DownloadEvent {
-                            log: format!("⚠️ 歌词保存失败: {}", e),
-                            done: false,
-                            task_id: None,
-                        });
-                    } else {
-                        let _ = task.tx.send(DownloadEvent {
-                            log: format!("📝 歌词已保存: {}", lrc_path.display()),
-                            done: false,
-                            task_id: None,
-                        });
-                    }
+                    saved_lyrics_path = Some(lrc_path.clone());
+                    let _ = task.tx.send(DownloadEvent {
+                        log: format!("📝 歌词已保存: {}", lrc_path.display()),
+                        done: false,
+                        task_id: None,
+                    });
                 }
             }
             Ok(None) | Ok(Some(_)) => {}
@@ -523,6 +593,26 @@ async fn ncm_download_one(
             }
         }
     }
+
+    let library_song_id = crate::services::ncm::metadata::sync_downloaded_song(
+        &context.db,
+        &media_root,
+        &filepath,
+        saved_lyrics_path.as_deref(),
+        &detail,
+        bytes.len() as i64,
+    )
+    .await?;
+    let _ = task.tx.send(DownloadEvent {
+        log: format!(
+            "📚 [{}/{}] 已同步到曲库 (歌曲 ID: {})",
+            idx + 1,
+            total,
+            library_song_id
+        ),
+        done: false,
+        task_id: None,
+    });
 
     Ok(filepath.to_string_lossy().to_string())
 }
@@ -774,7 +864,7 @@ async fn netdisk_download_one(
 
 #[cfg(test)]
 mod tests {
-    use super::extract_ncm_song_id;
+    use super::{extract_ncm_song_id, update_import_task_status};
     use crate::models::BatchDownloadItem;
 
     fn item(id: Option<&str>, url: Option<&str>) -> BatchDownloadItem {
@@ -798,6 +888,42 @@ mod tests {
         assert_eq!(
             extract_ncm_song_id(&item(None, Some("https://music.163.com/playlist?id=789"))),
             None
+        );
+    }
+
+    #[tokio::test]
+    async fn import_status_update_is_scoped_to_the_requested_batch() {
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE ncm_import_tasks (song_id INTEGER NOT NULL, status TEXT NOT NULL, batch_id TEXT NOT NULL, updated_at DATETIME)",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO ncm_import_tasks (song_id, status, batch_id) VALUES (123, 'queued', 'batch-a'), (123, 'queued', 'batch-b')",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+
+        update_import_task_status(&db, Some("batch-a"), &item(Some("123"), None), "done").await;
+
+        let statuses: Vec<(String, String)> =
+            sqlx::query_as("SELECT batch_id, status FROM ncm_import_tasks ORDER BY batch_id")
+                .fetch_all(&db)
+                .await
+                .unwrap();
+        assert_eq!(
+            statuses,
+            vec![
+                ("batch-a".into(), "done".into()),
+                ("batch-b".into(), "queued".into())
+            ]
         );
     }
 }

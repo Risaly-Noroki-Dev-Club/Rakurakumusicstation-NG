@@ -1,10 +1,14 @@
 /// 网易云账号设置路由 — 原生 Rust 实现。
 use crate::app::state::AppState;
 use crate::error::AppError;
-use crate::models::{ApiResponse, ImportPlaylistRequest, ImportPlaylistResponse, NcmImportTask};
+use crate::models::{
+    ApiResponse, BatchDownloadItem, BatchDownloadResponse, ImportPlaylistRequest,
+    ImportPlaylistResponse, NcmImportTask, StartNcmImportRequest,
+};
 use crate::routes::admin::get_admin;
 use crate::services::ncm::{cookie, get_playlist_track_all, get_song_detail, NcmClient};
 use axum::{extract::State, http::HeaderMap, Json};
+use std::io::Write;
 use std::sync::Arc;
 
 fn ncm_secrets_path() -> std::path::PathBuf {
@@ -17,6 +21,30 @@ pub fn read_admin_ncm_cookie() -> Option<String> {
     cookie::read_admin_cookie_from_secrets(&ncm_secrets_path())
         .ok()
         .flatten()
+}
+
+fn write_admin_secrets(path: &std::path::Path, content: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
+    if path.exists() {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).truncate(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
 }
 
 /// GET /api/admin/ncm — 获取网易云账号状态
@@ -87,7 +115,7 @@ pub async fn save_ncm_settings(
 
     let content = serde_json::to_string_pretty(&secrets)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("序列化失败: {}", e)))?;
-    std::fs::write(&path, content)
+    write_admin_secrets(&path, &content)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("写入失败: {}", e)))?;
 
     Ok(Json(ApiResponse::ok("保存成功".into())))
@@ -213,12 +241,19 @@ pub async fn import_playlist(
 pub async fn start_ncm_import(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<ApiResponse<String>>, AppError> {
+    Json(body): Json<StartNcmImportRequest>,
+) -> Result<Json<ApiResponse<BatchDownloadResponse>>, AppError> {
     let _admin = get_admin(&state, &headers).await?;
 
+    let batch_id = body.batch_id.trim();
+    if batch_id.is_empty() {
+        return Err(AppError::BadRequest("批次号不能为空".into()));
+    }
+
     let tasks: Vec<NcmImportTask> = sqlx::query_as::<_, NcmImportTask>(
-        "SELECT * FROM ncm_import_tasks WHERE status = 'pending'",
+        "SELECT * FROM ncm_import_tasks WHERE batch_id = ? AND status = 'pending' ORDER BY id",
     )
+    .bind(batch_id)
     .fetch_all(&state.db)
     .await
     .map_err(|e| AppError::Internal(anyhow::anyhow!("查询导入任务失败: {}", e)))?;
@@ -227,31 +262,46 @@ pub async fn start_ncm_import(
         return Err(AppError::BadRequest("没有待处理的导入任务".into()));
     }
 
-    // 构建 CSV 格式的歌单文本（与现有下载解析器兼容）
-    let mut lines = Vec::new();
-    for task in &tasks {
-        lines.push(format!("{}, {}", task.artists, task.name));
-    }
-    let playlist = lines.join("\n");
+    let items = tasks
+        .iter()
+        .map(|task| BatchDownloadItem {
+            id: Some(task.song_id.to_string()),
+            url: None,
+            artist: Some(task.artists.clone()),
+            title: Some(task.name.clone()),
+            save_as: None,
+            override_lyrics: false,
+        })
+        .collect::<Vec<_>>();
 
-    // 启动下载任务
-    crate::routes::admin::download::spawn_download_job(state.clone(), playlist, None, None)?;
+    sqlx::query(
+        "UPDATE ncm_import_tasks SET status = 'queued', updated_at = datetime('now') WHERE batch_id = ? AND status = 'pending'",
+    )
+    .bind(batch_id)
+    .execute(&state.db)
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("更新任务状态失败: {}", e)))?;
 
-    // 标记为 queued
-    for task in &tasks {
-        sqlx::query(
-            "UPDATE ncm_import_tasks SET status = 'queued', updated_at = datetime('now') WHERE id = ?",
-        )
-        .bind(task.id)
-        .execute(&state.db)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("更新任务状态失败: {}", e)))?;
-    }
+    let response = match crate::routes::admin::batch_download::spawn_ncm_batch_job(
+        state.clone(),
+        items,
+        "exhigh".into(),
+        "separate".into(),
+        Some(batch_id.to_string()),
+    ) {
+        Ok(response) => response,
+        Err(error) => {
+            let _ = sqlx::query(
+                "UPDATE ncm_import_tasks SET status = 'pending', updated_at = datetime('now') WHERE batch_id = ? AND status = 'queued'",
+            )
+            .bind(batch_id)
+            .execute(&state.db)
+            .await;
+            return Err(error);
+        }
+    };
 
-    Ok(Json(ApiResponse::ok(format!(
-        "已启动 {} 首歌曲的导入下载",
-        tasks.len()
-    ))))
+    Ok(Json(ApiResponse::ok(response)))
 }
 
 #[cfg(test)]
@@ -278,5 +328,20 @@ mod tests {
             extract_playlist_id("https://music.163.com/playlist?id=67890"),
             Some(67890)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn admin_secrets_are_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = std::env::temp_dir().join(format!(
+            "radio-ncm-secrets-test-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        super::write_admin_secrets(&path, r#"{"ncm_cookie":"MUSIC_U=test"}"#).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        std::fs::remove_file(path).unwrap();
     }
 }
