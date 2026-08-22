@@ -1,6 +1,7 @@
 pub mod batch_download;
 pub mod download;
 pub mod logout;
+pub mod metadata;
 pub mod ncm;
 pub mod playback;
 pub mod settings;
@@ -32,6 +33,44 @@ pub fn admin_routes() -> Router<Arc<AppState>> {
         .route(
             "/enrich-song-metadata",
             axum::routing::post(songs::enrich_song_metadata),
+        )
+        .route("/metadata/jobs", axum::routing::post(metadata::create_job))
+        .route("/metadata/jobs/:id", axum::routing::get(metadata::get_job))
+        .route(
+            "/metadata/jobs/:id/items",
+            axum::routing::get(metadata::get_items),
+        )
+        .route(
+            "/metadata/jobs/:id/cancel",
+            axum::routing::post(metadata::cancel_job),
+        )
+        .route(
+            "/metadata/jobs/:id/retry",
+            axum::routing::post(metadata::retry_job),
+        )
+        .route(
+            "/songs/:id/metadata/candidates",
+            axum::routing::get(metadata::candidates),
+        )
+        .route(
+            "/songs/:id/metadata/candidates/apply",
+            axum::routing::post(metadata::apply_candidate),
+        )
+        .route(
+            "/songs/:id/metadata/fields",
+            axum::routing::get(metadata::fields),
+        )
+        .route(
+            "/songs/:id/metadata",
+            axum::routing::patch(metadata::patch_song),
+        )
+        .route(
+            "/songs/:id/metadata/lyrics",
+            axum::routing::put(metadata::put_lyrics).delete(metadata::delete_lyrics),
+        )
+        .route(
+            "/songs/:id/metadata/cover",
+            axum::routing::put(metadata::put_cover).delete(metadata::delete_cover),
         )
         .route("/songs", axum::routing::get(songs::list_all_songs))
         .route("/songs/:id", axum::routing::delete(songs::delete_song))

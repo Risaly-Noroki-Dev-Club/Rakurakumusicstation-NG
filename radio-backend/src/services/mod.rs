@@ -1,6 +1,7 @@
 pub mod cleanup;
 pub mod download_tasks;
 pub mod metadata;
+pub mod metadata_jobs;
 pub mod ncm;
 pub mod netdisk;
 pub mod playback_broadcast;

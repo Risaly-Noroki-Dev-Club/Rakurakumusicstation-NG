@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { deleteSongAdmin, downloadSongUrl, enrichSongMetadata, fetchAdminSongs, rescanSongs, uploadSongFile } from '@/api'
+import { applyMetadataCandidate, deleteSongAdmin, downloadSongUrl, enrichSongMetadata, fetchAdminSongs, fetchMetadataCandidates, fetchMetadataJob, rescanSongs, updateSongMetadata, uploadSongFile } from '@/api'
 import type { Song } from '@/types'
+import type { MetadataCandidate, MetadataJob } from '@/types'
 import { useStore } from '@/store'
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogClose } from '@appica/ui-react/alert-dialog'
 import { Button } from '@appica/ui-react/button'
@@ -10,7 +11,7 @@ import { ScrollArea } from '@appica/ui-react/scroll-area'
 import { Skeleton } from '@appica/ui-react/skeleton'
 import { Spinner } from '@appica/ui-react/spinner'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@appica/ui-react/table'
-import { PlayerPlay, Refresh, Trash, Upload } from '@appica/icons-react'
+import { Edit, PlayerPlay, Refresh, Trash, Upload } from '@appica/icons-react'
 import { formatBytes, formatTime } from '@/lib/format'
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024
@@ -25,6 +26,7 @@ export function AdminSongs() {
   const [loading, setLoading] = useState(true)
   const [rescanning, setRescanning] = useState(false)
   const [enriching, setEnriching] = useState(false)
+  const [metadataJob, setMetadataJob] = useState<MetadataJob | null>(null)
 
   // Upload dialog
   const [uploadOpen, setUploadOpen] = useState(false)
@@ -37,6 +39,14 @@ export function AdminSongs() {
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Song | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [editTarget, setEditTarget] = useState<Song | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editArtist, setEditArtist] = useState('')
+  const [editAlbum, setEditAlbum] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [candidateTarget, setCandidateTarget] = useState<Song | null>(null)
+  const [candidates, setCandidates] = useState<MetadataCandidate[]>([])
+  const [applyingCandidate, setApplyingCandidate] = useState(false)
 
   const loadSongs = useCallback(async () => {
     try {
@@ -53,11 +63,25 @@ export function AdminSongs() {
     void loadSongs()
   }, [loadSongs])
 
+  useEffect(() => {
+    if (!metadataJob || !['queued', 'running'].includes(metadataJob.status)) return
+    const id = window.setInterval(() => {
+      void fetchMetadataJob(metadataJob.id).then(setMetadataJob).catch(() => undefined)
+    }, 1500)
+    return () => window.clearInterval(id)
+  }, [metadataJob])
+
+  useEffect(() => {
+    if (!candidateTarget) { setCandidates([]); return }
+    void fetchMetadataCandidates(candidateTarget.id).then(setCandidates).catch(() => setCandidates([]))
+  }, [candidateTarget])
+
   async function handleRescan() {
     setRescanning(true)
     try {
-      await rescanSongs()
-      addToast('已触发扫描', 'success')
+      const job = await rescanSongs()
+      setMetadataJob(job)
+      addToast(`已触发扫描任务：${job.id}`, 'success')
     } catch (e) {
       addToast(errMsg(e), 'error')
     } finally {
@@ -91,8 +115,9 @@ export function AdminSongs() {
   async function handleEnrichMetadata() {
     setEnriching(true)
     try {
-      const report = await enrichSongMetadata()
-      addToast(`元数据补全完成：匹配 ${report.matched}，跳过 ${report.skipped}，失败 ${report.failed}`, report.failed > 0 ? 'warning' : 'success')
+      const job = await enrichSongMetadata()
+      setMetadataJob(job)
+      addToast(`元数据任务已开始：${job.id}`, 'success')
       await loadSongs()
     } catch (e) {
       addToast(errMsg(e), 'error')
@@ -113,6 +138,43 @@ export function AdminSongs() {
       addToast(errMsg(e), 'error')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  function openEdit(song: Song) {
+    setEditTarget(song)
+    setEditTitle(song.title)
+    setEditArtist(song.artist)
+    setEditAlbum(song.album)
+  }
+
+  async function saveEdit() {
+    if (!editTarget) return
+    setSavingEdit(true)
+    try {
+      await updateSongMetadata(editTarget.id, { title: editTitle.trim(), artist: editArtist.trim(), album: editAlbum.trim() })
+      addToast('元数据已保存并锁定', 'success')
+      setEditTarget(null)
+      await loadSongs()
+    } catch (e) {
+      addToast(errMsg(e), 'error')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function chooseCandidate(candidate: MetadataCandidate) {
+    if (!candidateTarget) return
+    setApplyingCandidate(true)
+    try {
+      await applyMetadataCandidate(candidateTarget.id, candidate)
+      addToast('候选已应用', 'success')
+      setCandidateTarget(null)
+      await loadSongs()
+    } catch (e) {
+      addToast(errMsg(e), 'error')
+    } finally {
+      setApplyingCandidate(false)
     }
   }
 
@@ -144,6 +206,16 @@ export function AdminSongs() {
         )}
       </div>
 
+      {metadataJob && (
+        <div className="rounded-lg border border-border-subtle bg-background-subtle px-3 py-2 text-xs text-foreground-muted">
+          <div className="flex items-center justify-between gap-3">
+            <span>元数据任务 {metadataJob.status === 'completed' ? '已完成' : metadataJob.status === 'failed' ? '失败' : '处理中'}</span>
+            <span className="tabular-nums">{metadataJob.processed}/{metadataJob.total} · 匹配 {metadataJob.matched} · 待确认 {metadataJob.needs_review} · 失败 {metadataJob.failed}</span>
+          </div>
+          {metadataJob.error && <p className="mt-1 text-error">{metadataJob.error}</p>}
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -160,6 +232,7 @@ export function AdminSongs() {
                 <TableHead>标题</TableHead>
                 <TableHead>艺术家</TableHead>
                 <TableHead>专辑</TableHead>
+                <TableHead className="w-24">来源</TableHead>
                 <TableHead className="w-20">时长</TableHead>
                 <TableHead className="w-24">大小</TableHead>
                 <TableHead className="w-24 text-right">操作</TableHead>
@@ -177,10 +250,27 @@ export function AdminSongs() {
                   <TableCell className="max-w-[180px] truncate" title={song.album}>
                     {song.album || '—'}
                   </TableCell>
+                  <TableCell className="text-xs text-foreground-muted">{song.metadata_source || '—'}</TableCell>
                   <TableCell className="tabular-nums whitespace-nowrap">{formatTime(song.duration_ms)}</TableCell>
                   <TableCell className="tabular-nums whitespace-nowrap">{formatBytes(song.filesize)}</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`编辑 ${song.title}`}
+                        onClick={() => openEdit(song)}
+                      >
+                        <Edit />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`查看匹配候选 ${song.title}`}
+                        onClick={() => setCandidateTarget(song)}
+                      >
+                        <Refresh />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -238,6 +328,27 @@ export function AdminSongs() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={candidateTarget !== null} onOpenChange={(open) => { if (!open && !applyingCandidate) setCandidateTarget(null) }}>
+        <DialogContent className="sm:w-140">
+          <DialogHeader>
+            <DialogTitle>在线匹配候选</DialogTitle>
+            <DialogDescription>{candidateTarget ? `${candidateTarget.title} — ${candidateTarget.artist || '未知艺术家'}` : ''}</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="max-h-[55vh] space-y-2 overflow-y-auto">
+            {candidates.length === 0 ? <p className="py-6 text-center text-sm text-foreground-muted">暂无待确认候选，请先运行补全任务。</p> : candidates.map((candidate) => (
+              <div key={`${candidate.provider}:${candidate.external_id}`} className="flex items-center gap-3 rounded-lg border border-border-subtle p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{candidate.title}</p>
+                  <p className="truncate text-xs text-foreground-muted">{candidate.artists.join(', ')}{candidate.album ? ` · ${candidate.album}` : ''}</p>
+                  <p className="text-xs text-foreground-subtle">{candidate.provider} · 分数 {candidate.score}</p>
+                </div>
+                <Button size="sm" onClick={() => void chooseCandidate(candidate)} disabled={applyingCandidate}>采用</Button>
+              </div>
+            ))}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
       {/* Preview dialog */}
       <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null) }}>
         <DialogContent className="sm:w-120">
@@ -252,6 +363,27 @@ export function AdminSongs() {
               <audio controls src={downloadSongUrl(preview.id)} preload="none" className="w-full" />
             )}
           </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editTarget !== null} onOpenChange={(open) => { if (!open && !savingEdit) setEditTarget(null) }}>
+        <DialogContent className="sm:w-120">
+          <DialogHeader>
+            <DialogTitle>编辑元数据</DialogTitle>
+            <DialogDescription>保存后这些字段会锁定，不会被自动匹配覆盖。</DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="标题" aria-label="标题" />
+            <Input value={editArtist} onChange={(e) => setEditArtist(e.target.value)} placeholder="艺术家" aria-label="艺术家" />
+            <Input value={editAlbum} onChange={(e) => setEditAlbum(e.target.value)} placeholder="专辑" aria-label="专辑" />
+          </DialogBody>
+          <DialogFooter>
+            <DialogClose render={<Button variant="secondary" disabled={savingEdit}>取消</Button>} />
+            <Button onClick={saveEdit} disabled={savingEdit || !editTitle.trim()}>
+              {savingEdit ? <Spinner currentColor className="size-4" aria-label="保存中" /> : null}
+              保存并锁定
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

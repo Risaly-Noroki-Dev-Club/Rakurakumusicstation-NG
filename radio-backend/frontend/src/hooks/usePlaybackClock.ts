@@ -28,11 +28,13 @@ export function usePlaybackClock(playback: Playback | null): number {
 }
 
 /** Current lyrics line index for a given position (last line whose time_ms <= pos). */
-export function activeLyricsIndex(lines: { time_ms: number }[] | null | undefined, positionMs: number): number {
+export function activeLyricsIndex(lines: { time_ms: number | null }[] | null | undefined, positionMs: number): number {
   if (!lines || lines.length === 0) return -1
   let idx = -1
   for (let i = 0; i < lines.length; i += 1) {
-    if (lines[i].time_ms <= positionMs) idx = i
+    const timeMs = lines[i].time_ms
+    if (timeMs === null) continue
+    if (timeMs <= positionMs) idx = i
     else break
   }
   return idx

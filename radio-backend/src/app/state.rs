@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use radio_engine::player::PlayerHandle;
 use radio_engine::ring_buffer::RingBuffer;
 use sqlx::SqlitePool;
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, RwLock};
 
 /// 在线听众信息
@@ -31,6 +32,10 @@ pub struct AppState {
     /// 最近一条含全量歌词的 playback_state 消息（JSON）。
     /// 新 WebSocket 连接建立时补发，避免重连客户端永远收不到当前歌曲的歌词。
     pub ws_full_snapshot: std::sync::RwLock<Option<String>>,
+    /// Incremented whenever DB metadata/assets change, allowing the playback
+    /// snapshot cache to refresh without polling the songs table every tick.
+    pub metadata_revision_signal: Arc<AtomicU64>,
+    pub metadata_jobs: crate::services::metadata_jobs::MetadataJobManager,
 }
 
 impl AppState {
@@ -43,6 +48,14 @@ impl AppState {
         let db = crate::db::init_database(&config.database).await?;
         let (ws_tx, _) = tokio::sync::broadcast::channel(1024);
         let station = RwLock::new(config.station.clone());
+        let metadata_revision_signal = Arc::new(AtomicU64::new(0));
+        let metadata_jobs = crate::services::metadata_jobs::MetadataJobManager::new(
+            db.clone(),
+            std::path::PathBuf::from(&config.audio_engine.media_path),
+            player_handle.clone(),
+            metadata_revision_signal.clone(),
+        )
+        .await;
 
         Ok(Self {
             db,
@@ -54,6 +67,8 @@ impl AppState {
             queue_sync: tokio::sync::Mutex::new(()),
             listeners: Arc::new(DashMap::new()),
             ws_full_snapshot: std::sync::RwLock::new(None),
+            metadata_revision_signal,
+            metadata_jobs,
         })
     }
 }

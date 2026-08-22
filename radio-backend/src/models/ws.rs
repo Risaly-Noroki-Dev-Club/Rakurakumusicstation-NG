@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// 歌词行 DTO（用于 WebSocket 序列化）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LyricsLineDto {
-    pub time_ms: i64,
+    pub time_ms: Option<i64>,
     pub text: String,
 }
 
@@ -44,8 +44,5 @@ pub enum WsMessage {
     #[serde(rename = "ping")]
     Ping { timestamp: i64 },
     #[serde(rename = "listeners_update")]
-    ListenersUpdate {
-        count: usize,
-        names: Vec<String>,
-    },
+    ListenersUpdate { count: usize, names: Vec<String> },
 }

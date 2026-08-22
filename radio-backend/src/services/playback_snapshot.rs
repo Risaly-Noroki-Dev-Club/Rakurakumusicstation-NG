@@ -9,6 +9,7 @@ struct CachedSong {
     title: String,
     artist: String,
     lyrics_lines: Option<Vec<LyricsLineDto>>,
+    metadata_revision: i64,
 }
 
 pub(crate) struct PlaybackSnapshotCache {
@@ -18,6 +19,7 @@ pub(crate) struct PlaybackSnapshotCache {
     lyrics_broadcast_song_id: Option<i64>,
     /// 最近一次含全量歌词的序列化消息 — 新 WS 连接补发用。
     last_full_message: Option<String>,
+    observed_revision_signal: u64,
 }
 
 impl PlaybackSnapshotCache {
@@ -27,6 +29,7 @@ impl PlaybackSnapshotCache {
             cached: None,
             lyrics_broadcast_song_id: None,
             last_full_message: None,
+            observed_revision_signal: 0,
         }
     }
 
@@ -59,7 +62,7 @@ impl PlaybackSnapshotCache {
                 .iter()
                 .enumerate()
                 .rev()
-                .find(|(_, l)| l.time_ms <= ps.position_ms)
+                .find(|(_, l)| l.time_ms.is_some_and(|time_ms| time_ms <= ps.position_ms))
                 .map(|(idx, _)| idx)
         });
 
@@ -99,12 +102,17 @@ impl PlaybackSnapshotCache {
                 None
             },
             cover_url: if song_id > 0 {
-                Some(
+                Some(format!(
+                    "{}?v={}",
                     state
                         .config
                         .audio_engine
                         .resolve_cover_url(song_id, &state.config.server.base_path),
-                )
+                    self.cached
+                        .as_ref()
+                        .map(|song| song.metadata_revision)
+                        .unwrap_or(0)
+                ))
             } else {
                 None
             },
@@ -125,17 +133,23 @@ impl PlaybackSnapshotCache {
     ) {
         // 切歌检测改用 file_path：playlist_index 对请求队列曲来说固定为 -1，
         // 连着两首请求曲不会换 index，但 file_path 一定不同。
+        let revision_signal = state
+            .metadata_revision_signal
+            .load(std::sync::atomic::Ordering::SeqCst);
         let song_changed = ps.file_path != self.last_file_path && !ps.file_path.is_empty();
-        if !song_changed {
+        let metadata_changed = revision_signal != self.observed_revision_signal;
+        if !song_changed && !metadata_changed {
             return;
         }
+
+        self.observed_revision_signal = revision_signal;
 
         self.last_file_path = ps.file_path.clone();
         self.cached = None;
         self.lyrics_broadcast_song_id = None;
 
-        let song_row = sqlx::query_as::<_, (i64, String, String, String, String)>(
-            "SELECT id, title, artist, cover_path, lyrics_path FROM songs WHERE file_path = ?",
+        let song_row = sqlx::query_as::<_, (i64, String, String, String, String, i64)>(
+            "SELECT id, title, artist, cover_path, lyrics_path, metadata_revision FROM songs WHERE file_path = ?",
         )
         .bind(&ps.file_path)
         .fetch_optional(&state.db)
@@ -143,12 +157,16 @@ impl PlaybackSnapshotCache {
         .ok()
         .flatten();
 
-        let Some((db_song_id, title, artist, _cover_path, lyrics_path)) = song_row else {
+        let Some((db_song_id, title, artist, _cover_path, lyrics_path, metadata_revision)) =
+            song_row
+        else {
             return;
         };
 
-        if let Err(e) = queue::mark_playing(&state.db, db_song_id).await {
-            tracing::error!("mark_playing failed for song {}: {}", db_song_id, e);
+        if song_changed {
+            if let Err(e) = queue::mark_playing(&state.db, db_song_id).await {
+                tracing::error!("mark_playing failed for song {}: {}", db_song_id, e);
+            }
         }
 
         self.cached = Some(CachedSong {
@@ -156,6 +174,7 @@ impl PlaybackSnapshotCache {
             title,
             artist,
             lyrics_lines: load_lyrics_lines(state, &lyrics_path),
+            metadata_revision,
         });
     }
 }

@@ -30,23 +30,30 @@ pub async fn list_all_songs(
 pub async fn enrich_song_metadata(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<ApiResponse<crate::services::ncm::metadata::EnrichReport>>, AppError> {
+) -> Result<Json<ApiResponse<crate::services::metadata_jobs::MetadataJob>>, AppError> {
     let admin = get_admin(&state, &headers).await?;
-    let media_path = std::path::Path::new(&state.config.audio_engine.media_path);
-    let report = crate::services::ncm::metadata::enrich_library(&state.db, media_path).await?;
+    let job = state
+        .metadata_jobs
+        .create(
+            &state.db,
+            crate::services::metadata_jobs::CreateMetadataJob {
+                kind: "full".into(),
+                scope: "library".into(),
+                song_ids: Vec::new(),
+                force: false,
+            },
+        )
+        .await?;
 
     sqlx::query(
         "INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'enrich_song_metadata', ?)",
     )
     .bind(admin.id)
-    .bind(format!(
-        "matched={}, skipped={}, failed={}",
-        report.matched, report.skipped, report.failed
-    ))
+    .bind(format!("metadata job {} started", job.id))
     .execute(&state.db)
     .await?;
 
-    Ok(Json(ApiResponse::ok(report)))
+    Ok(Json(ApiResponse::ok(job)))
 }
 
 /// DELETE /api/admin/songs/{id} — 删除歌曲
@@ -125,10 +132,11 @@ pub async fn delete_song(
 }
 
 /// POST /api/admin/rescan-songs — 重新扫描媒体目录
+#[allow(unreachable_code)]
 pub async fn rescan_songs(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-) -> Result<Json<ApiResponse<String>>, AppError> {
+) -> Result<Json<ApiResponse<crate::services::metadata_jobs::MetadataJob>>, AppError> {
     let admin = get_admin(&state, &headers).await?;
 
     let media_path = std::path::Path::new(&state.config.audio_engine.media_path);
@@ -136,8 +144,28 @@ pub async fn rescan_songs(
         return Err(AppError::BadRequest("Media directory not found".into()));
     }
 
-    let supported = radio_engine::config::SUPPORTED_FORMATS;
-    let mut new_songs = 0;
+    // Compatibility endpoint: all discovery and repair work is now handled by
+    // the persistent worker so the HTTP request returns immediately.
+    let job = state
+        .metadata_jobs
+        .create(
+            &state.db,
+            crate::services::metadata_jobs::CreateMetadataJob {
+                kind: "full".into(),
+                scope: "library".into(),
+                song_ids: Vec::new(),
+                force: true,
+            },
+        )
+        .await?;
+    sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'rescan_songs', ?)")
+        .bind(admin.id)
+        .bind(format!("Metadata repair job {} started", job.id))
+        .execute(&state.db)
+        .await?;
+    return Ok(Json(ApiResponse::ok(job)));
+
+    let new_songs = 0;
 
     fn walk_dir(dir: &std::path::Path, exts: &[&str]) -> Vec<std::path::PathBuf> {
         let mut files = Vec::new();
@@ -157,7 +185,7 @@ pub async fn rescan_songs(
         files
     }
 
-    let audio_files = walk_dir(media_path, supported);
+    let audio_files = walk_dir(media_path, radio_engine::config::SUPPORTED_FORMATS);
 
     for file_path in &audio_files {
         let relative = file_path.strip_prefix(media_path).unwrap_or(file_path);
@@ -223,13 +251,31 @@ pub async fn rescan_songs(
                 }
             });
 
-            new_songs += 1;
+            // The compatibility endpoint now delegates the actual work to
+            // the persistent full repair job below. Keeping this legacy scan
+            // path is harmless for clients that still expect its message.
         }
     }
 
+    let job = state
+        .metadata_jobs
+        .create(
+            &state.db,
+            crate::services::metadata_jobs::CreateMetadataJob {
+                kind: "full".into(),
+                scope: "library".into(),
+                song_ids: Vec::new(),
+                force: true,
+            },
+        )
+        .await?;
+
     sqlx::query("INSERT INTO admin_log (admin_id, action, details) VALUES (?, 'rescan_songs', ?)")
         .bind(admin.id)
-        .bind(format!("Found {} new songs", new_songs))
+        .bind(format!(
+            "Metadata repair job started; legacy scan saw {} existing entries",
+            new_songs
+        ))
         .execute(&state.db)
         .await?;
 
@@ -243,8 +289,5 @@ pub async fn rescan_songs(
             });
     }
 
-    Ok(Json(ApiResponse::ok(format!(
-        "Rescan complete. {} new songs added.",
-        new_songs
-    ))))
+    Ok(Json(ApiResponse::ok(job)))
 }

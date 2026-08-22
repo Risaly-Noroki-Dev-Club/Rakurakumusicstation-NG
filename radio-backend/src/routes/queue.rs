@@ -201,10 +201,14 @@ pub async fn now_playing(
             .resolve_file_url(s.id, &state.config.server.base_path)
     });
     let cover_url = song.as_ref().map(|s| {
-        state
-            .config
-            .audio_engine
-            .resolve_cover_url(s.id, &state.config.server.base_path)
+        format!(
+            "{}?v={}",
+            state
+                .config
+                .audio_engine
+                .resolve_cover_url(s.id, &state.config.server.base_path),
+            s.metadata_revision
+        )
     });
 
     Ok(Json(ApiResponse::ok(NowPlaying {

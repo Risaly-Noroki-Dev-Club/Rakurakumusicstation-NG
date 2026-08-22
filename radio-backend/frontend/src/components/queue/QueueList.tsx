@@ -186,7 +186,7 @@ export function QueueList({ items, onChanged }: QueueListProps) {
                 <ContextMenuTrigger className="flex min-w-0 flex-1 items-center gap-3">
                   <SongArtwork
                     hasCover={artworkSong?.has_cover ?? false}
-                    coverSrc={artworkSong && artworkSong.id > 0 ? coverUrl(artworkSong.id) : undefined}
+                    coverSrc={artworkSong && artworkSong.id > 0 ? coverUrl(artworkSong.id, artworkSong.metadata_revision) : undefined}
                     size="sm"
                     className="shrink-0"
                   />

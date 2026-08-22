@@ -30,6 +30,7 @@ export interface SongSummary {
   duration_ms: number
   has_lyrics: boolean
   has_cover: boolean
+  metadata_revision?: number
 }
 
 export interface Song extends SongSummary {
@@ -40,6 +41,50 @@ export interface Song extends SongSummary {
   cover_path: string
   filesize: number
   created_at: string
+  ncm_song_id?: number | null
+  musicbrainz_recording_id?: string | null
+  metadata_source?: string
+  metadata_revision?: number
+}
+
+export interface MetadataJob {
+  id: string
+  kind: 'local' | 'online' | 'full'
+  status: 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+  scope: 'library' | 'songs'
+  total: number
+  processed: number
+  matched: number
+  needs_review: number
+  failed: number
+  error: string
+  created_at: string
+  updated_at: string
+  finished_at: string | null
+}
+
+export interface MetadataJobItem {
+  id: number
+  job_id: string
+  song_id: number
+  status: string
+  stage: string
+  message: string
+  candidates_json: string
+  attempts: number
+  updated_at: string
+}
+
+export interface MetadataCandidate {
+  provider: string
+  external_id: string
+  title: string
+  artists: string[]
+  album: string
+  duration_ms: number
+  score: number
+  cover_url: string | null
+  release_group_id: string | null
 }
 
 export interface Paginated<T> {
@@ -200,7 +245,7 @@ export interface AdminStats {
 // ── lyrics ─────────────────────────────────────────────────
 
 export interface LyricsLine {
-  time_ms: number
+  time_ms: number | null
   text: string
 }
 

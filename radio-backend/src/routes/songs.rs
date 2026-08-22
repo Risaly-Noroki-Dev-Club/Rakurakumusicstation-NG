@@ -3,7 +3,7 @@ use crate::app::state::AppState;
 use crate::auth;
 use crate::error::AppError;
 use crate::models::{ApiResponse, PaginatedResponse, SearchQuery, SongSummary};
-use crate::services::metadata::ensure_cover_cached;
+use crate::services::metadata::{cover_mime, ensure_cover_cached};
 use axum::{
     body::Body,
     extract::{Path, Query, State},
@@ -142,10 +142,7 @@ pub async fn get_song_cover(
 
     match data {
         Ok(bytes) => {
-            let mime = match cover_full.extension().and_then(|e| e.to_str()) {
-                Some("png") => "image/png",
-                _ => "image/jpeg",
-            };
+            let mime = cover_mime(&cover_full, &bytes);
             Ok(Response::builder()
                 .header(header::CONTENT_TYPE, mime)
                 .header(header::CACHE_CONTROL, "public, max-age=3600")

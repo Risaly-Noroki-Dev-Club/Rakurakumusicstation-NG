@@ -11,23 +11,42 @@ fn anonymous_http_client() -> Result<reqwest::Client> {
 
 /// 网易云公开搜索接口，不携带登录 Cookie。
 pub async fn search_song_anonymous(keyword: &str, limit: i32) -> Result<Vec<SearchSongItem>> {
-    let response = anonymous_http_client()?
-        .post("https://music.163.com/api/search/get")
-        .header("Referer", "https://music.163.com/")
-        .header("User-Agent", "Mozilla/5.0")
-        .form(&[
-            ("s", keyword.to_string()),
-            ("type", "1".to_string()),
-            ("offset", "0".to_string()),
-            ("limit", limit.to_string()),
-        ])
-        .send()
-        .await?
-        .error_for_status()?
-        .json::<SearchSongData>()
-        .await
-        .with_context(|| "解析网易云匿名搜索结果失败")?;
-    Ok(response.result.songs)
+    for attempt in 0..3u64 {
+        let response = anonymous_http_client()?
+            .post("https://music.163.com/api/search/get")
+            .header("Referer", "https://music.163.com/")
+            .header("User-Agent", "Mozilla/5.0")
+            .form(&[
+                ("s", keyword.to_string()),
+                ("type", "1".to_string()),
+                ("offset", "0".to_string()),
+                ("limit", limit.to_string()),
+            ])
+            .send()
+            .await;
+        match response {
+            Ok(response) if response.status().is_success() => {
+                let response = response
+                    .json::<SearchSongData>()
+                    .await
+                    .with_context(|| "解析网易云匿名搜索结果失败")?;
+                return Ok(response.result.songs);
+            }
+            Ok(response)
+                if response.status().is_client_error() && response.status().as_u16() != 429 =>
+            {
+                return Err(anyhow::anyhow!("网易云搜索返回 HTTP {}", response.status()));
+            }
+            Ok(response) => {
+                tracing::debug!(keyword, attempt, status = %response.status(), "网易云搜索将重试");
+            }
+            Err(error) => {
+                tracing::debug!(keyword, attempt, ?error, "网易云搜索网络错误，将重试");
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250 * (1 << attempt))).await;
+    }
+    Err(anyhow::anyhow!("网易云搜索重试次数耗尽"))
 }
 
 /// 网易云公开歌曲详情接口，不携带登录 Cookie。
@@ -96,7 +115,7 @@ pub async fn get_song_detail(_client: &NcmClient, ids: &[i64]) -> Result<Vec<Son
     Ok(data.songs)
 }
 
-pub async fn get_song_lyric(_client: &NcmClient, id: i64) -> Result<Option<String>> {
+pub async fn get_song_lyric_anonymous(id: i64) -> Result<Option<String>> {
     let data = anonymous_http_client()?
         .post("https://music.163.com/api/song/lyric?_nmclfl=1")
         .header("Referer", "https://music.163.com/")
@@ -115,4 +134,8 @@ pub async fn get_song_lyric(_client: &NcmClient, id: i64) -> Result<Option<Strin
         .await
         .with_context(|| "解析网易云歌词失败")?;
     Ok(data.lrc.map(|l| l.lyric))
+}
+
+pub async fn get_song_lyric(_client: &NcmClient, id: i64) -> Result<Option<String>> {
+    get_song_lyric_anonymous(id).await
 }

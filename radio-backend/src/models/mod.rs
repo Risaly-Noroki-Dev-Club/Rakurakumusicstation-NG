@@ -56,6 +56,8 @@ pub struct Song {
     pub ncm_song_id: Option<i64>,
     pub metadata_source: String,
     pub metadata_matched_at: Option<NaiveDateTime>,
+    pub musicbrainz_recording_id: Option<String>,
+    pub metadata_revision: i64,
 }
 
 /// 歌曲摘要，用于列表响应（出于安全考虑省略路径）。
@@ -68,6 +70,7 @@ pub struct SongSummary {
     pub duration_ms: i64,
     pub has_lyrics: bool,
     pub has_cover: bool,
+    pub metadata_revision: i64,
 }
 
 impl From<Song> for SongSummary {
@@ -80,6 +83,7 @@ impl From<Song> for SongSummary {
             duration_ms: s.duration_ms,
             has_lyrics: !s.lyrics_path.is_empty(),
             has_cover: !s.cover_path.is_empty(),
+            metadata_revision: s.metadata_revision,
         }
     }
 }

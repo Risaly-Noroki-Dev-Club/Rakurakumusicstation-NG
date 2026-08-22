@@ -37,7 +37,10 @@ done
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/radio-backend"
 FRONTEND_DIR="$BACKEND_DIR/frontend"
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="${RADIO_DIST_DIR:-$ROOT_DIR/dist}"
+# Allow CI, desktop sandboxes, and read-only historical target directories to
+# choose a writable Cargo target location without changing the deploy layout.
+TARGET_DIR="${CARGO_TARGET_DIR:-$BACKEND_DIR/target}"
 VERSION="3.0"
 
 echo -e "${BLUE}
@@ -90,7 +93,7 @@ fi
 # ─── Rust 后端构建 ────────────────────────────────────────────
 print_status "构建 Rust 后端（含音频引擎）..."
 cd "$BACKEND_DIR"
-cargo build --release
+cargo build --release --target-dir "$TARGET_DIR"
 print_success "Rust release 构建完成"
 cd "$ROOT_DIR"
 
@@ -99,7 +102,7 @@ print_status "准备部署文件..."
 mkdir -p "$DIST_DIR/data" "$DIST_DIR/media"
 
 # 复制二进制文件（先写临时文件再替换，避免覆盖运行中的二进制触发 ETXTBSY）
-cp "$BACKEND_DIR/target/release/radio-backend" "$DIST_DIR/radio-backend.new"
+cp "$TARGET_DIR/release/radio-backend" "$DIST_DIR/radio-backend.new"
 mv -f "$DIST_DIR/radio-backend.new" "$DIST_DIR/radio-backend"
 chmod +x "$DIST_DIR/radio-backend"
 print_success "radio-backend 二进制文件已复制"

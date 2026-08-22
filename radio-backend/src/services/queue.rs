@@ -170,7 +170,24 @@ pub async fn add_to_queue(
 
 /// 获取带歌曲详情的队列，按 position 排序。
 pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>, AppError> {
-    let display_items = sqlx::query_as::<_, (i64, i64, i64, String, i32, chrono::NaiveDateTime, Option<String>, Option<String>, Option<String>, Option<i64>, Option<String>, Option<String>, String)>(
+    let display_items = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            i64,
+            String,
+            i32,
+            chrono::NaiveDateTime,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+            String,
+        ),
+    >(
         "SELECT q.id, q.song_id, q.device_user_id, q.status, q.position, q.added_at,
                 s.title, s.artist, s.album, s.duration_ms,
                 s.lyrics_path, s.cover_path,
@@ -184,25 +201,42 @@ pub async fn get_queue_display(db: &SqlitePool) -> Result<Vec<QueueItemDisplay>,
     .fetch_all(db)
     .await?
     .into_iter()
-    .map(|(id, song_id, _device_user_id, status, position, added_at, title, artist, album, duration_ms, lyrics_path, cover_path, display_name)| {
-        QueueItemDisplay {
+    .map(
+        |(
             id,
-            song: title.map(|t| SongSummary {
-                // 真实歌曲 id（此前硬编码 0，导致前端无法按 id 加载封面）。
-                id: song_id,
-                title: t,
-                artist: artist.unwrap_or_default(),
-                album: album.unwrap_or_default(),
-                duration_ms: duration_ms.unwrap_or(0),
-                has_lyrics: !lyrics_path.unwrap_or_default().is_empty(),
-                has_cover: !cover_path.unwrap_or_default().is_empty(),
-            }),
-            requested_by: display_name,
+            song_id,
+            _device_user_id,
             status,
             position,
             added_at,
-        }
-    })
+            title,
+            artist,
+            album,
+            duration_ms,
+            lyrics_path,
+            cover_path,
+            display_name,
+        )| {
+            QueueItemDisplay {
+                id,
+                song: title.map(|t| SongSummary {
+                    // 真实歌曲 id（此前硬编码 0，导致前端无法按 id 加载封面）。
+                    id: song_id,
+                    title: t,
+                    artist: artist.unwrap_or_default(),
+                    album: album.unwrap_or_default(),
+                    duration_ms: duration_ms.unwrap_or(0),
+                    has_lyrics: !lyrics_path.unwrap_or_default().is_empty(),
+                    has_cover: !cover_path.unwrap_or_default().is_empty(),
+                    metadata_revision: 0,
+                }),
+                requested_by: display_name,
+                status,
+                position,
+                added_at,
+            }
+        },
+    )
     .collect();
 
     Ok(display_items)
@@ -221,9 +255,7 @@ pub async fn move_queue_item(
     let _queue_guard = state.queue_sync.lock().await;
 
     if new_position < 0 {
-        return Err(AppError::BadRequest(
-            "Position must be non-negative".into(),
-        ));
+        return Err(AppError::BadRequest("Position must be non-negative".into()));
     }
 
     let item = sqlx::query_as::<_, QueueItem>("SELECT * FROM queue_items WHERE id = ?")
@@ -451,7 +483,22 @@ pub async fn get_next_song(db: &SqlitePool) -> Result<Option<crate::models::Song
 
 /// 获取最近的播放历史。
 pub async fn get_history(db: &SqlitePool, limit: i64) -> Result<Vec<serde_json::Value>, AppError> {
-    let result = sqlx::query_as::<_, (i64, i64, Option<i64>, String, Option<String>, Option<String>, Option<String>, Option<i64>, Option<String>, Option<String>, String)>(
+    let result = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            Option<i64>,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+            String,
+        ),
+    >(
         "SELECT h.id, h.song_id, h.device_user_id, h.played_at,
                 s.title, s.artist, s.album, s.duration_ms,
                 s.lyrics_path, s.cover_path,
@@ -466,25 +513,39 @@ pub async fn get_history(db: &SqlitePool, limit: i64) -> Result<Vec<serde_json::
     .fetch_all(db)
     .await?
     .into_iter()
-    .map(|(id, song_id, device_user_id, played_at, title, artist, album, duration_ms, lyrics_path, cover_path, display_name)| {
-        serde_json::json!({
-            "id": id,
-            // 顶层真实 song_id（此前响应只有内嵌 song.id=0，前端无法取用）。
-            "song_id": song_id,
-            "device_user_id": device_user_id,
-            "song": {
-                "id": song_id,
-                "title": title,
-                "artist": artist.unwrap_or_default(),
-                "album": album,
-                "duration_ms": duration_ms,
-                "has_lyrics": !lyrics_path.unwrap_or_default().is_empty(),
-                "has_cover": !cover_path.unwrap_or_default().is_empty(),
-            },
-            "requested_by": display_name,
-            "played_at": played_at,
-        })
-    })
+    .map(
+        |(
+            id,
+            song_id,
+            device_user_id,
+            played_at,
+            title,
+            artist,
+            album,
+            duration_ms,
+            lyrics_path,
+            cover_path,
+            display_name,
+        )| {
+            serde_json::json!({
+                "id": id,
+                // 顶层真实 song_id（此前响应只有内嵌 song.id=0，前端无法取用）。
+                "song_id": song_id,
+                "device_user_id": device_user_id,
+                "song": {
+                    "id": song_id,
+                    "title": title,
+                    "artist": artist.unwrap_or_default(),
+                    "album": album,
+                    "duration_ms": duration_ms,
+                    "has_lyrics": !lyrics_path.unwrap_or_default().is_empty(),
+                    "has_cover": !cover_path.unwrap_or_default().is_empty(),
+                },
+                "requested_by": display_name,
+                "played_at": played_at,
+            })
+        },
+    )
     .collect();
 
     Ok(result)

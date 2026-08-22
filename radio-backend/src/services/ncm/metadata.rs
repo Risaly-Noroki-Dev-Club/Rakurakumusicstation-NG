@@ -328,6 +328,8 @@ mod tests {
             ncm_song_id: None,
             metadata_source: String::new(),
             metadata_matched_at: None,
+            musicbrainz_recording_id: None,
+            metadata_revision: 0,
         }
     }
 

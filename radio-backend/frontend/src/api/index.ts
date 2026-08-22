@@ -23,6 +23,9 @@ import type {
   SongSummary,
   StationInfo,
   StationSettings,
+  MetadataJob,
+  MetadataJobItem,
+  MetadataCandidate,
 } from '@/types'
 
 // ── station / misc ─────────────────────────────────────────
@@ -97,8 +100,9 @@ export function fetchSong(id: number): Promise<Song> {
   return apiFetch<Song>(`/api/songs/${id}`)
 }
 
-export function coverUrl(songId: number): string {
-  return appUrl(`/api/songs/${songId}/cover`)
+export function coverUrl(songId: number, revision?: number): string {
+  const suffix = revision === undefined ? '' : `?v=${revision}`
+  return appUrl(`/api/songs/${songId}/cover${suffix}`)
 }
 
 export function songStreamUrl(songId: number): string {
@@ -149,18 +153,29 @@ export function fetchAdminLogs(): Promise<AdminLogEntry[]> {
   return apiFetch<AdminLogEntry[]>('/api/admin/logs')
 }
 
-export function rescanSongs(): Promise<unknown> {
-  return apiFetch('/api/admin/rescan-songs', { method: 'POST' })
+export function rescanSongs(): Promise<MetadataJob> {
+  return apiFetch<MetadataJob>('/api/admin/rescan-songs', { method: 'POST' })
 }
 
-export interface MetadataEnrichReport {
-  matched: number
-  skipped: number
-  failed: number
+export function enrichSongMetadata(): Promise<MetadataJob> {
+  return apiFetch<MetadataJob>('/api/admin/enrich-song-metadata', { method: 'POST' })
 }
 
-export function enrichSongMetadata(): Promise<MetadataEnrichReport> {
-  return apiFetch<MetadataEnrichReport>('/api/admin/enrich-song-metadata', { method: 'POST' })
+export function startMetadataJob(body: { kind?: 'local' | 'online' | 'full'; scope?: 'library' | 'songs'; song_ids?: number[]; force?: boolean }): Promise<MetadataJob> {
+  return apiFetch<MetadataJob>('/api/admin/metadata/jobs', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function fetchMetadataJob(id: string): Promise<MetadataJob> { return apiFetch<MetadataJob>(`/api/admin/metadata/jobs/${encodeURIComponent(id)}`) }
+export function fetchMetadataJobItems(id: string, status?: string): Promise<MetadataJobItem[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : ''
+  return apiFetch<MetadataJobItem[]>(`/api/admin/metadata/jobs/${encodeURIComponent(id)}/items${query}`)
+}
+export function cancelMetadataJob(id: string): Promise<string> { return apiFetch<string>(`/api/admin/metadata/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }) }
+export function retryMetadataJob(id: string): Promise<MetadataJob> { return apiFetch<MetadataJob>(`/api/admin/metadata/jobs/${encodeURIComponent(id)}/retry`, { method: 'POST' }) }
+export function fetchMetadataCandidates(songId: number): Promise<MetadataCandidate[]> { return apiFetch<MetadataCandidate[]>(`/api/admin/songs/${songId}/metadata/candidates`) }
+export function applyMetadataCandidate(songId: number, candidate: MetadataCandidate): Promise<string> { return apiFetch<string>(`/api/admin/songs/${songId}/metadata/candidates/apply`, { method: 'POST', body: JSON.stringify({ candidate }) }) }
+export function updateSongMetadata(id: number, body: { title: string; artist: string; album: string; lock_title?: boolean; lock_artist?: boolean; lock_album?: boolean }): Promise<string> {
+  return apiFetch<string>(`/api/admin/songs/${id}/metadata`, { method: 'PATCH', body: JSON.stringify(body) })
 }
 
 export function fetchAdminSongs(): Promise<Song[]> {

@@ -14,7 +14,7 @@ use regex::Regex;
 #[derive(Debug, Clone)]
 pub struct LyricLine {
     /// 从歌曲开始计算的毫秒时间戳。
-    pub time_ms: i64,
+    pub time_ms: Option<i64>,
     /// 此行的文本（纯器乐间奏时为空）。
     pub text: String,
 }
@@ -117,21 +117,28 @@ impl Lyrics {
 
                 for time_ms in timestamps {
                     lines.push(LyricLine {
-                        time_ms,
+                        time_ms: Some(time_ms),
                         text: text.clone(),
                     });
                 }
+            } else if !LRC_TAG_RE.is_match(line) {
+                // Preserve plain/unsynchronised lyrics. They are rendered as
+                // static lines and never participate in clock highlighting.
+                lines.push(LyricLine {
+                    time_ms: None,
+                    text: line.to_string(),
+                });
             }
         }
 
         // 按时间戳排序（对多时间戳行很重要）
-        lines.sort_by_key(|l| l.time_ms);
+        lines.sort_by_key(|l| l.time_ms.unwrap_or(i64::MAX));
 
         // 合并相同时间戳的行（保留最后一条的文本）
         let mut merged: Vec<LyricLine> = Vec::new();
         for line in lines {
             if let Some(last) = merged.last_mut() {
-                if last.time_ms == line.time_ms {
+                if last.time_ms.is_some() && last.time_ms == line.time_ms {
                     last.text = line.text;
                     continue;
                 }
@@ -159,7 +166,7 @@ impl Lyrics {
         // 二分查找以提高效率
         match self
             .lines
-            .binary_search_by(|line| line.time_ms.cmp(&position_ms))
+            .binary_search_by(|line| line.time_ms.unwrap_or(i64::MAX).cmp(&position_ms))
         {
             Ok(idx) => Some(idx),
             Err(0) => None, // 位置在第一行之前
@@ -191,9 +198,9 @@ mod tests {
 "#;
         let lyrics = Lyrics::parse(lrc);
         assert_eq!(lyrics.lines.len(), 3);
-        assert_eq!(lyrics.lines[0].time_ms, 5000);
-        assert_eq!(lyrics.lines[1].time_ms, 10000);
-        assert_eq!(lyrics.lines[2].time_ms, 15500);
+        assert_eq!(lyrics.lines[0].time_ms, Some(5000));
+        assert_eq!(lyrics.lines[1].time_ms, Some(10000));
+        assert_eq!(lyrics.lines[2].time_ms, Some(15500));
 
         // 行查询
         assert_eq!(lyrics.line_at(0), None);
@@ -208,14 +215,22 @@ mod tests {
         let lrc = "[00:05.00][00:10.00]Repeated line\n";
         let lyrics = Lyrics::parse(lrc);
         assert_eq!(lyrics.lines.len(), 2);
-        assert_eq!(lyrics.lines[0].time_ms, 5000);
-        assert_eq!(lyrics.lines[1].time_ms, 10000);
+        assert_eq!(lyrics.lines[0].time_ms, Some(5000));
+        assert_eq!(lyrics.lines[1].time_ms, Some(10000));
     }
 
     #[test]
     fn test_offset_tag() {
         let lrc = "[offset:+500]\n[00:05.00]Offset line\n";
         let lyrics = Lyrics::parse(lrc);
-        assert_eq!(lyrics.lines[0].time_ms, 5500);
+        assert_eq!(lyrics.lines[0].time_ms, Some(5500));
+    }
+
+    #[test]
+    fn preserves_plain_lyrics_without_timestamps() {
+        let lyrics = Lyrics::parse("第一行\n第二行\n");
+        assert_eq!(lyrics.lines.len(), 2);
+        assert_eq!(lyrics.lines[0].time_ms, None);
+        assert_eq!(lyrics.line_at(1_000), None);
     }
 }
